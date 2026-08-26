@@ -95,9 +95,9 @@ flowchart LR
             P["report"]
         end
         subgraph agents["agents/ (ADK, read-only tools, fixed schema)"]
-            X["extractor · Gemini 3.5 Flash"]
-            Y["reconciler · Gemini 3.5 Pro"]
-            Z["reporter · Gemini 3.5 Pro"]
+            X["extractor · Gemini fast tier (`PM_MODEL_FAST`)"]
+            Y["reconciler · Gemini strong tier (`PM_MODEL_STRONG`)"]
+            Z["reporter · Gemini strong tier (`PM_MODEL_STRONG`)"]
             G["triage · Gemma"]
         end
         subgraph verify["verify/ (deterministic gates)"]
@@ -140,7 +140,7 @@ flowchart LR
 **Google Cloud services used:** Cloud Run (runtime), Firestore (queue, audit,
 memory), Cloud Scheduler (tick), Secret Manager (credentials), Cloud Trace
 (OpenTelemetry spans from ADK plus one parent span per task). Models via the
-Gemini API: Gemini 3.5 Flash, Gemini 3.5 Pro, Gemma 3. Agent framework: ADK
+Gemini API: Gemini fast tier (`PM_MODEL_FAST`), Gemini strong tier (`PM_MODEL_STRONG`), Gemma 3. Agent framework: ADK
 (Python).
 
 **The agent boundary in one sentence:** Gemini reads and proposes inside a
@@ -212,7 +212,7 @@ second failure drops the item, and the drop is recorded and reported.
 ### 7.1 extract
 - **Input:** Fathom transcript (speaker-labelled, timestamped), summary, action
   items; project roster names for disambiguation.
-- **Agent:** `extractor` (Gemini 3.5 Flash, no tools), `output_schema =
+- **Agent:** `extractor` (Gemini fast tier (`PM_MODEL_FAST`), no tools), `output_schema =
   ExtractResult { decisions[], action_items[], open_questions[] }`; every item
   has `evidence[] = { quote, timestamp, speaker }`.
 - **Pre-filter:** `triage` (Gemma) labels transcript segments
@@ -224,7 +224,7 @@ second failure drops the item, and the drop is recorded and reported.
 - **Enqueues:** `reconcile` (now). **Persists:** `decisions`.
 
 ### 7.2 reconcile
-- **Agent:** `reconciler` (Gemini 3.5 Pro) with read-only `FunctionTool`s:
+- **Agent:** `reconciler` (Gemini strong tier (`PM_MODEL_STRONG`)) with read-only `FunctionTool`s:
   `search_issues`, `get_issue`, `search_notion`, `get_notion_page`,
   `grep_code`, `list_roster`. `output_schema = ReconcileResult`.
 - **Per item output:** `disposition` (new · update `<ISSUE-ID>` · duplicate_of
@@ -268,7 +268,7 @@ second failure drops the item, and the drop is recorded and reported.
 ### 7.5 report (on request)
 - **Trigger:** Slack `report <project> [for <role>]`; `triage` classifies the
   message intent first.
-- **Agent:** `reporter` (Gemini 3.5 Pro) with the reconciler's tools plus
+- **Agent:** `reporter` (Gemini strong tier (`PM_MODEL_STRONG`)) with the reconciler's tools plus
   `list_actions_since`, `list_decisions`, `list_open_conflicts`.
 - **Output:** moved · blocked · at-risk (overdue / unmoved) · conflicts · open
   questions · decisions since last report; shape by role (`lead` = per-issue,
@@ -290,13 +290,15 @@ second failure drops the item, and the drop is recorded and reported.
 
 | Agent | Model | Tools | Output schema |
 |---|---|---|---|
-| `extractor` | Gemini 3.5 Flash | none | `ExtractResult` |
-| `reconciler` | Gemini 3.5 Pro | 6 read-only FunctionTools | `ReconcileResult` |
-| `reporter` | Gemini 3.5 Pro | reconciler's + 3 store readers | `Report` |
+| `extractor` | Gemini fast tier (`PM_MODEL_FAST`) | none | `ExtractResult` |
+| `reconciler` | Gemini strong tier (`PM_MODEL_STRONG`) | 6 read-only FunctionTools | `ReconcileResult` |
+| `reporter` | Gemini strong tier (`PM_MODEL_STRONG`) | reconciler's + 3 store readers | `Report` |
 | `triage` | Gemma 3 (Gemini API) | none | single label |
 
-Exact model IDs are verified against the API on day 1 and set in config, not
-hardcoded from memory.
+Model IDs live in config. Defaults: `PM_MODEL_FAST=gemini-3.5-flash-lite`,
+`PM_MODEL_STRONG=gemini-3.5-flash` (both listed by the Gemini API on 2026-08-26;
+there is no "3.5 Pro" — `gemini-3.7-flash` is the newer option if quotas allow).
+Verified with `models.list()` on day 1 before anything else.
 
 - **`AgentSpec`** (`agents/spec.py`): name, model, instruction (str or
   callable), tools, output schema, `max_tool_calls`, `max_output_tokens`.
