@@ -12,7 +12,7 @@ from app.agents.triage import PassthroughTriage
 from app.config import Settings
 from app.harness.core.clock import SystemClock
 from app.harness.deps import Deps
-from app.harness.http import tick, webhooks
+from app.harness.http import slack, tick, webhooks
 from app.harness.store.decisions import DecisionStore
 from app.harness.store.events import EventStore
 from app.harness.store.firestore import FirestoreDb
@@ -25,6 +25,7 @@ def create_app(deps: Deps) -> FastAPI:
     app.state.deps = deps
     app.include_router(webhooks.router)
     app.include_router(tick.router)
+    app.include_router(slack.router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:

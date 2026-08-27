@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     # Secrets — empty means "feature off" (webhook rejects everything; tick rejects everything).
     fathom_webhook_secret: str = ""
     tick_token: str = ""
+    slack_signing_secret: str = ""
+    slack_bot_token: str = ""
+    linear_api_key: str = ""
+    notion_token: str = ""
+    github_token: str = ""
+    github_repo: str = ""
 
     default_project_slug: str = "acme"
 

@@ -10,6 +10,7 @@ from app.agents.base.protocols import Extractor, Planner, Reconciler, Triage
 from app.config import Settings
 from app.harness.core.clock import Clock
 from app.harness.store.actions import ActionStore
+from app.harness.store.corrections import CorrectionStore
 from app.harness.store.db import Db
 from app.harness.store.decisions import DecisionStore
 from app.harness.store.events import EventStore
@@ -30,6 +31,7 @@ class Deps:
     extractor: Extractor
     triage: Triage
     actions: ActionStore | None = None
+    corrections: CorrectionStore | None = None
     ids: IdGate | None = None
     reconciler: Reconciler | None = None
     planner: Planner | None = None
