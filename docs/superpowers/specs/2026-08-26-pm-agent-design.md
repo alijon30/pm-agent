@@ -534,7 +534,7 @@ pm-agent/
     verify/    evidence.py ids.py roster.py priority.py dates.py citations.py lineage.py caps.py plan.py wiki.py
     store/     db.py firestore.py events.py tasks.py actions.py decisions.py corrections.py projects.py
                wiki.py routines.py
-    clients/   linear.py notion.py fathom.py slack.py code.py github.py embeddings.py
+    connectors/   linear.py notion.py fathom.py slack.py code.py github.py embeddings.py
     core/      redact.py tracing.py clock.py keys.py errors.py
     http/      webhooks.py tick.py slack.py console.py
   fixtures/  acme-invoicing/ notion/ linear_seed.py transcripts/ roster.json projects/
@@ -549,8 +549,8 @@ pm-agent/
 
 | Contract | Why |
 |---|---|
-| `core`, `store`, `verify`, `clients`, `kinds` never import `agents`, `stages`, `http`, `deps`, `main` | gates, queue and kind schemas testable with no model near them |
-| `agents` imports only `clients`, `core`, `kinds` (param schemas) | the model cannot reach the store or the queue |
+| `core`, `store`, `verify`, `connectors`, `kinds` never import `agents`, `stages`, `http`, `deps`, `main` | gates, queue and kind schemas testable with no model near them |
+| `agents` imports only `connectors`, `core`, `kinds` (param schemas) | the model cannot reach the store or the queue |
 | `stages` never import each other | independent failure domains |
 | `http.console` imports `store` only | structurally read-only |
 

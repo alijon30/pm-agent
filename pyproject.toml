@@ -61,13 +61,13 @@ ignore_missing_imports = true
 root_packages = ["app"]
 
 [[tool.importlinter.contracts]]
-name = "core, store, verify, clients and kinds never import the model side or the wiring"
+name = "core, store, verify, connectors and kinds never import the model side or the wiring"
 type = "forbidden"
-source_modules = ["app.core", "app.store", "app.verify", "app.clients", "app.kinds"]
+source_modules = ["app.core", "app.store", "app.verify", "app.connectors", "app.kinds"]
 forbidden_modules = ["app.agents", "app.stages", "app.http", "app.deps", "app.main"]
 
 [[tool.importlinter.contracts]]
-name = "agents import only clients, core and kinds — the model cannot reach the store or the queue"
+name = "agents import only connectors, core and kinds — the model cannot reach the store or the queue"
 type = "forbidden"
 source_modules = ["app.agents"]
 forbidden_modules = ["app.store", "app.verify", "app.stages", "app.http", "app.deps", "app.main"]

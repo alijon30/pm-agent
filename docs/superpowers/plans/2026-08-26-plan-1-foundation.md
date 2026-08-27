@@ -16,7 +16,7 @@
 - Four CI gates and nothing else: `uv run ruff check . && uv run mypy app && uv run lint-imports && uv run pytest -q`.
 - ruff rule set: `["E4", "E7", "E9", "F", "I", "W", "B", "UP"]`, line length 100.
 - mypy `strict = true` on `app/`; **no debt list**. Third-party packages without stubs get `ignore_missing_imports`, nothing else.
-- Layering (import-linter): `core`, `store`, `verify`, `clients`, `kinds` never import `agents`, `stages`, `http`, `deps`, `main`; `agents` imports only `clients`, `core`, `kinds` (plus its own package); stages never import each other (independence contract added in Plan 2 when a second stage exists).
+- Layering (import-linter): `core`, `store`, `verify`, `connectors`, `kinds` never import `agents`, `stages`, `http`, `deps`, `main`; `agents` imports only `connectors`, `core`, `kinds` (plus its own package); stages never import each other (independence contract added in Plan 2 when a second stage exists).
 - Everything crossing a task boundary is JSON-native: dicts, lists, str, int, float, bool, None. Timestamps are ISO-8601 UTC strings with second precision (`2026-08-27T09:00:00+00:00`) so string comparison equals time comparison.
 - Never log or store a secret value; errors that may reach a human pass through `redact()`.
 - Test names are behavior sentences; fakes are hand-rolled (no `unittest.mock` for our own seams); comments say *why*.
@@ -63,7 +63,7 @@ pm-agent/
       __init__.py
       base.py               KindSpec, StrictParams
       registry.py           KINDS, get_kind(), validate_params()
-    clients/
+    connectors/
       __init__.py
       fathom.py             verify_signature(), parse_meeting(), transcript_plain(), render_transcript()
     agents/
@@ -89,7 +89,7 @@ pm-agent/
       fake_db.py            FakeDb
       fake_clock.py         FakeClock
       fake_agents.py        FakeExtractor
-    core/  store/  verify/  kinds/  clients/  agents/  stages/  http/   (mirrors app/)
+    core/  store/  verify/  kinds/  connectors/  agents/  stages/  http/   (mirrors app/)
     fixtures/
       fathom_webhook_sample.json   hand-built from the documented Meeting schema; replaced by a real capture in Task 14
   fixtures/
@@ -171,7 +171,7 @@ uv python install 3.12
 ### Task 1: Repository scaffold, tooling, CI
 
 **Files:**
-- Create: `pyproject.toml`, `.python-version`, `.env.example`, `.github/workflows/ci.yml`, `app/__init__.py`, `app/py.typed`, `app/{core,store,verify,clients,agents,stages,http}/__init__.py`, `tests/__init__.py`, `tests/fakes/__init__.py`, `tests/test_smoke.py`, `scripts/list_models.py`
+- Create: `pyproject.toml`, `.python-version`, `.env.example`, `.github/workflows/ci.yml`, `app/__init__.py`, `app/py.typed`, `app/{core,store,verify,connectors,agents,stages,http}/__init__.py`, `tests/__init__.py`, `tests/fakes/__init__.py`, `tests/test_smoke.py`, `scripts/list_models.py`
 
 **Interfaces:**
 - Produces: the four gates runnable and green on an empty package.
@@ -241,13 +241,13 @@ ignore_missing_imports = true
 root_packages = ["app"]
 
 [[tool.importlinter.contracts]]
-name = "core, store, verify, clients and kinds never import the model side or the wiring"
+name = "core, store, verify, connectors and kinds never import the model side or the wiring"
 type = "forbidden"
-source_modules = ["app.core", "app.store", "app.verify", "app.clients", "app.kinds"]
+source_modules = ["app.core", "app.store", "app.verify", "app.connectors", "app.kinds"]
 forbidden_modules = ["app.agents", "app.stages", "app.http", "app.deps", "app.main"]
 
 [[tool.importlinter.contracts]]
-name = "agents import only clients, core and kinds — the model cannot reach the store or the queue"
+name = "agents import only connectors, core and kinds — the model cannot reach the store or the queue"
 type = "forbidden"
 source_modules = ["app.agents"]
 forbidden_modules = ["app.store", "app.verify", "app.stages", "app.http", "app.deps", "app.main"]
@@ -276,8 +276,8 @@ PM_MODEL_STRONG=gemini-3.5-flash
 ```
 
 ```bash
-mkdir -p app/core app/store app/verify app/kinds app/clients app/agents app/stages app/http tests/fakes tests/kinds scripts
-for d in app app/core app/store app/verify app/kinds app/clients app/agents app/stages app/http tests tests/fakes tests/kinds; do : > "$d/__init__.py"; done
+mkdir -p app/core app/store app/verify app/kinds app/connectors app/agents app/stages app/http tests/fakes tests/kinds scripts
+for d in app app/core app/store app/verify app/kinds app/connectors app/agents app/stages app/http tests tests/fakes tests/kinds; do : > "$d/__init__.py"; done
 : > app/py.typed
 ```
 
@@ -367,7 +367,7 @@ Expected: the list contains `gemini-3.5-flash-lite` and `gemini-3.5-flash`. If e
 ```bash
 git add pyproject.toml .python-version .env.example .github/workflows/ci.yml README.md uv.lock \
   app/__init__.py app/py.typed app/core/__init__.py app/store/__init__.py app/verify/__init__.py \
-  app/kinds/__init__.py app/clients/__init__.py app/agents/__init__.py app/stages/__init__.py \
+  app/kinds/__init__.py app/connectors/__init__.py app/agents/__init__.py app/stages/__init__.py \
   app/http/__init__.py tests/__init__.py tests/fakes/__init__.py tests/kinds/__init__.py \
   tests/test_smoke.py scripts/list_models.py
 git commit -m "chore: scaffold pm-agent with uv, the four gates and CI"
@@ -2495,11 +2495,11 @@ git commit -m "feat: task kinds catalog and the plan gate (kinds, params, deps, 
 
 ---
 
-### Task 7: `clients/fathom.py` — signature and payload parsing
+### Task 7: `connectors/fathom.py` — signature and payload parsing
 
 **Files:**
-- Create: `app/clients/fathom.py`, `tests/fixtures/fathom_webhook_sample.json`
-- Test: `tests/clients/test_fathom.py`
+- Create: `app/connectors/fathom.py`, `tests/fixtures/fathom_webhook_sample.json`
+- Test: `tests/connectors/test_fathom.py`
 
 **Interfaces:**
 - Produces:
@@ -2547,7 +2547,7 @@ git commit -m "feat: task kinds catalog and the plan gate (kinds, params, deps, 
 
 - [ ] **Step 2: Write the failing tests**
 
-`tests/clients/test_fathom.py`:
+`tests/connectors/test_fathom.py`:
 ```python
 import base64
 import hashlib
@@ -2555,7 +2555,7 @@ import hmac
 import json
 from pathlib import Path
 
-from app.clients.fathom import parse_meeting, render_transcript, transcript_plain, verify_signature
+from app.connectors.fathom import parse_meeting, render_transcript, transcript_plain, verify_signature
 
 SAMPLE = Path(__file__).parents[1] / "fixtures" / "fathom_webhook_sample.json"
 SECRET_BYTES = b"0123456789abcdef0123456789abcdef"
@@ -2632,11 +2632,11 @@ def test_transcript_renderings() -> None:
 - [ ] **Step 3: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/clients/test_fathom.py -q
+uv run pytest tests/connectors/test_fathom.py -q
 ```
-Expected: FAIL with `ModuleNotFoundError: No module named 'app.clients.fathom'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'app.connectors.fathom'`.
 
-- [ ] **Step 4: Write `app/clients/fathom.py`**
+- [ ] **Step 4: Write `app/connectors/fathom.py`**
 
 ```python
 """Fathom webhook verification and payload normalisation. The REST client (meetings, transcript
@@ -2735,15 +2735,15 @@ def transcript_plain(meeting: dict[str, Any]) -> str:
 - [ ] **Step 5: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/clients -q && uv run mypy app && uv run ruff check .
+uv run pytest tests/connectors -q && uv run mypy app && uv run ruff check .
 ```
 Expected: `7 passed`; clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/clients/fathom.py tests/clients/test_fathom.py tests/fixtures/fathom_webhook_sample.json
-git commit -m "feat(clients): Fathom webhook signature verification and meeting normalisation"
+git add app/connectors/fathom.py tests/connectors/test_fathom.py tests/fixtures/fathom_webhook_sample.json
+git commit -m "feat(connectors): Fathom webhook signature verification and meeting normalisation"
 ```
 
 ---
@@ -3202,7 +3202,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.clients.fathom import parse_meeting, verify_signature
+from app.connectors.fathom import parse_meeting, verify_signature
 from app.deps import Deps
 
 router = APIRouter()
@@ -3737,7 +3737,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.agents.schemas import ExtractResult
-from app.clients.fathom import parse_meeting, render_transcript, transcript_plain
+from app.connectors.fathom import parse_meeting, render_transcript, transcript_plain
 from app.core.errors import PmError
 from app.deps import Deps
 from app.stages.base import StageResult
@@ -4714,7 +4714,7 @@ Expected: a `200` on `/webhooks/fathom`; an `events/fathom:…` document; within
 
 - [ ] **Step 8: Replace the sample payload with the real capture**
 
-Copy the `payload` field of the stored `events/fathom:…` document into `tests/fixtures/fathom_webhook_sample.json` (it is our fake company; no real PII). If any field name differs from the documented shape, `parse_meeting` in `app/clients/fathom.py` is the one place to adapt; `tests/clients/test_fathom.py::test_parse_meeting_normalises_the_documented_shape` must be updated to the real names in the same commit.
+Copy the `payload` field of the stored `events/fathom:…` document into `tests/fixtures/fathom_webhook_sample.json` (it is our fake company; no real PII). If any field name differs from the documented shape, `parse_meeting` in `app/connectors/fathom.py` is the one place to adapt; `tests/connectors/test_fathom.py::test_parse_meeting_normalises_the_documented_shape` must be updated to the real names in the same commit.
 
 ```bash
 uv run pytest -q
@@ -4725,7 +4725,7 @@ Expected: all green against the real payload shape.
 
 ```bash
 git add deploy/Dockerfile deploy/deploy.sh deploy/scheduler.sh deploy/secrets.md .dockerignore \
-  tests/fixtures/fathom_webhook_sample.json app/clients/fathom.py tests/clients/test_fathom.py
+  tests/fixtures/fathom_webhook_sample.json app/connectors/fathom.py tests/connectors/test_fathom.py
 git commit -m "feat(deploy): Cloud Run service, one-minute Scheduler tick, Fathom webhook; real payload captured"
 ```
 

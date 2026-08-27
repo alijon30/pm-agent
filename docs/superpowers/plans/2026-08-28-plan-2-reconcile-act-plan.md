@@ -24,7 +24,7 @@ Same as Plan 1. Additionally:
 
 ```
 app/
-  clients/linear.py  notion.py  code.py  github.py  slack.py  slack_blocks.py
+  connectors/linear.py  notion.py  code.py  github.py  slack.py  slack_blocks.py
   verify/ids.py  roster.py  priority.py  dates.py  caps.py
   store/actions.py
   kinds/templates.py                nudge/escalation text
@@ -35,14 +35,14 @@ app/
   deps.py (+linear, notion, code, github, slack, actions, reconciler, planner)
 fixtures/linear_seed.py  slack_manifest.json  notion/README.md
 tests/fakes/fake_linear.py  fake_notion.py  fake_github.py  fake_slack.py  fake_agents.py (+FakeReconciler, FakePlanner)
-tests/clients/ verify/ store/ agents/ stages/ http/ (mirrors)
+tests/connectors/ verify/ store/ agents/ stages/ http/ (mirrors)
 ```
 
 ---
 
-### Task 1: `clients/linear.py` + `FakeLinear`
+### Task 1: `connectors/linear.py` + `FakeLinear`
 
-**Files:** Create `app/clients/linear.py`, `tests/fakes/fake_linear.py`; Test `tests/clients/test_linear.py`, `tests/fakes/test_fake_linear.py`
+**Files:** Create `app/connectors/linear.py`, `tests/fakes/fake_linear.py`; Test `tests/connectors/test_linear.py`, `tests/fakes/test_fake_linear.py`
 
 **Interfaces:**
 ```python
@@ -68,11 +68,11 @@ Errors: any transport/GraphQL error → `SourceUnavailable("linear", detail)`; d
 - `test_a_graphql_error_becomes_source_unavailable_with_a_redacted_detail` (real client against a `httpx.MockTransport`)
 - `test_the_real_client_parses_the_documented_issue_shape` (MockTransport fixture JSON)
 
-**Steps:** write fake tests → fake → real client tests with `httpx.MockTransport` → client → gates → commit `feat(clients): Linear GraphQL client and in-memory fake`.
+**Steps:** write fake tests → fake → real client tests with `httpx.MockTransport` → client → gates → commit `feat(connectors): Linear GraphQL client and in-memory fake`.
 
 ---
 
-### Task 2: `clients/notion.py` + `FakeNotion`; `clients/code.py`
+### Task 2: `connectors/notion.py` + `FakeNotion`; `connectors/code.py`
 
 **Interfaces:**
 ```python
@@ -92,11 +92,11 @@ class CodeSearch:
 
 **Tests:** `test_search_matches_titles_and_body_case_insensitively`, `test_get_page_text_flattens_blocks_to_markdown_headings_and_bullets`, `test_grep_finds_reminder_days_in_config_with_path_and_line`, `test_read_returns_the_requested_line_window`, `test_paths_outside_the_repo_are_rejected`, `test_exists_checks_the_line_is_within_the_file`.
 
-**Commit:** `feat(clients): Notion client + fake; jailed code search over the fixture repo`.
+**Commit:** `feat(connectors): Notion client + fake; jailed code search over the fixture repo`.
 
 ---
 
-### Task 3: `clients/github.py` + `FakeGitHub`
+### Task 3: `connectors/github.py` + `FakeGitHub`
 
 **Interfaces:**
 ```python
@@ -109,11 +109,11 @@ class GitHubClient:
 
 **Tests:** `test_prs_are_matched_by_issue_identifier_in_title_body_or_branch`, `test_reviews_count_and_merged_flag_are_exposed`, `test_an_api_error_becomes_source_unavailable`.
 
-**Commit:** `feat(clients): GitHub PR lookup + fake`.
+**Commit:** `feat(connectors): GitHub PR lookup + fake`.
 
 ---
 
-### Task 4: `clients/slack.py`, `clients/slack_blocks.py`, `FakeSlack`
+### Task 4: `connectors/slack.py`, `connectors/slack_blocks.py`, `FakeSlack`
 
 **Interfaces:**
 ```python
@@ -138,7 +138,7 @@ def nudge_text(template: str, **kw: str) -> str                         # delega
 
 **Tests:** `test_a_correctly_signed_slack_request_verifies_and_a_stale_one_does_not`, `test_call_summary_blocks_have_one_revert_button_per_action_and_one_wrong_button`, `test_blocks_never_exceed_slacks_50_block_limit` (truncate with a "+N more" line), `test_fake_slack_records_posts_with_incrementing_ts`.
 
-**Commit:** `feat(clients): Slack client, signature check, block builders, fake`.
+**Commit:** `feat(connectors): Slack client, signature check, block builders, fake`.
 
 ---
 

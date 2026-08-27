@@ -18,7 +18,7 @@ Same as Plans 1–2. Additionally: wiki writes are **additive only** — no code
 app/
   stages/checks.py (+check_pr_reviewed, check_pr_merged, nudge, escalate, reconcile_item, daily_review)  wiki.py  bootstrap.py
   store/routines.py  corrections.py  wiki.py
-  clients/embeddings.py
+  connectors/embeddings.py
   verify/wiki.py
   agents/instructions.py  wiki_writer.py  schemas.py (+WikiUpdate)  tools.py (+search_wiki, get_page)
   core/tracing.py
@@ -60,7 +60,7 @@ def with_corrections(base: str, corrections_loader: Callable[[str], list[dict]])
 **Tests:** `test_a_correction_is_stored_with_scope_and_matcher`, `test_the_instruction_provider_appends_only_matching_stage_corrections`, `test_a_correction_changes_the_next_extraction` (FakeExtractor asserts the feedback text is present in the instruction — via a seam that exposes the rendered instruction).
 **Commit:** `feat: corrections that shape the next run`.
 
-### Task 4: Brain — `store/wiki.py`, `clients/embeddings.py`
+### Task 4: Brain — `store/wiki.py`, `connectors/embeddings.py`
 **Interfaces:**
 ```python
 class WikiStore:
@@ -71,7 +71,7 @@ class WikiStore:
     async def set_embedding(self, slug, vector) -> None
     async def list_pages(self, project_id) -> list[Doc]
     async def export_markdown(self, project_id) -> dict[str, str]                  # slug → markdown with [[links]]
-class Embeddings:  # clients/embeddings.py
+class Embeddings:  # connectors/embeddings.py
     def __init__(self, model: str = "gemini-embedding-001") -> None                # verify id day 3 via list_models
     async def embed(self, text: str) -> list[float]
 ```
