@@ -315,7 +315,7 @@ item, and the drop is recorded and reported.
 - **Materialised** by the queue in one transaction (§6). Default follow-through
   when the planner has nothing better: checks at `due − 1d`, `due`, `+3d`.
 
-### 7.5 checks — the task kinds catalog (`app/kinds/`)
+### 7.5 checks — the task kinds catalog (`app/harness/kinds/`)
 
 The whitelist of what the planner may schedule. Each kind = param schema +
 executor + allowed `on_unmet` actions. Adding a capability = one entry.
@@ -524,33 +524,43 @@ accuracy, fabricated identifiers (must be 0), citation coverage (must be
 ## 15. Repository
 
 ```
-pm-agent/
+google_agentic_hackathon/            (the repo root; package name pm-agent)
   app/
-    main.py  config.py  deps.py
-    agents/    extractor.py reconciler.py planner.py wiki_writer.py reporter.py triage.py
-               spec.py tools.py schemas.py protocols.py adk_runner.py
-    kinds/     __init__.py (registry) + one module per kind: param schema + executor
-    stages/    base.py extract.py reconcile.py act.py plan.py checks.py wiki.py report.py runner.py
-    verify/    evidence.py ids.py roster.py priority.py dates.py citations.py lineage.py caps.py plan.py wiki.py
-    store/     db.py firestore.py events.py tasks.py actions.py decisions.py corrections.py projects.py
-               wiki.py routines.py
-    connectors/   linear.py notion.py fathom.py slack.py code.py github.py embeddings.py
-    core/      redact.py tracing.py clock.py keys.py errors.py
-    http/      webhooks.py tick.py slack.py console.py
+    main.py  config.py
+    agents/          the model side — one file per ADK agent
+                     extractor.py reconciler.py planner.py wiki_writer.py reporter.py triage.py
+                     spec.py tools.py schemas.py protocols.py adk_runner.py
+    harness/         everything deterministic; the model cannot import anything in here
+      deps.py        Deps — what a stage or route needs, wired in main.py
+      core/          clock.py keys.py redact.py errors.py tracing.py
+      store/         db.py firestore.py events.py tasks.py actions.py decisions.py corrections.py
+                     projects.py wiki.py routines.py
+      verify/        evidence.py ids.py roster.py priority.py dates.py citations.py lineage.py
+                     caps.py plan.py wiki.py
+      kinds/         registry of task kinds: param schema + allowed unmet actions
+      connectors/    linear.py notion.py fathom.py slack.py code.py github.py embeddings.py
+      stages/        base.py extract.py reconcile.py act.py plan.py checks.py wiki.py report.py runner.py
+      http/          webhooks.py tick.py slack.py console.py
   fixtures/  acme-invoicing/ notion/ linear_seed.py transcripts/ roster.json projects/
-  evals/     questions.jsonl run_evals.py
-  tests/     mirrors app/; fakes/ (FakeDb FakeClock FakeLinear FakeNotion FakeSlack FakeGitHub fake agents)
+  evals/     questions.jsonl run_evals.py scorers.py
+  tests/     mirrors app/ (tests/harness/…); fakes/ (FakeDb FakeClock FakeLinear FakeNotion FakeSlack
+             FakeGitHub fake agents); fixtures/
+  scripts/   list_models.py seed_project.py …
   deploy/    Dockerfile deploy.sh scheduler.sh secrets.md
   docs/      architecture.md superpowers/specs/ superpowers/plans/
   .github/workflows/ci.yml
 ```
 
+Same shape as slack-agent-teams: `agents/` is the model side, `harness/` is the code the model
+cannot reach, and the import-linter contracts below make that a failing build instead of a
+convention.
+
 **Layering (import-linter, from day one):**
 
 | Contract | Why |
 |---|---|
-| `core`, `store`, `verify`, `connectors`, `kinds` never import `agents`, `stages`, `http`, `deps`, `main` | gates, queue and kind schemas testable with no model near them |
-| `agents` imports only `connectors`, `core`, `kinds` (param schemas) | the model cannot reach the store or the queue |
+| `harness.{core,store,verify,connectors,kinds}` never import `agents`, `harness.stages`, `harness.http`, `harness.deps`, `main` | gates, queue and kind schemas testable with no model near them |
+| `agents` imports only `harness.connectors`, `harness.core`, `harness.kinds` (param schemas) | the model cannot reach the store or the queue |
 | `stages` never import each other | independent failure domains |
 | `http.console` imports `store` only | structurally read-only |
 

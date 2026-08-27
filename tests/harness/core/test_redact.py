@@ -1,4 +1,4 @@
-from app.core.redact import redact
+from app.harness.core.redact import redact
 
 
 def test_known_secret_shapes_are_redacted_but_surrounding_text_survives() -> None:

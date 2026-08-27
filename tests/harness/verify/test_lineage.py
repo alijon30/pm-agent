@@ -1,4 +1,4 @@
-from app.verify.lineage import DEFAULT_POLICY, check_lineage
+from app.harness.verify.lineage import DEFAULT_POLICY, check_lineage
 
 
 def test_a_root_task_has_depth_zero_and_is_always_allowed() -> None:

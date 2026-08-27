@@ -10,7 +10,7 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.async_transaction import AsyncTransaction, async_transactional
 from google.cloud.firestore_v1.base_query import FieldFilter
 
-from app.store.db import Create, Doc, Filter, Predicate, Update, Updater
+from app.harness.store.db import Create, Doc, Filter, Predicate, Update, Updater
 
 
 class FirestoreDb:

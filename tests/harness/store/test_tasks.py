@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from app.store.tasks import TaskQueue
+from app.harness.store.tasks import TaskQueue
 
 from tests.fakes.fake_clock import FakeClock
 from tests.fakes.fake_db import FakeDb

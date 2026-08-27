@@ -30,7 +30,7 @@ tests/… mirrors
 ---
 
 ### Task 1: Remaining check kinds and actions
-**Files:** modify `app/stages/checks.py`, `app/kinds/templates.py`; tests `tests/stages/test_checks.py`.
+**Files:** modify `app/harness/stages/checks.py`, `app/harness/kinds/templates.py`; tests `tests/stages/test_checks.py`.
 **Interfaces:** `check_pr_reviewed(task, deps) -> (met, observed)` (reviews ≥ 1 on the newest PR for the issue), `check_pr_merged`, `nudge` (acts immediately: templated post to `params.person` about `params.about`, through `check_caps("ping")`), `escalate` (post to the project channel), `reconcile_item` (enqueues one `reconcile` child for a single item payload).
 **Tests:** `test_pr_reviewed_is_met_with_at_least_one_review_on_the_newest_pr`, `test_pr_merged_is_met_only_when_merged`, `test_nudge_posts_once_and_records_a_ping_action`, `test_escalate_goes_to_the_project_channel_not_a_person`, `test_reconcile_item_enqueues_exactly_one_child`, `test_every_kind_in_the_registry_has_an_executor` (parametrised over `KINDS`).
 **Commit:** `feat(kinds): PR review/merge checks, nudge, escalate, reconcile_item`.

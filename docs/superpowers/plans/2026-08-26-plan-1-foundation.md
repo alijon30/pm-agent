@@ -171,7 +171,7 @@ uv python install 3.12
 ### Task 1: Repository scaffold, tooling, CI
 
 **Files:**
-- Create: `pyproject.toml`, `.python-version`, `.env.example`, `.github/workflows/ci.yml`, `app/__init__.py`, `app/py.typed`, `app/{core,store,verify,connectors,agents,stages,http}/__init__.py`, `tests/__init__.py`, `tests/fakes/__init__.py`, `tests/test_smoke.py`, `scripts/list_models.py`
+- Create: `pyproject.toml`, `.python-version`, `.env.example`, `.github/workflows/ci.yml`, `app/__init__.py`, `app/py.typed`, `app/harness/{core,store,verify,kinds,connectors,stages,http}/__init__.py`, `tests/__init__.py`, `tests/fakes/__init__.py`, `tests/test_smoke.py`, `scripts/list_models.py`
 
 **Interfaces:**
 - Produces: the four gates runnable and green on an empty package.
@@ -243,14 +243,14 @@ root_packages = ["app"]
 [[tool.importlinter.contracts]]
 name = "core, store, verify, connectors and kinds never import the model side or the wiring"
 type = "forbidden"
-source_modules = ["app.core", "app.store", "app.verify", "app.connectors", "app.kinds"]
-forbidden_modules = ["app.agents", "app.stages", "app.http", "app.deps", "app.main"]
+source_modules = ["app.harness.core", "app.harness.store", "app.harness.verify", "app.harness.connectors", "app.harness.kinds"]
+forbidden_modules = ["app.agents", "app.harness.stages", "app.harness.http", "app.harness.deps", "app.main"]
 
 [[tool.importlinter.contracts]]
 name = "agents import only connectors, core and kinds — the model cannot reach the store or the queue"
 type = "forbidden"
 source_modules = ["app.agents"]
-forbidden_modules = ["app.store", "app.verify", "app.stages", "app.http", "app.deps", "app.main"]
+forbidden_modules = ["app.harness.store", "app.harness.verify", "app.harness.stages", "app.harness.http", "app.harness.deps", "app.main"]
 ```
 
 - [ ] **Step 2: Write `.python-version`, `.env.example`, package markers**
@@ -276,8 +276,8 @@ PM_MODEL_STRONG=gemini-3.5-flash
 ```
 
 ```bash
-mkdir -p app/core app/store app/verify app/kinds app/connectors app/agents app/stages app/http tests/fakes tests/kinds scripts
-for d in app app/core app/store app/verify app/kinds app/connectors app/agents app/stages app/http tests tests/fakes tests/kinds; do : > "$d/__init__.py"; done
+mkdir -p app/harness/core app/harness/store app/harness/verify app/harness/kinds app/harness/connectors app/agents app/harness/stages app/harness/http tests/fakes tests/harness/kinds scripts
+for d in app app/harness/core app/harness/store app/harness/verify app/harness/kinds app/harness/connectors app/agents app/harness/stages app/harness/http tests tests/fakes tests/harness/kinds; do : > "$d/__init__.py"; done
 : > app/py.typed
 ```
 
@@ -366,9 +366,9 @@ Expected: the list contains `gemini-3.5-flash-lite` and `gemini-3.5-flash`. If e
 
 ```bash
 git add pyproject.toml .python-version .env.example .github/workflows/ci.yml README.md uv.lock \
-  app/__init__.py app/py.typed app/core/__init__.py app/store/__init__.py app/verify/__init__.py \
-  app/kinds/__init__.py app/connectors/__init__.py app/agents/__init__.py app/stages/__init__.py \
-  app/http/__init__.py tests/__init__.py tests/fakes/__init__.py tests/kinds/__init__.py \
+  app/__init__.py app/py.typed app/harness/core/__init__.py app/harness/store/__init__.py app/harness/verify/__init__.py \
+  app/harness/kinds/__init__.py app/harness/connectors/__init__.py app/agents/__init__.py app/harness/stages/__init__.py \
+  app/harness/http/__init__.py tests/__init__.py tests/fakes/__init__.py tests/harness/kinds/__init__.py \
   tests/test_smoke.py scripts/list_models.py
 git commit -m "chore: scaffold pm-agent with uv, the four gates and CI"
 ```
@@ -378,19 +378,19 @@ git commit -m "chore: scaffold pm-agent with uv, the four gates and CI"
 ### Task 2: `core/` — clock, keys, redact, errors
 
 **Files:**
-- Create: `app/core/clock.py`, `app/core/keys.py`, `app/core/redact.py`, `app/core/errors.py`, `tests/fakes/fake_clock.py`
-- Test: `tests/core/test_clock.py`, `tests/core/test_keys.py`, `tests/core/test_redact.py`
+- Create: `app/harness/core/clock.py`, `app/harness/core/keys.py`, `app/harness/core/redact.py`, `app/harness/core/errors.py`, `tests/fakes/fake_clock.py`
+- Test: `tests/harness/core/test_clock.py`, `tests/harness/core/test_keys.py`, `tests/harness/core/test_redact.py`
 
 **Interfaces:**
 - Produces: `Clock` protocol with `now() -> datetime`; `SystemClock`; `iso(dt) -> str`; `parse_iso(s) -> datetime`; `new_id() -> str`; `event_doc_id(provider, provider_event_id) -> str`; `idempotency_key(root_event_id, item_index, kind) -> str`; `redact(text) -> str`; exceptions `PmError`, `SourceUnavailable(source, detail)`, `GateFailed`. Test fake: `FakeClock(start)` with `advance(**timedelta_kwargs)`.
 
 - [ ] **Step 1: Write the failing tests**
 
-`tests/core/test_clock.py`:
+`tests/harness/core/test_clock.py`:
 ```python
 from datetime import UTC, datetime
 
-from app.core.clock import iso, parse_iso
+from app.harness.core.clock import iso, parse_iso
 from tests.fakes.fake_clock import FakeClock
 
 
@@ -413,9 +413,9 @@ def test_fake_clock_advances_deterministically() -> None:
     assert iso(clock.now()) == "2026-08-27T09:16:00+00:00"
 ```
 
-`tests/core/test_keys.py`:
+`tests/harness/core/test_keys.py`:
 ```python
-from app.core.keys import event_doc_id, idempotency_key, new_id
+from app.harness.core.keys import event_doc_id, idempotency_key, new_id
 
 
 def test_new_ids_are_unique_hex_and_safe_as_firestore_doc_ids() -> None:
@@ -437,9 +437,9 @@ def test_idempotency_key_is_stable_and_changes_with_any_input() -> None:
     assert k != idempotency_key("fathom:msg_123", 0, "linear.assign")
 ```
 
-`tests/core/test_redact.py`:
+`tests/harness/core/test_redact.py`:
 ```python
-from app.core.redact import redact
+from app.harness.core.redact import redact
 
 
 def test_known_secret_shapes_are_redacted_but_surrounding_text_survives() -> None:
@@ -461,13 +461,13 @@ def test_ordinary_text_is_unchanged() -> None:
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/core -q
+uv run pytest tests/harness/core -q
 ```
-Expected: FAIL with `ModuleNotFoundError: No module named 'app.core.clock'` (and siblings).
+Expected: FAIL with `ModuleNotFoundError: No module named 'app.harness.core.clock'` (and siblings).
 
 - [ ] **Step 3: Write the implementations**
 
-`app/core/clock.py`:
+`app/harness/core/clock.py`:
 ```python
 """Time, injectable. Everything that reads the clock takes a Clock so tests can move time."""
 
@@ -514,7 +514,7 @@ class FakeClock:
         self._now += timedelta(**kwargs)
 ```
 
-`app/core/keys.py`:
+`app/harness/core/keys.py`:
 ```python
 """Identifiers. Deterministic where idempotency depends on it, random otherwise."""
 
@@ -541,7 +541,7 @@ def idempotency_key(root_event_id: str, item_index: int, kind: str) -> str:
     return hashlib.sha256(raw).hexdigest()[:16]
 ```
 
-`app/core/redact.py`:
+`app/harness/core/redact.py`:
 ```python
 """Strip credential-shaped substrings before text is logged, stored, or shown to a human."""
 
@@ -569,7 +569,7 @@ def redact(text: str) -> str:
     return out
 ```
 
-`app/core/errors.py`:
+`app/harness/core/errors.py`:
 ```python
 """Exceptions whose messages are safe to surface after redact()."""
 
@@ -596,15 +596,15 @@ class GateFailed(PmError):
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/core -q && uv run mypy app && uv run ruff check .
+uv run pytest tests/harness/core -q && uv run mypy app && uv run ruff check .
 ```
 Expected: `6 passed`; mypy and ruff clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/core/clock.py app/core/keys.py app/core/redact.py app/core/errors.py \
-  tests/fakes/fake_clock.py tests/core/test_clock.py tests/core/test_keys.py tests/core/test_redact.py
+git add app/harness/core/clock.py app/harness/core/keys.py app/harness/core/redact.py app/harness/core/errors.py \
+  tests/fakes/fake_clock.py tests/harness/core/test_clock.py tests/harness/core/test_keys.py tests/harness/core/test_redact.py
 git commit -m "feat(core): clock, ids, redaction and error types"
 ```
 
@@ -711,8 +711,8 @@ git commit -m "feat: env-only Settings with PM_ prefix"
 ### Task 4: `store/db.py` protocol, `FakeDb`, `FirestoreDb`
 
 **Files:**
-- Create: `app/store/db.py`, `app/store/firestore.py`, `tests/fakes/fake_db.py`
-- Test: `tests/store/test_fake_db.py`, `tests/store/test_firestore_live.py`
+- Create: `app/harness/store/db.py`, `app/harness/store/firestore.py`, `tests/fakes/fake_db.py`
+- Test: `tests/harness/store/test_fake_db.py`, `tests/harness/store/test_firestore_live.py`
 
 **Interfaces:**
 - Produces:
@@ -738,7 +738,7 @@ git commit -m "feat: env-only Settings with PM_ prefix"
 
 - [ ] **Step 1: Write the failing tests for FakeDb (they define the contract FirestoreDb must match)**
 
-`tests/store/test_fake_db.py`:
+`tests/harness/store/test_fake_db.py`:
 ```python
 from tests.fakes.fake_db import FakeDb
 
@@ -847,11 +847,11 @@ async def test_array_contains_matches_list_fields() -> None:
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/store/test_fake_db.py -q
+uv run pytest tests/harness/store/test_fake_db.py -q
 ```
 Expected: FAIL with `ModuleNotFoundError: No module named 'tests.fakes.fake_db'`.
 
-- [ ] **Step 3: Write `app/store/db.py`**
+- [ ] **Step 3: Write `app/harness/store/db.py`**
 
 ```python
 """The tiny document-store surface the harness needs. FirestoreDb implements it for real;
@@ -913,7 +913,7 @@ class Db(Protocol):
 
 ```python
 """In-memory Db. Single-threaded, so cas() is trivially atomic. Mirrors the semantics the
-FirestoreDb tests in tests/store/test_firestore_live.py check against the real service."""
+FirestoreDb tests in tests/harness/store/test_firestore_live.py check against the real service."""
 
 from __future__ import annotations
 
@@ -921,7 +921,7 @@ import copy
 from collections.abc import Sequence
 from typing import Any
 
-from app.store.db import Create, Doc, Filter, Predicate, Update, Updater
+from app.harness.store.db import Create, Doc, Filter, Predicate, Update, Updater
 
 
 def _matches(doc: dict[str, Any], filters: Sequence[Filter]) -> bool:
@@ -1015,11 +1015,11 @@ class FakeDb:
 - [ ] **Step 5: Run FakeDb tests to verify they pass**
 
 ```bash
-uv run pytest tests/store/test_fake_db.py -q
+uv run pytest tests/harness/store/test_fake_db.py -q
 ```
 Expected: `9 passed`.
 
-- [ ] **Step 6: Write `app/store/firestore.py`**
+- [ ] **Step 6: Write `app/harness/store/firestore.py`**
 
 ```python
 """Db on Firestore (native mode), async client. The only module that imports google.cloud."""
@@ -1034,7 +1034,7 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.async_transaction import AsyncTransaction, async_transactional
 from google.cloud.firestore_v1.base_query import FieldFilter
 
-from app.store.db import Create, Doc, Filter, Predicate, Update, Updater
+from app.harness.store.db import Create, Doc, Filter, Predicate, Update, Updater
 
 
 class FirestoreDb:
@@ -1120,7 +1120,7 @@ class FirestoreDb:
 
 - [ ] **Step 7: Write the live contract test (skipped without credentials)**
 
-`tests/store/test_firestore_live.py`:
+`tests/harness/store/test_firestore_live.py`:
 ```python
 """Runs the FakeDb contract against real Firestore. Needs ADC and PM_GCP_PROJECT; skipped in CI."""
 
@@ -1129,7 +1129,7 @@ import uuid
 
 import pytest
 
-from app.store.firestore import FirestoreDb
+from app.harness.store.firestore import FirestoreDb
 
 pytestmark = pytest.mark.live
 live = pytest.mark.skipif(not os.environ.get("PM_GCP_PROJECT"), reason="no PM_GCP_PROJECT")
@@ -1164,15 +1164,15 @@ async def test_firestore_db_honours_the_fake_db_contract() -> None:
 ```bash
 uv run ruff check . && uv run mypy app && uv run lint-imports && uv run pytest -q
 gcloud auth application-default login
-PM_GCP_PROJECT=pm-agent-hack-2026 uv run pytest tests/store/test_firestore_live.py -q -m live
+PM_GCP_PROJECT=pm-agent-hack-2026 uv run pytest tests/harness/store/test_firestore_live.py -q -m live
 ```
 Expected: gates green with the live test skipped; the live run reports `1 passed`. If `count()` raises on the aggregation result shape, print `result` once and adapt the indexing — the contract test is the arbiter.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add app/store/db.py app/store/firestore.py tests/fakes/fake_db.py \
-  tests/store/test_fake_db.py tests/store/test_firestore_live.py
+git add app/harness/store/db.py app/harness/store/firestore.py tests/fakes/fake_db.py \
+  tests/harness/store/test_fake_db.py tests/harness/store/test_firestore_live.py
 git commit -m "feat(store): Db protocol with in-memory fake and Firestore implementation"
 ```
 
@@ -1181,17 +1181,17 @@ git commit -m "feat(store): Db protocol with in-memory fake and Firestore implem
 ### Task 5: `verify/lineage.py`
 
 **Files:**
-- Create: `app/verify/lineage.py`
-- Test: `tests/verify/test_lineage.py`
+- Create: `app/harness/verify/lineage.py`
+- Test: `tests/harness/verify/test_lineage.py`
 
 **Interfaces:**
 - Produces: `LineageVerdict(ok: bool, depth: int, reason: str = "")`; `check_lineage(parent: Doc | None, existing_children: int, policy: dict[str, Any]) -> LineageVerdict`; `DEFAULT_POLICY = {"max_depth": 4, "max_children": 12}` (a plan is one parent with several children).
 
 - [ ] **Step 1: Write the failing tests**
 
-`tests/verify/test_lineage.py`:
+`tests/harness/verify/test_lineage.py`:
 ```python
-from app.verify.lineage import DEFAULT_POLICY, check_lineage
+from app.harness.verify.lineage import DEFAULT_POLICY, check_lineage
 
 
 def test_a_root_task_has_depth_zero_and_is_always_allowed() -> None:
@@ -1224,11 +1224,11 @@ def test_project_policy_overrides_defaults() -> None:
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/verify/test_lineage.py -q
+uv run pytest tests/harness/verify/test_lineage.py -q
 ```
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write `app/verify/lineage.py`**
+- [ ] **Step 3: Write `app/harness/verify/lineage.py`**
 
 ```python
 """Structural loop prevention. Every enqueue passes here; a chain cannot exceed max_depth and a
@@ -1274,14 +1274,14 @@ def check_lineage(
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/verify/test_lineage.py -q && uv run mypy app
+uv run pytest tests/harness/verify/test_lineage.py -q && uv run mypy app
 ```
 Expected: `5 passed`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/verify/lineage.py tests/verify/test_lineage.py
+git add app/harness/verify/lineage.py tests/harness/verify/test_lineage.py
 git commit -m "feat(verify): lineage gate — depth and fan-out limits"
 ```
 
@@ -1290,8 +1290,8 @@ git commit -m "feat(verify): lineage gate — depth and fan-out limits"
 ### Task 6: `store/tasks.py` — the task-graph queue
 
 **Files:**
-- Create: `app/store/tasks.py`
-- Test: `tests/store/test_tasks.py`
+- Create: `app/harness/store/tasks.py`
+- Test: `tests/harness/store/test_tasks.py`
 
 **Interfaces:**
 - Consumes: `Db` (with `cas(..., creates, updates)` and the `array_contains` op), `Clock`, `iso`, `new_id`, `check_lineage`, `DEFAULT_POLICY`.
@@ -1325,11 +1325,11 @@ git commit -m "feat(verify): lineage gate — depth and fan-out limits"
 
 - [ ] **Step 1: Write the failing tests**
 
-`tests/store/test_tasks.py`:
+`tests/harness/store/test_tasks.py`:
 ```python
 from datetime import UTC, datetime, timedelta
 
-from app.store.tasks import TaskQueue
+from app.harness.store.tasks import TaskQueue
 from tests.fakes.fake_clock import FakeClock
 from tests.fakes.fake_db import FakeDb
 
@@ -1638,11 +1638,11 @@ async def test_open_count_counts_only_open_statuses() -> None:
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/store/test_tasks.py -q
+uv run pytest tests/harness/store/test_tasks.py -q
 ```
-Expected: FAIL with `ModuleNotFoundError: No module named 'app.store.tasks'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'app.harness.store.tasks'`.
 
-- [ ] **Step 3: Write `app/store/tasks.py`**
+- [ ] **Step 3: Write `app/harness/store/tasks.py`**
 
 ```python
 """The durable task-graph queue. Firestore documents are the tasks; a lease is the claim;
@@ -1657,10 +1657,10 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.core.clock import Clock, iso
-from app.core.keys import new_id
-from app.store.db import Create, Db, Doc, Update
-from app.verify.lineage import DEFAULT_POLICY, check_lineage
+from app.harness.core.clock import Clock, iso
+from app.harness.core.keys import new_id
+from app.harness.store.db import Create, Db, Doc, Update
+from app.harness.verify.lineage import DEFAULT_POLICY, check_lineage
 
 BACKOFF_SECONDS = (60, 300, 900)
 OPEN_STATUSES = ("queued", "blocked", "leased", "deferred")
@@ -1999,14 +1999,14 @@ class TaskQueue:
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/store -q && uv run mypy app && uv run lint-imports && uv run ruff check .
+uv run pytest tests/harness/store -q && uv run mypy app && uv run lint-imports && uv run ruff check .
 ```
 Expected: `30 passed` (live skipped); mypy and import-linter clean. If ruff flags the walrus inside the comprehension in `promote_ready`, rewrite it as a small `for` loop — behaviour is what the tests pin, not the shape.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/store/tasks.py tests/store/test_tasks.py
+git add app/harness/store/tasks.py tests/harness/store/test_tasks.py
 git commit -m "feat(store): task-graph queue — leases, dependencies, promotion, cascade cancel, plan materialisation"
 ```
 
@@ -2015,8 +2015,8 @@ git commit -m "feat(store): task-graph queue — leases, dependencies, promotion
 ### Task 6b: `kinds/` registry skeleton and `verify/plan.py`
 
 **Files:**
-- Create: `app/kinds/__init__.py`, `app/kinds/base.py`, `app/kinds/registry.py`, `app/verify/plan.py`
-- Test: `tests/kinds/test_registry.py`, `tests/verify/test_plan.py`
+- Create: `app/harness/kinds/__init__.py`, `app/harness/kinds/base.py`, `app/harness/kinds/registry.py`, `app/harness/verify/plan.py`
+- Test: `tests/harness/kinds/test_registry.py`, `tests/harness/verify/test_plan.py`
 
 **Interfaces:**
 - Produces:
@@ -2050,9 +2050,9 @@ git commit -m "feat(store): task-graph queue — leases, dependencies, promotion
 
 - [ ] **Step 1: Write the failing tests**
 
-`tests/kinds/test_registry.py`:
+`tests/harness/kinds/test_registry.py`:
 ```python
-from app.kinds.registry import KINDS, get_kind, validate_params
+from app.harness.kinds.registry import KINDS, get_kind, validate_params
 
 
 def test_the_catalog_lists_every_kind_the_spec_names() -> None:
@@ -2082,11 +2082,11 @@ def test_each_kind_declares_which_unmet_actions_it_allows() -> None:
     assert KINDS["nudge"].unmet_actions == ()
 ```
 
-`tests/verify/test_plan.py`:
+`tests/harness/verify/test_plan.py`:
 ```python
 from datetime import UTC, datetime
 
-from app.verify.plan import check_plan
+from app.harness.verify.plan import check_plan
 
 NOW = datetime(2026, 8, 27, 9, 0, tzinfo=UTC)
 POLICY = {"plan_horizon_days": 30, "max_plan_size": 12, "max_open_tasks": 50}
@@ -2205,15 +2205,15 @@ def test_duplicate_keys_reject_the_later_one() -> None:
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/kinds tests/verify/test_plan.py -q
+uv run pytest tests/harness/kinds tests/harness/verify/test_plan.py -q
 ```
 Expected: FAIL with `ModuleNotFoundError`.
 
 - [ ] **Step 3: Write the kinds registry**
 
-`app/kinds/__init__.py`: empty.
+`app/harness/kinds/__init__.py`: empty.
 
-`app/kinds/base.py`:
+`app/harness/kinds/base.py`:
 ```python
 """A task kind is the unit of what the planner may schedule: a name, a parameter schema, and the
 unmet-actions it may trigger. Executors (Plan 2) are looked up by the same name in stages/."""
@@ -2238,7 +2238,7 @@ class StrictParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 ```
 
-`app/kinds/registry.py`:
+`app/harness/kinds/registry.py`:
 ```python
 """The whitelist. Adding a capability to the agent = one KindSpec here + one executor in stages."""
 
@@ -2248,7 +2248,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.kinds.base import KindSpec, StrictParams
+from app.harness.kinds.base import KindSpec, StrictParams
 
 UNMET_ACTIONS = ("none", "nudge_assignee", "nudge_reviewer", "escalate_channel")
 
@@ -2337,7 +2337,7 @@ def validate_params(kind: str, params: dict[str, Any]) -> tuple[dict[str, Any] |
         return None, f"{kind}: {loc}: {first.get('msg', 'invalid')}"
 ```
 
-- [ ] **Step 4: Write `app/verify/plan.py`**
+- [ ] **Step 4: Write `app/harness/verify/plan.py`**
 
 ```python
 """The plan gate. A planner's proposal becomes queue tasks only after this: known kinds, valid
@@ -2351,8 +2351,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.core.clock import iso, parse_iso
-from app.kinds.registry import KINDS, UNMET_ACTIONS, validate_params
+from app.harness.core.clock import iso, parse_iso
+from app.harness.kinds.registry import KINDS, UNMET_ACTIONS, validate_params
 
 ID_PARAM_FIELDS = ("issue", "person", "pr")
 DEP_POLICIES = ("skip", "run_anyway", "cancel")
@@ -2481,15 +2481,15 @@ def check_plan(
 - [ ] **Step 5: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/kinds tests/verify -q && uv run mypy app && uv run lint-imports && uv run ruff check .
+uv run pytest tests/harness/kinds tests/harness/verify -q && uv run mypy app && uv run lint-imports && uv run ruff check .
 ```
 Expected: pass; import-linter allows `verify → kinds` and `kinds → core` only.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/kinds/__init__.py app/kinds/base.py app/kinds/registry.py app/verify/plan.py \
-  tests/kinds/__init__.py tests/kinds/test_registry.py tests/verify/test_plan.py
+git add app/harness/kinds/__init__.py app/harness/kinds/base.py app/harness/kinds/registry.py app/harness/verify/plan.py \
+  tests/harness/kinds/__init__.py tests/harness/kinds/test_registry.py tests/harness/verify/test_plan.py
 git commit -m "feat: task kinds catalog and the plan gate (kinds, params, deps, cycles, horizon, caps)"
 ```
 
@@ -2498,8 +2498,8 @@ git commit -m "feat: task kinds catalog and the plan gate (kinds, params, deps, 
 ### Task 7: `connectors/fathom.py` — signature and payload parsing
 
 **Files:**
-- Create: `app/connectors/fathom.py`, `tests/fixtures/fathom_webhook_sample.json`
-- Test: `tests/connectors/test_fathom.py`
+- Create: `app/harness/connectors/fathom.py`, `tests/fixtures/fathom_webhook_sample.json`
+- Test: `tests/harness/connectors/test_fathom.py`
 
 **Interfaces:**
 - Produces:
@@ -2547,7 +2547,7 @@ git commit -m "feat: task kinds catalog and the plan gate (kinds, params, deps, 
 
 - [ ] **Step 2: Write the failing tests**
 
-`tests/connectors/test_fathom.py`:
+`tests/harness/connectors/test_fathom.py`:
 ```python
 import base64
 import hashlib
@@ -2555,7 +2555,7 @@ import hmac
 import json
 from pathlib import Path
 
-from app.connectors.fathom import parse_meeting, render_transcript, transcript_plain, verify_signature
+from app.harness.connectors.fathom import parse_meeting, render_transcript, transcript_plain, verify_signature
 
 SAMPLE = Path(__file__).parents[1] / "fixtures" / "fathom_webhook_sample.json"
 SECRET_BYTES = b"0123456789abcdef0123456789abcdef"
@@ -2632,11 +2632,11 @@ def test_transcript_renderings() -> None:
 - [ ] **Step 3: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/connectors/test_fathom.py -q
+uv run pytest tests/harness/connectors/test_fathom.py -q
 ```
-Expected: FAIL with `ModuleNotFoundError: No module named 'app.connectors.fathom'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'app.harness.connectors.fathom'`.
 
-- [ ] **Step 4: Write `app/connectors/fathom.py`**
+- [ ] **Step 4: Write `app/harness/connectors/fathom.py`**
 
 ```python
 """Fathom webhook verification and payload normalisation. The REST client (meetings, transcript
@@ -2735,14 +2735,14 @@ def transcript_plain(meeting: dict[str, Any]) -> str:
 - [ ] **Step 5: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/connectors -q && uv run mypy app && uv run ruff check .
+uv run pytest tests/harness/connectors -q && uv run mypy app && uv run ruff check .
 ```
 Expected: `7 passed`; clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/connectors/fathom.py tests/connectors/test_fathom.py tests/fixtures/fathom_webhook_sample.json
+git add app/harness/connectors/fathom.py tests/harness/connectors/test_fathom.py tests/fixtures/fathom_webhook_sample.json
 git commit -m "feat(connectors): Fathom webhook signature verification and meeting normalisation"
 ```
 
@@ -2751,8 +2751,8 @@ git commit -m "feat(connectors): Fathom webhook signature verification and meeti
 ### Task 8: `store/events.py`, `store/projects.py`, `deps.py`, the Fathom webhook route
 
 **Files:**
-- Create: `app/store/events.py`, `app/store/projects.py`, `app/deps.py`, `app/http/webhooks.py`, `app/main.py` (first version: `create_app` only), `tests/conftest.py`
-- Test: `tests/store/test_events.py`, `tests/store/test_projects.py`, `tests/http/test_webhooks.py`
+- Create: `app/harness/store/events.py`, `app/harness/store/projects.py`, `app/harness/deps.py`, `app/harness/http/webhooks.py`, `app/main.py` (first version: `create_app` only), `tests/conftest.py`
+- Test: `tests/harness/store/test_events.py`, `tests/harness/store/test_projects.py`, `tests/http/test_webhooks.py`
 
 **Interfaces:**
 - Produces:
@@ -2770,7 +2770,7 @@ git commit -m "feat(connectors): Fathom webhook signature verification and meeti
       async def upsert(self, slug: str, data: dict) -> None
 
   @dataclass
-  class Deps:  # app/deps.py
+  class Deps:  # app/harness/deps.py
       settings: Settings; db: Db; clock: Clock; queue: TaskQueue; events: EventStore
       projects: ProjectStore; decisions: DecisionStore; extractor: Extractor; triage: Triage
   ```
@@ -2779,11 +2779,11 @@ git commit -m "feat(connectors): Fathom webhook signature verification and meeti
 
 - [ ] **Step 1: Write the failing tests**
 
-`tests/store/test_events.py`:
+`tests/harness/store/test_events.py`:
 ```python
 from datetime import UTC, datetime
 
-from app.store.events import EventStore
+from app.harness.store.events import EventStore
 from tests.fakes.fake_clock import FakeClock
 from tests.fakes.fake_db import FakeDb
 
@@ -2811,12 +2811,12 @@ async def test_note_appends_without_touching_the_payload() -> None:
     assert doc is not None and doc["notes"] == ["no transcript"]
 ```
 
-`tests/store/test_projects.py`:
+`tests/harness/store/test_projects.py`:
 ```python
 import pytest
 
-from app.core.errors import PmError
-from app.store.projects import ProjectStore
+from app.harness.core.errors import PmError
+from app.harness.store.projects import ProjectStore
 from tests.fakes.fake_db import FakeDb
 
 
@@ -2843,12 +2843,12 @@ from fastapi.testclient import TestClient
 
 from app.agents.triage import PassthroughTriage
 from app.config import Settings
-from app.deps import Deps
+from app.harness.deps import Deps
 from app.main import create_app
-from app.store.decisions import DecisionStore
-from app.store.events import EventStore
-from app.store.projects import ProjectStore
-from app.store.tasks import TaskQueue
+from app.harness.store.decisions import DecisionStore
+from app.harness.store.events import EventStore
+from app.harness.store.projects import ProjectStore
+from app.harness.store.tasks import TaskQueue
 from tests.fakes.fake_agents import FakeExtractor
 from tests.fakes.fake_clock import FakeClock
 from tests.fakes.fake_db import FakeDb
@@ -2928,7 +2928,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.deps import Deps
+from app.harness.deps import Deps
 
 SAMPLE = (Path(__file__).parents[1] / "fixtures" / "fathom_webhook_sample.json").read_bytes()
 SECRET_BYTES = b"0123456789abcdef0123456789abcdef"
@@ -2993,13 +2993,13 @@ async def test_a_call_without_a_transcript_is_recorded_but_not_queued(
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/store/test_events.py tests/store/test_projects.py tests/http -q
+uv run pytest tests/harness/store/test_events.py tests/harness/store/test_projects.py tests/http -q
 ```
 Expected: FAIL with `ModuleNotFoundError` (events/projects/deps/main/decisions/fake_agents).
 
 - [ ] **Step 3: Write the stores**
 
-`app/store/events.py`:
+`app/harness/store/events.py`:
 ```python
 """Inbound events. The doc id is provider:provider_event_id, so create() failing IS the dedupe."""
 
@@ -3007,9 +3007,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.clock import Clock, iso
-from app.core.keys import event_doc_id
-from app.store.db import Db, Doc
+from app.harness.core.clock import Clock, iso
+from app.harness.core.keys import event_doc_id
+from app.harness.store.db import Db, Doc
 
 
 class EventStore:
@@ -3042,7 +3042,7 @@ class EventStore:
         await self._db.update("events", event_id, {"notes": notes})
 ```
 
-`app/store/projects.py`:
+`app/harness/store/projects.py`:
 ```python
 """Project configuration: roster, policy, and the ids of the external workspaces."""
 
@@ -3050,8 +3050,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.errors import PmError
-from app.store.db import Db, Doc
+from app.harness.core.errors import PmError
+from app.harness.store.db import Db, Doc
 
 
 class ProjectStore:
@@ -3076,7 +3076,7 @@ class ProjectStore:
 
 - [ ] **Step 4: Write the minimal stubs that Deps needs (filled in by Tasks 9–10)**
 
-`app/store/decisions.py` (stub — Task 10 replaces the body):
+`app/harness/store/decisions.py` (stub — Task 10 replaces the body):
 ```python
 """Decision ledger. Full implementation in Task 10."""
 
@@ -3084,8 +3084,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.clock import Clock
-from app.store.db import Db
+from app.harness.core.clock import Clock
+from app.harness.store.db import Db
 
 
 class DecisionStore:
@@ -3157,7 +3157,7 @@ class FakeExtractor:
         return self.results.pop(0)
 ```
 
-`app/deps.py`:
+`app/harness/deps.py`:
 ```python
 """Everything a route or a stage needs, in one object, so wiring lives in main.py and tests
 build it from fakes in one place (tests/conftest.py)."""
@@ -3168,12 +3168,12 @@ from dataclasses import dataclass
 
 from app.agents.protocols import Extractor, Triage
 from app.config import Settings
-from app.core.clock import Clock
-from app.store.db import Db
-from app.store.decisions import DecisionStore
-from app.store.events import EventStore
-from app.store.projects import ProjectStore
-from app.store.tasks import TaskQueue
+from app.harness.core.clock import Clock
+from app.harness.store.db import Db
+from app.harness.store.decisions import DecisionStore
+from app.harness.store.events import EventStore
+from app.harness.store.projects import ProjectStore
+from app.harness.store.tasks import TaskQueue
 
 
 @dataclass
@@ -3191,7 +3191,7 @@ class Deps:
 
 - [ ] **Step 5: Write the webhook route and `create_app`**
 
-`app/http/webhooks.py`:
+`app/harness/http/webhooks.py`:
 ```python
 """Inbound webhooks. Verify, store, enqueue, return — no model work happens on this path."""
 
@@ -3202,8 +3202,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.connectors.fathom import parse_meeting, verify_signature
-from app.deps import Deps
+from app.harness.connectors.fathom import parse_meeting, verify_signature
+from app.harness.deps import Deps
 
 router = APIRouter()
 
@@ -3255,8 +3255,8 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from app.deps import Deps
-from app.http import webhooks
+from app.harness.deps import Deps
+from app.harness.http import webhooks
 
 
 def create_app(deps: Deps) -> FastAPI:
@@ -3274,16 +3274,16 @@ def create_app(deps: Deps) -> FastAPI:
 - [ ] **Step 6: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/store tests/http -q && uv run mypy app && uv run lint-imports && uv run ruff check .
+uv run pytest tests/harness/store tests/http -q && uv run mypy app && uv run lint-imports && uv run ruff check .
 ```
 Expected: all pass; `deps.settings.fathom_webhook_secret = SECRET` mutation works because pydantic-settings models are mutable by default.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add app/store/events.py app/store/projects.py app/store/decisions.py app/agents/protocols.py \
-  app/agents/triage.py app/deps.py app/http/webhooks.py app/main.py tests/conftest.py \
-  tests/fakes/fake_agents.py tests/store/test_events.py tests/store/test_projects.py \
+git add app/harness/store/events.py app/harness/store/projects.py app/harness/store/decisions.py app/agents/protocols.py \
+  app/agents/triage.py app/harness/deps.py app/harness/http/webhooks.py app/main.py tests/conftest.py \
+  tests/fakes/fake_agents.py tests/harness/store/test_events.py tests/harness/store/test_projects.py \
   tests/http/test_webhooks.py
 git commit -m "feat: Fathom webhook — verify, dedupe, enqueue extract"
 ```
@@ -3293,8 +3293,8 @@ git commit -m "feat: Fathom webhook — verify, dedupe, enqueue extract"
 ### Task 9: `agents/schemas.py` and `verify/evidence.py`
 
 **Files:**
-- Create: `app/agents/schemas.py`, `app/verify/evidence.py`
-- Test: `tests/agents/test_schemas.py`, `tests/verify/test_evidence.py`
+- Create: `app/agents/schemas.py`, `app/harness/verify/evidence.py`
+- Test: `tests/agents/test_schemas.py`, `tests/harness/verify/test_evidence.py`
 
 **Interfaces:**
 - Produces: pydantic models `Evidence(quote, timestamp="", speaker="")`, `Decision(statement, rejected_options=[], evidence)`, `ActionItem(title, description="", owner_name=None, due_hint=None, priority_hint=None, evidence)`, `OpenQuestion(question, evidence)`, `ExtractResult(decisions=[], action_items=[], open_questions=[])`.
@@ -3336,9 +3336,9 @@ def test_empty_sections_default_to_empty_lists() -> None:
         "decisions": [], "action_items": [], "open_questions": []}
 ```
 
-`tests/verify/test_evidence.py`:
+`tests/harness/verify/test_evidence.py`:
 ```python
-from app.verify.evidence import check_evidence, normalize, quote_in_transcript
+from app.harness.verify.evidence import check_evidence, normalize, quote_in_transcript
 
 TRANSCRIPT = (
     "Let's move payment reminders to three days after the due date. Nodir, can you own that? "
@@ -3386,7 +3386,7 @@ def test_check_evidence_keeps_items_with_a_real_quote_and_drops_the_rest_with_a_
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/agents/test_schemas.py tests/verify/test_evidence.py -q
+uv run pytest tests/agents/test_schemas.py tests/harness/verify/test_evidence.py -q
 ```
 Expected: FAIL with `ModuleNotFoundError`.
 
@@ -3437,7 +3437,7 @@ class ExtractResult(BaseModel):
     open_questions: list[OpenQuestion] = Field(default_factory=list)
 ```
 
-- [ ] **Step 4: Write `app/verify/evidence.py`**
+- [ ] **Step 4: Write `app/harness/verify/evidence.py`**
 
 ```python
 """The evidence gate: an extracted item survives only if at least one of its quotes appears
@@ -3486,14 +3486,14 @@ def check_evidence(items: list[dict[str, Any]], transcript_text: str) -> Evidenc
 - [ ] **Step 5: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/agents tests/verify -q && uv run mypy app && uv run lint-imports
+uv run pytest tests/agents tests/harness/verify -q && uv run mypy app && uv run lint-imports
 ```
 Expected: `15 passed`; clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/agents/schemas.py app/verify/evidence.py tests/agents/test_schemas.py tests/verify/test_evidence.py
+git add app/agents/schemas.py app/harness/verify/evidence.py tests/agents/test_schemas.py tests/harness/verify/test_evidence.py
 git commit -m "feat: extraction schemas and the verbatim-evidence gate"
 ```
 
@@ -3502,9 +3502,9 @@ git commit -m "feat: extraction schemas and the verbatim-evidence gate"
 ### Task 10: `store/decisions.py`, `stages/base.py`, `stages/extract.py`
 
 **Files:**
-- Modify: `app/store/decisions.py` (replace the stub body)
-- Create: `app/stages/base.py`, `app/stages/extract.py`
-- Test: `tests/store/test_decisions.py`, `tests/stages/test_extract.py`
+- Modify: `app/harness/store/decisions.py` (replace the stub body)
+- Create: `app/harness/stages/base.py`, `app/harness/stages/extract.py`
+- Test: `tests/harness/store/test_decisions.py`, `tests/stages/test_extract.py`
 
 **Interfaces:**
 - Consumes: `Deps`, `ExtractResult`, `check_evidence`, `parse_meeting`, `render_transcript`, `transcript_plain`.
@@ -3528,11 +3528,11 @@ git commit -m "feat: extraction schemas and the verbatim-evidence gate"
 
 - [ ] **Step 1: Write the failing tests**
 
-`tests/store/test_decisions.py`:
+`tests/harness/store/test_decisions.py`:
 ```python
 from datetime import UTC, datetime
 
-from app.store.decisions import DecisionStore
+from app.harness.store.decisions import DecisionStore
 from tests.fakes.fake_clock import FakeClock
 from tests.fakes.fake_db import FakeDb
 
@@ -3560,8 +3560,8 @@ async def test_decisions_are_stored_with_a_fathom_source_pointer_and_empty_links
 import json
 from pathlib import Path
 
-from app.deps import Deps
-from app.stages.extract import run, select_with_context
+from app.harness.deps import Deps
+from app.harness.stages.extract import run, select_with_context
 from tests.fakes.fake_agents import FakeExtractor
 
 SAMPLE = json.loads((Path(__file__).parents[1] / "fixtures" / "fathom_webhook_sample.json").read_text())
@@ -3649,11 +3649,11 @@ async def test_the_bounce_can_rescue_an_item_when_the_model_supplies_a_real_quot
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-uv run pytest tests/store/test_decisions.py tests/stages -q
+uv run pytest tests/harness/store/test_decisions.py tests/stages -q
 ```
 Expected: FAIL (`NotImplementedError` for decisions; `ModuleNotFoundError` for stages).
 
-- [ ] **Step 3: Replace `app/store/decisions.py`**
+- [ ] **Step 3: Replace `app/harness/store/decisions.py`**
 
 ```python
 """Decision ledger: every decision a call produced, with the exact moment it was said. Started
@@ -3663,9 +3663,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.clock import Clock, iso
-from app.core.keys import new_id
-from app.store.db import Db
+from app.harness.core.clock import Clock, iso
+from app.harness.core.keys import new_id
+from app.harness.store.db import Db
 
 
 class DecisionStore:
@@ -3701,7 +3701,7 @@ class DecisionStore:
         return ids
 ```
 
-- [ ] **Step 4: Write `app/stages/base.py`**
+- [ ] **Step 4: Write `app/harness/stages/base.py`**
 
 ```python
 """Shared stage types. A stage is a function (task, deps) -> StageResult; it never writes to the
@@ -3713,8 +3713,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.deps import Deps
-from app.store.db import Doc
+from app.harness.deps import Deps
+from app.harness.store.db import Doc
 
 
 @dataclass(frozen=True)
@@ -3726,7 +3726,7 @@ class StageResult:
 StageHandler = Callable[[Doc, Deps], Awaitable[StageResult]]
 ```
 
-- [ ] **Step 5: Write `app/stages/extract.py`**
+- [ ] **Step 5: Write `app/harness/stages/extract.py`**
 
 ```python
 """extract: transcript → decisions, action items, open questions — each with verbatim evidence,
@@ -3737,12 +3737,12 @@ from __future__ import annotations
 from typing import Any
 
 from app.agents.schemas import ExtractResult
-from app.connectors.fathom import parse_meeting, render_transcript, transcript_plain
-from app.core.errors import PmError
-from app.deps import Deps
-from app.stages.base import StageResult
-from app.store.db import Doc
-from app.verify.evidence import check_evidence
+from app.harness.connectors.fathom import parse_meeting, render_transcript, transcript_plain
+from app.harness.core.errors import PmError
+from app.harness.deps import Deps
+from app.harness.stages.base import StageResult
+from app.harness.store.db import Doc
+from app.harness.verify.evidence import check_evidence
 
 SECTIONS = ("decisions", "action_items", "open_questions")
 
@@ -3834,15 +3834,15 @@ async def run(task: Doc, deps: Deps) -> StageResult:
 - [ ] **Step 6: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/store tests/stages -q && uv run mypy app && uv run lint-imports && uv run ruff check .
+uv run pytest tests/harness/store tests/stages -q && uv run mypy app && uv run lint-imports && uv run ruff check .
 ```
 Expected: pass; import-linter confirms `stages` → `deps` → `agents.protocols` is allowed and `agents` imports nothing from `store`.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add app/store/decisions.py app/stages/base.py app/stages/extract.py \
-  tests/store/test_decisions.py tests/stages/test_extract.py
+git add app/harness/store/decisions.py app/harness/stages/base.py app/harness/stages/extract.py \
+  tests/harness/store/test_decisions.py tests/stages/test_extract.py
 git commit -m "feat(stages): extract stage with evidence gate, one bounce, and decision ledger"
 ```
 
@@ -3851,7 +3851,7 @@ git commit -m "feat(stages): extract stage with evidence gate, one bounce, and d
 ### Task 11: `stages/runner.py` and `POST /tick`
 
 **Files:**
-- Create: `app/stages/runner.py`, `app/http/tick.py`
+- Create: `app/harness/stages/runner.py`, `app/harness/http/tick.py`
 - Modify: `app/main.py` (include the tick router)
 - Test: `tests/stages/test_runner.py`, `tests/http/test_tick.py`
 
@@ -3866,10 +3866,10 @@ import asyncio
 import json
 from pathlib import Path
 
-from app.deps import Deps
-from app.stages import runner
-from app.stages.base import StageResult
-from app.store.db import Doc
+from app.harness.deps import Deps
+from app.harness.stages import runner
+from app.harness.stages.base import StageResult
+from app.harness.store.db import Doc
 from tests.fakes.fake_agents import FakeExtractor
 
 SAMPLE = json.loads((Path(__file__).parents[1] / "fixtures" / "fathom_webhook_sample.json").read_text())
@@ -3942,7 +3942,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.deps import Deps
+from app.harness.deps import Deps
 from tests.fakes.fake_agents import FakeExtractor
 
 SAMPLE = json.loads((Path(__file__).parents[1] / "fixtures" / "fathom_webhook_sample.json").read_text())
@@ -3973,9 +3973,9 @@ async def test_tick_runs_due_tasks_and_reports_outcomes(client: TestClient, deps
 ```bash
 uv run pytest tests/stages/test_runner.py tests/http/test_tick.py -q
 ```
-Expected: FAIL with `ModuleNotFoundError: No module named 'app.stages.runner'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'app.harness.stages.runner'`.
 
-- [ ] **Step 3: Write `app/stages/runner.py`**
+- [ ] **Step 3: Write `app/harness/stages/runner.py`**
 
 ```python
 """Claim → run → complete-or-fail. The only code that both runs a stage and touches the queue."""
@@ -3984,11 +3984,11 @@ from __future__ import annotations
 
 import asyncio
 
-from app.core.redact import redact
-from app.deps import Deps
-from app.stages import extract
-from app.stages.base import StageHandler
-from app.store.db import Doc
+from app.harness.core.redact import redact
+from app.harness.deps import Deps
+from app.harness.stages import extract
+from app.harness.stages.base import StageHandler
+from app.harness.store.db import Doc
 
 STAGES: dict[str, StageHandler] = {
     "extract": extract.run,
@@ -4013,9 +4013,9 @@ async def run_task(task: Doc, deps: Deps) -> str:
     return "done"
 ```
 
-- [ ] **Step 4: Write `app/http/tick.py` and include it in `main.py`**
+- [ ] **Step 4: Write `app/harness/http/tick.py` and include it in `main.py`**
 
-`app/http/tick.py`:
+`app/harness/http/tick.py`:
 ```python
 """The heartbeat. Cloud Scheduler POSTs here once a minute with the shared token; we run every
 due task whose kind we know how to handle, sequentially, oldest first."""
@@ -4027,8 +4027,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.deps import Deps
-from app.stages.runner import STAGES, run_task
+from app.harness.deps import Deps
+from app.harness.stages.runner import STAGES, run_task
 
 router = APIRouter()
 
@@ -4047,7 +4047,7 @@ async def tick(request: Request) -> dict[str, Any]:
 
 In `app/main.py`, change the import and router lines:
 ```python
-from app.http import tick, webhooks
+from app.harness.http import tick, webhooks
 ...
     app.include_router(webhooks.router)
     app.include_router(tick.router)
@@ -4063,7 +4063,7 @@ Expected: all pass (live tests skipped).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/stages/runner.py app/http/tick.py app/main.py tests/stages/test_runner.py tests/http/test_tick.py
+git add app/harness/stages/runner.py app/harness/http/tick.py app/main.py tests/stages/test_runner.py tests/http/test_tick.py
 git commit -m "feat: stage runner with timeout and retry classification; /tick heartbeat"
 ```
 
@@ -4094,7 +4094,7 @@ import pytest
 from app.agents.extractor import GeminiExtractor
 from app.agents.schemas import ExtractResult
 from app.config import Settings
-from app.verify.evidence import check_evidence, normalize, quote_in_transcript
+from app.harness.verify.evidence import check_evidence, normalize, quote_in_transcript
 
 pytestmark = pytest.mark.live
 live = pytest.mark.skipif(not os.environ.get("GOOGLE_API_KEY"), reason="no GOOGLE_API_KEY")
@@ -4230,12 +4230,12 @@ Append to `app/main.py`:
 from app.agents.extractor import GeminiExtractor
 from app.agents.triage import PassthroughTriage
 from app.config import Settings
-from app.core.clock import SystemClock
-from app.store.decisions import DecisionStore
-from app.store.events import EventStore
-from app.store.firestore import FirestoreDb
-from app.store.projects import ProjectStore
-from app.store.tasks import TaskQueue
+from app.harness.core.clock import SystemClock
+from app.harness.store.decisions import DecisionStore
+from app.harness.store.events import EventStore
+from app.harness.store.firestore import FirestoreDb
+from app.harness.store.projects import ProjectStore
+from app.harness.store.tasks import TaskQueue
 
 
 def build_deps(settings: Settings | None = None) -> Deps:
@@ -4529,8 +4529,8 @@ import json
 from pathlib import Path
 
 from app.config import Settings
-from app.store.firestore import FirestoreDb
-from app.store.projects import ProjectStore
+from app.harness.store.firestore import FirestoreDb
+from app.harness.store.projects import ProjectStore
 
 ROOT = Path(__file__).parents[1] / "fixtures"
 
@@ -4714,7 +4714,7 @@ Expected: a `200` on `/webhooks/fathom`; an `events/fathom:…` document; within
 
 - [ ] **Step 8: Replace the sample payload with the real capture**
 
-Copy the `payload` field of the stored `events/fathom:…` document into `tests/fixtures/fathom_webhook_sample.json` (it is our fake company; no real PII). If any field name differs from the documented shape, `parse_meeting` in `app/connectors/fathom.py` is the one place to adapt; `tests/connectors/test_fathom.py::test_parse_meeting_normalises_the_documented_shape` must be updated to the real names in the same commit.
+Copy the `payload` field of the stored `events/fathom:…` document into `tests/fixtures/fathom_webhook_sample.json` (it is our fake company; no real PII). If any field name differs from the documented shape, `parse_meeting` in `app/harness/connectors/fathom.py` is the one place to adapt; `tests/harness/connectors/test_fathom.py::test_parse_meeting_normalises_the_documented_shape` must be updated to the real names in the same commit.
 
 ```bash
 uv run pytest -q
@@ -4725,7 +4725,7 @@ Expected: all green against the real payload shape.
 
 ```bash
 git add deploy/Dockerfile deploy/deploy.sh deploy/scheduler.sh deploy/secrets.md .dockerignore \
-  tests/fixtures/fathom_webhook_sample.json app/connectors/fathom.py tests/connectors/test_fathom.py
+  tests/fixtures/fathom_webhook_sample.json app/harness/connectors/fathom.py tests/harness/connectors/test_fathom.py
 git commit -m "feat(deploy): Cloud Run service, one-minute Scheduler tick, Fathom webhook; real payload captured"
 ```
 

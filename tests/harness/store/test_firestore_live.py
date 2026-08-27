@@ -4,7 +4,7 @@ import os
 import uuid
 
 import pytest
-from app.store.firestore import FirestoreDb
+from app.harness.store.firestore import FirestoreDb
 
 pytestmark = pytest.mark.live
 live = pytest.mark.skipif(not os.environ.get("PM_GCP_PROJECT"), reason="no PM_GCP_PROJECT")

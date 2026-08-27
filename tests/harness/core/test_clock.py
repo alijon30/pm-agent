@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from app.core.clock import iso, parse_iso
+from app.harness.core.clock import iso, parse_iso
 
 from tests.fakes.fake_clock import FakeClock
 

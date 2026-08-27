@@ -35,14 +35,14 @@ app/
   deps.py (+linear, notion, code, github, slack, actions, reconciler, planner)
 fixtures/linear_seed.py  slack_manifest.json  notion/README.md
 tests/fakes/fake_linear.py  fake_notion.py  fake_github.py  fake_slack.py  fake_agents.py (+FakeReconciler, FakePlanner)
-tests/connectors/ verify/ store/ agents/ stages/ http/ (mirrors)
+tests/harness/connectors/ verify/ store/ agents/ stages/ http/ (mirrors)
 ```
 
 ---
 
 ### Task 1: `connectors/linear.py` + `FakeLinear`
 
-**Files:** Create `app/connectors/linear.py`, `tests/fakes/fake_linear.py`; Test `tests/connectors/test_linear.py`, `tests/fakes/test_fake_linear.py`
+**Files:** Create `app/harness/connectors/linear.py`, `tests/fakes/fake_linear.py`; Test `tests/harness/connectors/test_linear.py`, `tests/fakes/test_fake_linear.py`
 
 **Interfaces:**
 ```python

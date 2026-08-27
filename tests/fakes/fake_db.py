@@ -7,7 +7,7 @@ import copy
 from collections.abc import Sequence
 from typing import Any
 
-from app.store.db import Create, Doc, Filter, Predicate, Update, Updater
+from app.harness.store.db import Create, Doc, Filter, Predicate, Update, Updater
 
 
 def _matches(doc: dict[str, Any], filters: Sequence[Filter]) -> bool:

@@ -10,10 +10,10 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.core.clock import Clock, iso, parse_iso
-from app.core.keys import new_id
-from app.store.db import Create, Db, Doc, Update
-from app.verify.lineage import DEFAULT_POLICY, check_lineage
+from app.harness.core.clock import Clock, iso, parse_iso
+from app.harness.core.keys import new_id
+from app.harness.store.db import Create, Db, Doc, Update
+from app.harness.verify.lineage import DEFAULT_POLICY, check_lineage
 
 BACKOFF_SECONDS = (60, 300, 900)
 OPEN_STATUSES = ("queued", "blocked", "leased", "deferred")

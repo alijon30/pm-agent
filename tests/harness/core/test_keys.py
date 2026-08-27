@@ -1,4 +1,4 @@
-from app.core.keys import event_doc_id, idempotency_key, new_id
+from app.harness.core.keys import event_doc_id, idempotency_key, new_id
 
 
 def test_new_ids_are_unique_hex_and_safe_as_firestore_doc_ids() -> None:
