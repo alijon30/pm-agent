@@ -1,0 +1,10 @@
+[
+  {"name": "Maya Chen", "aliases": ["Maya"], "role": "pm", "email": "maya@acme-invoicing.test",
+   "linear_user_id": "", "slack_id": ""},
+  {"name": "Nodir Rahimov", "aliases": ["Nodir"], "role": "backend", "email": "nodir@acme-invoicing.test",
+   "linear_user_id": "", "slack_id": ""},
+  {"name": "Priya Nair", "aliases": ["Priya"], "role": "frontend", "email": "priya@acme-invoicing.test",
+   "linear_user_id": "", "slack_id": ""},
+  {"name": "Tom Alvarez", "aliases": ["Tom"], "role": "support", "email": "tom@acme-invoicing.test",
+   "linear_user_id": "", "slack_id": ""}
+]
