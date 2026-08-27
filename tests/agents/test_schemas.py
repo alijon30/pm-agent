@@ -1,5 +1,5 @@
 import pytest
-from app.agents.schemas import ExtractResult
+from app.agents.base.schemas import ExtractResult
 from pydantic import ValidationError
 
 

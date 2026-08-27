@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agents.schemas import ExtractResult
+from app.agents.base.schemas import ExtractResult
 from app.harness.connectors.fathom import parse_meeting, render_transcript, transcript_plain
 from app.harness.core.errors import PmError
 from app.harness.deps import Deps

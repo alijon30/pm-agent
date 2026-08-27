@@ -3099,7 +3099,7 @@ class DecisionStore:
         raise NotImplementedError
 ```
 
-`app/agents/protocols.py`:
+`app/agents/base/protocols.py`:
 ```python
 """What a stage needs from the model side. Stages depend on these, never on ADK directly, so
 every stage test runs against a fake."""
@@ -3112,7 +3112,7 @@ from typing import Any, Protocol
 class Extractor(Protocol):
     async def run(self, payload: dict[str, Any]) -> dict[str, Any]:
         """payload: {"transcript": str, "roster_names": [str], "feedback": str | None}.
-        Returns a dict shaped like agents.schemas.ExtractResult (validated by the stage)."""
+        Returns a dict shaped like agents.base.schemas.ExtractResult (validated by the stage)."""
         ...
 
 
@@ -3166,7 +3166,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.agents.protocols import Extractor, Triage
+from app.agents.base.protocols import Extractor, Triage
 from app.config import Settings
 from app.harness.core.clock import Clock
 from app.harness.store.db import Db
@@ -3281,7 +3281,7 @@ Expected: all pass; `deps.settings.fathom_webhook_secret = SECRET` mutation work
 - [ ] **Step 7: Commit**
 
 ```bash
-git add app/harness/store/events.py app/harness/store/projects.py app/harness/store/decisions.py app/agents/protocols.py \
+git add app/harness/store/events.py app/harness/store/projects.py app/harness/store/decisions.py app/agents/base/protocols.py \
   app/agents/triage.py app/harness/deps.py app/harness/http/webhooks.py app/main.py tests/conftest.py \
   tests/fakes/fake_agents.py tests/harness/store/test_events.py tests/harness/store/test_projects.py \
   tests/http/test_webhooks.py
@@ -3293,7 +3293,7 @@ git commit -m "feat: Fathom webhook — verify, dedupe, enqueue extract"
 ### Task 9: `agents/schemas.py` and `verify/evidence.py`
 
 **Files:**
-- Create: `app/agents/schemas.py`, `app/harness/verify/evidence.py`
+- Create: `app/agents/base/schemas.py`, `app/harness/verify/evidence.py`
 - Test: `tests/agents/test_schemas.py`, `tests/harness/verify/test_evidence.py`
 
 **Interfaces:**
@@ -3307,7 +3307,7 @@ git commit -m "feat: Fathom webhook — verify, dedupe, enqueue extract"
 import pytest
 from pydantic import ValidationError
 
-from app.agents.schemas import ExtractResult
+from app.agents.base.schemas import ExtractResult
 
 
 def test_extract_result_validates_the_documented_shape() -> None:
@@ -3390,7 +3390,7 @@ uv run pytest tests/agents/test_schemas.py tests/harness/verify/test_evidence.py
 ```
 Expected: FAIL with `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write `app/agents/schemas.py`**
+- [ ] **Step 3: Write `app/agents/base/schemas.py`**
 
 ```python
 """Output schemas for the ADK agents. ADK forces the model to emit exactly these shapes; the
@@ -3493,7 +3493,7 @@ Expected: `15 passed`; clean.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/agents/schemas.py app/harness/verify/evidence.py tests/agents/test_schemas.py tests/harness/verify/test_evidence.py
+git add app/agents/base/schemas.py app/harness/verify/evidence.py tests/agents/test_schemas.py tests/harness/verify/test_evidence.py
 git commit -m "feat: extraction schemas and the verbatim-evidence gate"
 ```
 
@@ -3736,7 +3736,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agents.schemas import ExtractResult
+from app.agents.base.schemas import ExtractResult
 from app.harness.connectors.fathom import parse_meeting, render_transcript, transcript_plain
 from app.harness.core.errors import PmError
 from app.harness.deps import Deps
@@ -4069,10 +4069,10 @@ git commit -m "feat: stage runner with timeout and retry classification; /tick h
 
 ---
 
-### Task 12: `agents/adk_runner.py`, `agents/extractor.py`, real wiring in `main.py`
+### Task 12: `agents/base/sdk_runner.py`, `agents/extractor.py`, real wiring in `main.py`
 
 **Files:**
-- Create: `app/agents/adk_runner.py`, `app/agents/extractor.py`
+- Create: `app/agents/base/sdk_runner.py`, `app/agents/extractor.py`
 - Modify: `app/main.py` (add `build_deps`, `create_default_app`)
 - Test: `tests/agents/test_extractor_live.py`
 
@@ -4092,7 +4092,7 @@ from pathlib import Path
 import pytest
 
 from app.agents.extractor import GeminiExtractor
-from app.agents.schemas import ExtractResult
+from app.agents.base.schemas import ExtractResult
 from app.config import Settings
 from app.harness.verify.evidence import check_evidence, normalize, quote_in_transcript
 
@@ -4129,7 +4129,7 @@ async def test_the_real_extractor_returns_schema_valid_items_with_verbatim_quote
                for d in result["decisions"] for e in d["evidence"])
 ```
 
-- [ ] **Step 2: Write `app/agents/adk_runner.py`**
+- [ ] **Step 2: Write `app/agents/base/sdk_runner.py`**
 
 ```python
 """One-shot ADK execution: fresh in-memory session per call, return the final text. Firestore
@@ -4175,8 +4175,8 @@ from typing import Any
 from google.adk.agents import LlmAgent
 from google.genai import types
 
-from app.agents.adk_runner import run_agent_once
-from app.agents.schemas import ExtractResult
+from app.agents.base.sdk_runner import run_agent_once
+from app.agents.base.schemas import ExtractResult
 
 EXTRACTOR_INSTRUCTION = """You are the extraction step of an autonomous product-manager agent.
 
@@ -4273,7 +4273,7 @@ Expected: gates green; the live test passes once Task 13's transcript script exi
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/agents/adk_runner.py app/agents/extractor.py app/main.py tests/agents/test_extractor_live.py
+git add app/agents/base/sdk_runner.py app/agents/extractor.py app/main.py tests/agents/test_extractor_live.py
 git commit -m "feat(agents): Gemini extractor on ADK with fixed output schema; real wiring"
 ```
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.agents.protocols import Extractor, Triage
+from app.agents.base.protocols import Extractor, Triage
 from app.config import Settings
 from app.harness.core.clock import Clock
 from app.harness.store.db import Db
