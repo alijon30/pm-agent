@@ -30,5 +30,9 @@ async def test_tick_runs_due_tasks_and_reports_outcomes(client: TestClient, deps
     r = client.post("/tick", headers={"X-Tick-Token": "tick-secret"})
     assert r.status_code == 200
     assert r.json() == {"processed": 1, "outcomes": ["done"]}
+    # The extract stage enqueued reconcile, so the next tick picks that up. With no reconciler
+    # configured it fails honestly and is requeued for a retry rather than skipped.
     r = client.post("/tick", headers={"X-Tick-Token": "tick-secret"})
-    assert r.json()["processed"] == 0  # reconcile is queued but has no handler yet
+    assert r.json() == {"processed": 1, "outcomes": ["queued"]}
+    reconcile = (await deps.db.query("tasks", [("kind", "==", "reconcile")]))[0]
+    assert "reconciler" in reconcile["error"]
