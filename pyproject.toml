@@ -49,7 +49,8 @@ select = ["E4", "E7", "E9", "F", "I", "W", "B", "UP"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-mypy_path = "app"
+# No mypy_path: putting "app" on the path makes app/http/ resolve as top-level `http`, which
+# collides with the stdlib module and fails with "source file found twice".
 
 [[tool.mypy.overrides]]
 # Third-party packages that ship no type stubs. This is NOT a debt list for our code.
