@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A deployed Cloud Run service that receives a real Fathom webhook, stores the event idempotently, runs the `extract` stage through a durable Firestore queue, and leaves evidence-gated decisions and action items in Firestore — with the fake company's fixtures ready for day 2.
+**Goal:** A deployed Cloud Run service that receives a real Fathom webhook, stores the event idempotently, runs the `extract` stage through a durable **task-graph** queue (dependencies, promotion, cascade cancel, plan materialisation), validates planner output through the plan gate, and leaves evidence-gated decisions and action items in Firestore — with the fake company's fixtures ready for day 2.
 
 **Architecture:** One FastAPI service. Firestore is the queue and the audit store; a `/tick` endpoint (called by Cloud Scheduler every minute) claims due tasks with a lease and runs the stage for each. The `extract` stage calls an ADK `LlmAgent` (Gemini, fixed output schema, no tools) behind a `Protocol` so every test uses a fake; a deterministic evidence gate drops any item without a verbatim transcript quote. Everything crossing the task boundary is JSON-native.
 
 **Tech Stack:** Python 3.12 · uv · FastAPI · google-cloud-firestore (async) · google-adk · google-genai · pydantic v2 · pydantic-settings · pytest + pytest-asyncio · ruff · mypy (strict) · import-linter · Cloud Run · Firestore · Cloud Scheduler · Secret Manager.
 
-**Spec:** `docs/superpowers/specs/2026-08-26-pm-agent-design.md` — this plan implements §4–§7.1, §8 (extractor only), §10 (queue/webhook/stage rows), §13 (fixtures), §15–§16, and day 1 of §17. Plans 2–4 (days 2–4) are written at the start of each day, argued from the spec and from what this plan actually produced.
+**Spec:** `docs/superpowers/specs/2026-08-26-pm-agent-design.md` (rev 2) — this plan implements §4–§6 (task-graph queue), §7.1, §7.4's plan gate and §7.5's kinds registry (schemas only; executors are Plan 2), §8 (extractor only), §10 (queue/webhook/stage/plan rows), §13 (fixtures), §15–§16, and day 1 of §17. Plans 2–4 (days 2–4) are written at the start of each day, argued from the spec and from what this plan actually produced.
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@
 - Four CI gates and nothing else: `uv run ruff check . && uv run mypy app && uv run lint-imports && uv run pytest -q`.
 - ruff rule set: `["E4", "E7", "E9", "F", "I", "W", "B", "UP"]`, line length 100.
 - mypy `strict = true` on `app/`; **no debt list**. Third-party packages without stubs get `ignore_missing_imports`, nothing else.
-- Layering (import-linter): `core`, `store`, `verify`, `clients` never import `agents`, `stages`, `http`, `deps`, `main`; `agents` imports only `clients` and `core` (plus its own package); stages never import each other (independence contract added in Plan 2 when a second stage exists).
+- Layering (import-linter): `core`, `store`, `verify`, `clients`, `kinds` never import `agents`, `stages`, `http`, `deps`, `main`; `agents` imports only `clients`, `core`, `kinds` (plus its own package); stages never import each other (independence contract added in Plan 2 when a second stage exists).
 - Everything crossing a task boundary is JSON-native: dicts, lists, str, int, float, bool, None. Timestamps are ISO-8601 UTC strings with second precision (`2026-08-27T09:00:00+00:00`) so string comparison equals time comparison.
 - Never log or store a secret value; errors that may reach a human pass through `redact()`.
 - Test names are behavior sentences; fakes are hand-rolled (no `unittest.mock` for our own seams); comments say *why*.
@@ -51,13 +51,18 @@ pm-agent/
       db.py                 Db protocol (get/create/set/update/query/count/cas)
       firestore.py          FirestoreDb — the only file that imports google.cloud.firestore
       events.py             EventStore.record()/get()/note()
-      tasks.py              TaskQueue.enqueue()/due()/claim()/complete()/fail()/defer()
+      tasks.py              TaskQueue — enqueue/due/claim/complete(+plan)/fail/defer/cancel/promote_ready
       decisions.py          DecisionStore.add_many()
       projects.py           ProjectStore.get()/default()/upsert()
     verify/
       __init__.py
       lineage.py            check_lineage()
       evidence.py           normalize(), quote_in_transcript(), check_evidence()
+      plan.py               check_plan() — the plan gate
+    kinds/
+      __init__.py
+      base.py               KindSpec, StrictParams
+      registry.py           KINDS, get_kind(), validate_params()
     clients/
       __init__.py
       fathom.py             verify_signature(), parse_meeting(), transcript_plain(), render_transcript()
@@ -84,7 +89,7 @@ pm-agent/
       fake_db.py            FakeDb
       fake_clock.py         FakeClock
       fake_agents.py        FakeExtractor
-    core/  store/  verify/  clients/  agents/  stages/  http/   (mirrors app/)
+    core/  store/  verify/  kinds/  clients/  agents/  stages/  http/   (mirrors app/)
     fixtures/
       fathom_webhook_sample.json   hand-built from the documented Meeting schema; replaced by a real capture in Task 14
   fixtures/
@@ -236,13 +241,13 @@ ignore_missing_imports = true
 root_packages = ["app"]
 
 [[tool.importlinter.contracts]]
-name = "core, store, verify and clients never import the model side or the wiring"
+name = "core, store, verify, clients and kinds never import the model side or the wiring"
 type = "forbidden"
-source_modules = ["app.core", "app.store", "app.verify", "app.clients"]
+source_modules = ["app.core", "app.store", "app.verify", "app.clients", "app.kinds"]
 forbidden_modules = ["app.agents", "app.stages", "app.http", "app.deps", "app.main"]
 
 [[tool.importlinter.contracts]]
-name = "agents import only clients and core — the model cannot reach the store or the queue"
+name = "agents import only clients, core and kinds — the model cannot reach the store or the queue"
 type = "forbidden"
 source_modules = ["app.agents"]
 forbidden_modules = ["app.store", "app.verify", "app.stages", "app.http", "app.deps", "app.main"]
@@ -271,8 +276,8 @@ PM_MODEL_STRONG=gemini-3.5-flash
 ```
 
 ```bash
-mkdir -p app/core app/store app/verify app/clients app/agents app/stages app/http tests/fakes scripts
-for d in app app/core app/store app/verify app/clients app/agents app/stages app/http tests tests/fakes; do : > "$d/__init__.py"; done
+mkdir -p app/core app/store app/verify app/kinds app/clients app/agents app/stages app/http tests/fakes tests/kinds scripts
+for d in app app/core app/store app/verify app/kinds app/clients app/agents app/stages app/http tests tests/fakes tests/kinds; do : > "$d/__init__.py"; done
 : > app/py.typed
 ```
 
@@ -362,8 +367,9 @@ Expected: the list contains `gemini-3.5-flash-lite` and `gemini-3.5-flash`. If e
 ```bash
 git add pyproject.toml .python-version .env.example .github/workflows/ci.yml README.md uv.lock \
   app/__init__.py app/py.typed app/core/__init__.py app/store/__init__.py app/verify/__init__.py \
-  app/clients/__init__.py app/agents/__init__.py app/stages/__init__.py app/http/__init__.py \
-  tests/__init__.py tests/fakes/__init__.py tests/test_smoke.py scripts/list_models.py
+  app/kinds/__init__.py app/clients/__init__.py app/agents/__init__.py app/stages/__init__.py \
+  app/http/__init__.py tests/__init__.py tests/fakes/__init__.py tests/kinds/__init__.py \
+  tests/test_smoke.py scripts/list_models.py
 git commit -m "chore: scaffold pm-agent with uv, the four gates and CI"
 ```
 
@@ -716,6 +722,7 @@ git commit -m "feat: env-only Settings with PM_ prefix"
   Predicate = Callable[[Doc], bool]
   Updater = Callable[[Doc], dict[str, Any]]
   Create = tuple[str, str, dict[str, Any]]  # (collection, doc_id, data)
+  Update = tuple[str, str, dict[str, Any]]  # (collection, doc_id, fields)
 
   class Db(Protocol):
       async def get(self, collection: str, doc_id: str) -> Doc | None
@@ -724,8 +731,9 @@ git commit -m "feat: env-only Settings with PM_ prefix"
       async def update(self, collection: str, doc_id: str, fields: dict[str, Any]) -> None
       async def query(self, collection: str, filters: Sequence[Filter], *, order_by: str | None = None, limit: int | None = None) -> list[Doc]
       async def count(self, collection: str, filters: Sequence[Filter]) -> int
-      async def cas(self, collection: str, doc_id: str, predicate: Predicate, updater: Updater, creates: Sequence[Create] = ()) -> bool
+      async def cas(self, collection: str, doc_id: str, predicate: Predicate, updater: Updater, creates: Sequence[Create] = (), updates: Sequence[Update] = ()) -> bool
   ```
+  Ops: `==`, `<`, `<=`, `>`, `>=`, `in`, `array_contains`.
   `FakeDb()` implements it in memory; `FirestoreDb(project, database)` implements it on Firestore.
 
 - [ ] **Step 1: Write the failing tests for FakeDb (they define the contract FirestoreDb must match)**
@@ -811,6 +819,29 @@ async def test_cas_on_a_missing_doc_is_false_and_creates_nothing() -> None:
     ok = await db.cas("tasks", "ghost", lambda d: True, lambda d: {}, [("tasks", "x", {})])
     assert ok is False
     assert await db.get("tasks", "x") is None
+
+
+async def test_cas_applies_extra_updates_to_other_docs_in_the_same_transaction() -> None:
+    db = FakeDb()
+    await db.set("tasks", "t1", {"status": "leased"})
+    await db.set("tasks", "old", {"status": "queued"})
+    ok = await db.cas("tasks", "t1", lambda d: d["status"] == "leased", lambda d: {"status": "done"},
+                      updates=[("tasks", "old", {"status": "cancelled"})])
+    assert ok is True
+    assert (await db.get("tasks", "old"))["status"] == "cancelled"  # type: ignore[index]
+    ok = await db.cas("tasks", "t1", lambda d: d["status"] == "leased", lambda d: {},
+                      updates=[("tasks", "old", {"status": "queued"})])
+    assert ok is False
+    assert (await db.get("tasks", "old"))["status"] == "cancelled"  # type: ignore[index]
+
+
+async def test_array_contains_matches_list_fields() -> None:
+    db = FakeDb()
+    await db.set("tasks", "a", {"depends_on": ["x", "y"]})
+    await db.set("tasks", "b", {"depends_on": ["z"]})
+    await db.set("tasks", "c", {"depends_on": []})
+    rows = await db.query("tasks", [("depends_on", "array_contains", "y")])
+    assert [r["id"] for r in rows] == ["a"]
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -836,8 +867,9 @@ Filter = tuple[str, str, Any]
 Predicate = Callable[[Doc], bool]
 Updater = Callable[[Doc], dict[str, Any]]
 Create = tuple[str, str, dict[str, Any]]
+Update = tuple[str, str, dict[str, Any]]
 
-OPS = ("==", "<", "<=", ">", ">=", "in")
+OPS = ("==", "<", "<=", ">", ">=", "in", "array_contains")
 
 
 class Db(Protocol):
@@ -869,9 +901,11 @@ class Db(Protocol):
         predicate: Predicate,
         updater: Updater,
         creates: Sequence[Create] = (),
+        updates: Sequence[Update] = (),
     ) -> bool:
         """Compare-and-set in one transaction: read the doc, and if predicate(doc) holds, apply
-        updater(doc) and create every doc in `creates`. False (and no writes) otherwise."""
+        updater(doc), create every doc in `creates`, and update every doc in `updates`. False
+        (and no writes at all) otherwise."""
         ...
 ```
 
@@ -887,7 +921,7 @@ import copy
 from collections.abc import Sequence
 from typing import Any
 
-from app.store.db import Create, Doc, Filter, Predicate, Updater
+from app.store.db import Create, Doc, Filter, Predicate, Update, Updater
 
 
 def _matches(doc: dict[str, Any], filters: Sequence[Filter]) -> bool:
@@ -905,6 +939,8 @@ def _matches(doc: dict[str, Any], filters: Sequence[Filter]) -> bool:
             ok = actual is not None and actual >= value
         elif op == "in":
             ok = actual in value
+        elif op == "array_contains":
+            ok = isinstance(actual, list) and value in actual
         else:
             raise ValueError(f"unsupported op {op!r}")
         if not ok:
@@ -963,6 +999,7 @@ class FakeDb:
         predicate: Predicate,
         updater: Updater,
         creates: Sequence[Create] = (),
+        updates: Sequence[Update] = (),
     ) -> bool:
         current = await self.get(collection, doc_id)
         if current is None or not predicate(current):
@@ -970,6 +1007,8 @@ class FakeDb:
         await self.update(collection, doc_id, updater(current))
         for c_col, c_id, c_data in creates:
             await self.set(c_col, c_id, c_data)
+        for u_col, u_id, u_fields in updates:
+            await self.update(u_col, u_id, u_fields)
         return True
 ```
 
@@ -978,7 +1017,7 @@ class FakeDb:
 ```bash
 uv run pytest tests/store/test_fake_db.py -q
 ```
-Expected: `7 passed`.
+Expected: `9 passed`.
 
 - [ ] **Step 6: Write `app/store/firestore.py`**
 
@@ -995,7 +1034,7 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.async_transaction import AsyncTransaction, async_transactional
 from google.cloud.firestore_v1.base_query import FieldFilter
 
-from app.store.db import Create, Doc, Filter, Predicate, Updater
+from app.store.db import Create, Doc, Filter, Predicate, Update, Updater
 
 
 class FirestoreDb:
@@ -1056,6 +1095,7 @@ class FirestoreDb:
         predicate: Predicate,
         updater: Updater,
         creates: Sequence[Create] = (),
+        updates: Sequence[Update] = (),
     ) -> bool:
         ref = self._ref(collection, doc_id)
         client = self._client
@@ -1071,6 +1111,8 @@ class FirestoreDb:
             tx.update(ref, updater(current))
             for c_col, c_id, c_data in creates:
                 tx.create(client.collection(c_col).document(c_id), c_data)
+            for u_col, u_id, u_fields in updates:
+                tx.update(client.collection(u_col).document(u_id), u_fields)
             return True
 
         return bool(await _run(client.transaction()))
@@ -1110,6 +1152,11 @@ async def test_firestore_db_honours_the_fake_db_contract() -> None:
     assert (await db.get(col, "t1")) == {"id": "t1", "status": "leased", "attempts": 1, "due_at": "b"}
     assert await db.get(col, "child") is not None
     assert await db.cas(col, "t1", lambda d: d["status"] == "queued", lambda d: {}) is False
+    ok = await db.cas(col, "t1", lambda d: d["status"] == "leased", lambda d: {"status": "done"},
+                      updates=[(col, "t2", {"status": "cancelled"})])
+    assert ok is True and (await db.get(col, "t2"))["status"] == "cancelled"  # type: ignore[index]
+    await db.set(col, "t3", {"depends_on": ["t1"]})
+    assert [r["id"] for r in await db.query(col, [("depends_on", "array_contains", "t1")])] == ["t3"]
 ```
 
 - [ ] **Step 8: Run all gates; run the live test once against your project**
@@ -1138,7 +1185,7 @@ git commit -m "feat(store): Db protocol with in-memory fake and Firestore implem
 - Test: `tests/verify/test_lineage.py`
 
 **Interfaces:**
-- Produces: `LineageVerdict(ok: bool, depth: int, reason: str = "")`; `check_lineage(parent: Doc | None, existing_children: int, policy: dict[str, Any]) -> LineageVerdict`; `DEFAULT_POLICY = {"max_depth": 4, "max_children": 5}`.
+- Produces: `LineageVerdict(ok: bool, depth: int, reason: str = "")`; `check_lineage(parent: Doc | None, existing_children: int, policy: dict[str, Any]) -> LineageVerdict`; `DEFAULT_POLICY = {"max_depth": 4, "max_children": 12}` (a plan is one parent with several children).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1164,9 +1211,9 @@ def test_a_child_beyond_max_depth_is_refused_with_the_reason() -> None:
 
 
 def test_a_parent_at_its_child_limit_may_not_fan_out_further() -> None:
-    v = check_lineage({"id": "p", "depth": 1}, 5, DEFAULT_POLICY)
+    v = check_lineage({"id": "p", "depth": 1}, 12, DEFAULT_POLICY)
     assert not v.ok
-    assert "already has 5 children" in v.reason
+    assert "already has 12 children" in v.reason
 
 
 def test_project_policy_overrides_defaults() -> None:
@@ -1185,14 +1232,16 @@ Expected: FAIL with `ModuleNotFoundError`.
 
 ```python
 """Structural loop prevention. Every enqueue passes here; a chain cannot exceed max_depth and a
-task cannot fan out beyond max_children, so a runaway agent is impossible rather than unlikely."""
+task cannot fan out beyond max_children, so a runaway agent is impossible rather than unlikely.
+Plan generations count as depth: a planner that keeps planning follow-ups to its follow-ups
+stops at the limit and says so."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-DEFAULT_POLICY: dict[str, Any] = {"max_depth": 4, "max_children": 5}
+DEFAULT_POLICY: dict[str, Any] = {"max_depth": 4, "max_children": 12}
 
 
 @dataclass(frozen=True)
@@ -1238,29 +1287,40 @@ git commit -m "feat(verify): lineage gate — depth and fan-out limits"
 
 ---
 
-### Task 6: `store/tasks.py` — the queue
+### Task 6: `store/tasks.py` — the task-graph queue
 
 **Files:**
 - Create: `app/store/tasks.py`
 - Test: `tests/store/test_tasks.py`
 
 **Interfaces:**
-- Consumes: `Db`, `Clock`, `iso`, `new_id`, `check_lineage`, `DEFAULT_POLICY`.
+- Consumes: `Db` (with `cas(..., creates, updates)` and the `array_contains` op), `Clock`, `iso`, `new_id`, `check_lineage`, `DEFAULT_POLICY`.
 - Produces:
   ```python
+  OPEN_STATUSES = ("queued", "blocked", "leased", "deferred")
+  TERMINAL_BAD = ("failed", "cancelled", "skipped")
+
   class TaskQueue:
       def __init__(self, db: Db, clock: Clock, *, lease_minutes: int = 15) -> None
       async def enqueue(self, *, kind: str, project_id: str, payload: dict, reason: str,
                         due_at: datetime | None = None, parent: Doc | None = None,
-                        root_event_id: str | None = None, policy: dict | None = None) -> str | None
-      async def due(self, kinds: Sequence[str], limit: int) -> list[Doc]
+                        root_event_id: str | None = None, policy: dict | None = None,
+                        params: dict | None = None, depends_on: Sequence[str] = (),
+                        on_dep_failed: str = "skip", on_unmet: str = "none",
+                        context: dict | None = None, key: str | None = None,
+                        plan_id: str | None = None) -> str | None
+      async def promote_ready(self) -> int          # blocked → queued / skipped / cancelled per deps; returns promoted count
+      async def due(self, kinds: Sequence[str], limit: int) -> list[Doc]   # calls promote_ready() first
       async def claim(self, task_id: str) -> Doc | None
-      async def complete(self, task: Doc, result: dict, children: Sequence[dict]) -> list[str]
-      async def fail(self, task: Doc, reason: str, *, max_attempts: int = 3) -> str   # "queued" | "failed"
+      async def complete(self, task: Doc, result: dict, children: Sequence[dict],
+                         *, supersedes: Sequence[str] = ()) -> list[str]
+      async def fail(self, task: Doc, reason: str, *, max_attempts: int = 3) -> str
       async def defer(self, task: Doc, until: datetime, reason: str) -> None
+      async def cancel(self, task_id: str, reason: str) -> list[str]   # cascades; returns cancelled ids
+      async def open_count(self, project_id: str) -> int
   ```
-  A child spec for `complete()` is a dict with keys `kind`, `payload`, `reason`, optional `due_at` (ISO str), optional `policy`.
-  Task doc fields: `kind, project_id, payload, reason, status, due_at, created_at, lease_until, attempts, result, error, root_event_id, parent_task_id, depth, refused_enqueues, finished_at, defer_reason`.
+  A child spec for `complete()` is a dict with keys `kind`, `payload`, `reason`, and optionally `due_at` (ISO str), `params`, `key`, `depends_on` (a list of sibling **keys** or existing task **ids**), `on_dep_failed`, `on_unmet`, `context`, `policy`. All children of one `complete()` call share a fresh `plan_id`.
+  Task doc fields: `kind, params, payload, reason, status, due_at, created_at, lease_until, attempts, result, error, root_event_id, parent_task_id, depth, refused_enqueues, finished_at, defer_reason, key, plan_id, depends_on, on_dep_failed, on_unmet, context, project_id`.
   `BACKOFF_SECONDS = (60, 300, 900)`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1281,62 +1341,70 @@ def make() -> tuple[TaskQueue, FakeDb, FakeClock]:
     return TaskQueue(db, clock, lease_minutes=15), db, clock
 
 
+async def enqueue(q: TaskQueue, **kw) -> str:  # type: ignore[no-untyped-def]
+    kw.setdefault("kind", "extract")
+    kw.setdefault("project_id", "acme")
+    kw.setdefault("payload", {})
+    kw.setdefault("reason", "test")
+    tid = await q.enqueue(**kw)
+    assert tid is not None
+    return tid
+
+
+async def status(db: FakeDb, tid: str) -> str:
+    doc = await db.get("tasks", tid)
+    assert doc is not None
+    return str(doc["status"])
+
+
+# --- basics -----------------------------------------------------------------------------------
+
 async def test_enqueue_creates_a_queued_root_task_due_now_by_default() -> None:
     q, db, _ = make()
-    tid = await q.enqueue(kind="extract", project_id="acme", payload={"event_id": "e1"},
-                          reason="call finished", root_event_id="e1")
-    assert tid is not None
+    tid = await enqueue(q, payload={"event_id": "e1"}, reason="call finished", root_event_id="e1")
     doc = await db.get("tasks", tid)
     assert doc is not None
     assert doc["status"] == "queued" and doc["depth"] == 0 and doc["attempts"] == 0
     assert doc["due_at"] == "2026-08-27T09:00:00+00:00"
     assert doc["root_event_id"] == "e1" and doc["parent_task_id"] is None
-    assert doc["reason"] == "call finished"
+    assert doc["depends_on"] == [] and doc["on_dep_failed"] == "skip" and doc["on_unmet"] == "none"
 
 
 async def test_due_returns_only_matching_kinds_that_are_due_oldest_first() -> None:
     q, _, clock = make()
-    a = await q.enqueue(kind="extract", project_id="acme", payload={}, reason="a",
-                        due_at=T0 + timedelta(minutes=2))
-    b = await q.enqueue(kind="extract", project_id="acme", payload={}, reason="b")
-    await q.enqueue(kind="reconcile", project_id="acme", payload={}, reason="c")
-    await q.enqueue(kind="extract", project_id="acme", payload={}, reason="d",
-                    due_at=T0 + timedelta(hours=1))
+    a = await enqueue(q, reason="a", due_at=T0 + timedelta(minutes=2))
+    b = await enqueue(q, reason="b")
+    await enqueue(q, kind="reconcile", reason="c")
+    await enqueue(q, reason="d", due_at=T0 + timedelta(hours=1))
     clock.advance(minutes=3)
-    due = await q.due(["extract"], limit=10)
-    assert [t["id"] for t in due] == [b, a]
+    assert [t["id"] for t in await q.due(["extract"], limit=10)] == [b, a]
 
 
 async def test_claim_leases_a_due_task_and_counts_the_attempt() -> None:
     q, _, _ = make()
-    tid = await q.enqueue(kind="extract", project_id="acme", payload={}, reason="x")
-    assert tid is not None
+    tid = await enqueue(q)
     claimed = await q.claim(tid)
     assert claimed is not None
     assert claimed["status"] == "leased" and claimed["attempts"] == 1
     assert claimed["lease_until"] == "2026-08-27T09:15:00+00:00"
-    assert await q.claim(tid) is None  # a second worker cannot take it
+    assert await q.claim(tid) is None
 
 
 async def test_an_expired_lease_is_reclaimable_and_a_live_one_is_not() -> None:
     q, _, clock = make()
-    tid = await q.enqueue(kind="extract", project_id="acme", payload={}, reason="x")
-    assert tid is not None
+    tid = await enqueue(q)
     await q.claim(tid)
     clock.advance(minutes=14)
     assert await q.due(["extract"], limit=10) == []
     clock.advance(minutes=2)
-    due = await q.due(["extract"], limit=10)
-    assert [t["id"] for t in due] == [tid]
+    assert [t["id"] for t in await q.due(["extract"], limit=10)] == [tid]
     reclaimed = await q.claim(tid)
     assert reclaimed is not None and reclaimed["attempts"] == 2
 
 
 async def test_complete_marks_done_and_creates_children_atomically_with_lineage() -> None:
     q, db, _ = make()
-    tid = await q.enqueue(kind="extract", project_id="acme", payload={}, reason="x",
-                          root_event_id="e1")
-    assert tid is not None
+    tid = await enqueue(q, root_event_id="e1")
     task = await q.claim(tid)
     assert task is not None
     ids = await q.complete(task, {"n": 3}, [
@@ -1349,32 +1417,29 @@ async def test_complete_marks_done_and_creates_children_atomically_with_lineage(
     assert parent["status"] == "done" and parent["result"] == {"n": 3}
     assert child["status"] == "queued" and child["depth"] == 1
     assert child["parent_task_id"] == tid and child["root_event_id"] == "e1"
-    assert child["project_id"] == "acme"
+    assert child["project_id"] == "acme" and child["plan_id"] is not None
 
 
 async def test_complete_refuses_children_beyond_max_depth_and_records_it() -> None:
     q, db, _ = make()
-    tid = await q.enqueue(kind="followup", project_id="acme", payload={}, reason="x")
-    assert tid is not None
+    tid = await enqueue(q, kind="check_issue_state")
     await db.update("tasks", tid, {"depth": 4})
     task = await q.claim(tid)
     assert task is not None
-    ids = await q.complete(task, {}, [{"kind": "followup", "payload": {}, "reason": "again"}])
+    ids = await q.complete(task, {}, [{"kind": "nudge", "payload": {}, "reason": "again"}])
     assert ids == []
     parent = await db.get("tasks", tid)
-    assert parent is not None
-    assert parent["status"] == "done"
-    assert parent["refused_enqueues"][0]["kind"] == "followup"
+    assert parent is not None and parent["status"] == "done"
+    assert parent["refused_enqueues"][0]["kind"] == "nudge"
     assert "max_depth" in parent["refused_enqueues"][0]["reason"]
 
 
 async def test_complete_is_a_no_op_if_the_lease_was_lost() -> None:
     q, db, _ = make()
-    tid = await q.enqueue(kind="extract", project_id="acme", payload={}, reason="x")
-    assert tid is not None
+    tid = await enqueue(q)
     task = await q.claim(tid)
     assert task is not None
-    await db.update("tasks", tid, {"status": "queued"})  # someone reset it underneath us
+    await db.update("tasks", tid, {"status": "queued"})
     ids = await q.complete(task, {"n": 1}, [{"kind": "reconcile", "payload": {}, "reason": "r"}])
     assert ids == []
     assert await db.count("tasks", [("kind", "==", "reconcile")]) == 0
@@ -1382,33 +1447,25 @@ async def test_complete_is_a_no_op_if_the_lease_was_lost() -> None:
 
 async def test_fail_requeues_with_backoff_then_marks_failed_on_the_third_attempt() -> None:
     q, db, clock = make()
-    tid = await q.enqueue(kind="extract", project_id="acme", payload={}, reason="x")
-    assert tid is not None
+    tid = await enqueue(q)
     t = await q.claim(tid)
-    assert t is not None
-    assert await q.fail(t, "boom") == "queued"
+    assert t is not None and await q.fail(t, "boom") == "queued"
     doc = await db.get("tasks", tid)
-    assert doc is not None and doc["due_at"] == "2026-08-27T09:01:00+00:00"  # +60s
-
+    assert doc is not None and doc["due_at"] == "2026-08-27T09:01:00+00:00"
     clock.advance(minutes=2)
     t = await q.claim(tid)
-    assert t is not None
-    assert await q.fail(t, "boom") == "queued"
+    assert t is not None and await q.fail(t, "boom") == "queued"
     doc = await db.get("tasks", tid)
-    assert doc is not None and doc["due_at"] == "2026-08-27T09:07:00+00:00"  # +300s
-
+    assert doc is not None and doc["due_at"] == "2026-08-27T09:07:00+00:00"
     clock.advance(minutes=6)
     t = await q.claim(tid)
-    assert t is not None
-    assert await q.fail(t, "boom") == "failed"
-    doc = await db.get("tasks", tid)
-    assert doc is not None and doc["status"] == "failed" and doc["error"] == "boom"
+    assert t is not None and await q.fail(t, "boom") == "failed"
+    assert await status(db, tid) == "failed"
 
 
 async def test_defer_pushes_due_at_and_a_deferred_task_becomes_due_again() -> None:
     q, db, clock = make()
-    tid = await q.enqueue(kind="nudge", project_id="acme", payload={}, reason="x")
-    assert tid is not None
+    tid = await enqueue(q, kind="nudge")
     t = await q.claim(tid)
     assert t is not None
     await q.defer(t, T0 + timedelta(hours=12), "quiet hours")
@@ -1417,6 +1474,165 @@ async def test_defer_pushes_due_at_and_a_deferred_task_becomes_due_again() -> No
     assert await q.due(["nudge"], limit=10) == []
     clock.advance(hours=12)
     assert [x["id"] for x in await q.due(["nudge"], limit=10)] == [tid]
+
+
+# --- dependencies -----------------------------------------------------------------------------
+
+async def test_a_task_with_an_unfinished_dependency_is_blocked_and_not_due() -> None:
+    q, db, _ = make()
+    a = await enqueue(q, kind="check_issue_state", reason="in progress?")
+    b = await enqueue(q, kind="check_pr_exists", reason="pr?", depends_on=[a])
+    assert await status(db, b) == "blocked"
+    assert [t["id"] for t in await q.due(["check_issue_state", "check_pr_exists"], 10)] == [a]
+
+
+async def test_completing_a_dependency_promotes_the_dependent_on_the_next_due_sweep() -> None:
+    q, db, _ = make()
+    a = await enqueue(q, kind="check_issue_state")
+    b = await enqueue(q, kind="check_pr_exists", depends_on=[a])
+    ta = await q.claim(a)
+    assert ta is not None
+    await q.complete(ta, {"met": True}, [])
+    assert [t["id"] for t in await q.due(["check_pr_exists"], 10)] == [b]
+    assert await status(db, b) == "queued"
+
+
+async def test_a_dependent_waits_for_all_of_its_dependencies() -> None:
+    q, db, _ = make()
+    a = await enqueue(q, kind="check_issue_state")
+    b = await enqueue(q, kind="check_pr_exists")
+    c = await enqueue(q, kind="check_pr_reviewed", depends_on=[a, b])
+    ta = await q.claim(a)
+    assert ta is not None
+    await q.complete(ta, {}, [])
+    await q.due(["check_pr_reviewed"], 10)
+    assert await status(db, c) == "blocked"
+    tb = await q.claim(b)
+    assert tb is not None
+    await q.complete(tb, {}, [])
+    await q.due(["check_pr_reviewed"], 10)
+    assert await status(db, c) == "queued"
+
+
+async def test_a_failed_dependency_skips_the_dependent_by_default() -> None:
+    q, db, _ = make()
+    a = await enqueue(q, kind="check_issue_state")
+    b = await enqueue(q, kind="check_pr_exists", depends_on=[a])
+    await db.update("tasks", a, {"status": "failed"})
+    await q.promote_ready()
+    assert await status(db, b) == "skipped"
+
+
+async def test_run_anyway_treats_a_failed_dependency_as_satisfied() -> None:
+    q, db, _ = make()
+    a = await enqueue(q, kind="check_issue_state")
+    b = await enqueue(q, kind="check_pr_exists", depends_on=[a], on_dep_failed="run_anyway")
+    await db.update("tasks", a, {"status": "failed"})
+    await q.promote_ready()
+    assert await status(db, b) == "queued"
+
+
+async def test_cancel_on_dep_failed_cascades_down_the_chain() -> None:
+    q, db, _ = make()
+    a = await enqueue(q, kind="check_issue_state")
+    b = await enqueue(q, kind="check_pr_exists", depends_on=[a], on_dep_failed="cancel")
+    c = await enqueue(q, kind="check_pr_reviewed", depends_on=[b])
+    await db.update("tasks", a, {"status": "failed"})
+    await q.promote_ready()
+    assert await status(db, b) == "cancelled"
+    assert await status(db, c) == "cancelled"
+
+
+async def test_cancel_cascades_to_dependents_and_reports_every_id() -> None:
+    q, db, _ = make()
+    a = await enqueue(q, kind="check_issue_state")
+    b = await enqueue(q, kind="check_pr_exists", depends_on=[a])
+    c = await enqueue(q, kind="check_pr_reviewed", depends_on=[b])
+    d = await enqueue(q, kind="nudge")  # unrelated
+    cancelled = await q.cancel(a, "issue reverted")
+    assert set(cancelled) == {a, b, c}
+    assert await status(db, d) == "queued"
+    doc = await db.get("tasks", c)
+    assert doc is not None and doc["error"] == "cancelled: issue reverted"
+
+
+async def test_a_done_task_cannot_be_cancelled() -> None:
+    q, db, _ = make()
+    a = await enqueue(q)
+    ta = await q.claim(a)
+    assert ta is not None
+    await q.complete(ta, {}, [])
+    assert await q.cancel(a, "late") == []
+    assert await status(db, a) == "done"
+
+
+# --- plans ------------------------------------------------------------------------------------
+
+PLAN = [
+    {"key": "impl", "kind": "check_issue_state", "payload": {}, "reason": "in progress by Thu",
+     "params": {"issue": "INV-142", "expect": ["In Progress", "Done"]},
+     "due_at": "2026-08-28T16:00:00+00:00", "on_unmet": "nudge_assignee"},
+    {"key": "pr", "kind": "check_pr_exists", "payload": {}, "reason": "pr open",
+     "params": {"issue": "INV-142"}, "depends_on": ["impl"],
+     "due_at": "2026-08-29T16:00:00+00:00", "on_unmet": "nudge_assignee"},
+    {"key": "review", "kind": "check_pr_reviewed", "payload": {}, "reason": "reviewed",
+     "params": {"issue": "INV-142"}, "depends_on": ["pr"],
+     "due_at": "2026-08-30T16:00:00+00:00", "on_unmet": "nudge_reviewer"},
+]
+
+
+async def test_a_plan_materialises_as_a_graph_with_keys_resolved_to_ids() -> None:
+    q, db, _ = make()
+    planner_task = await enqueue(q, kind="plan", root_event_id="e1")
+    tp = await q.claim(planner_task)
+    assert tp is not None
+    ids = await q.complete(tp, {"plan": "ok"}, PLAN)
+    assert len(ids) == 3
+    impl, pr, review = (await db.get("tasks", i) for i in ids)
+    assert impl is not None and pr is not None and review is not None
+    assert impl["status"] == "queued" and impl["depends_on"] == []
+    assert pr["status"] == "blocked" and pr["depends_on"] == [impl["id"]]
+    assert review["status"] == "blocked" and review["depends_on"] == [pr["id"]]
+    assert impl["key"] == "impl" and impl["params"]["issue"] == "INV-142"
+    assert impl["on_unmet"] == "nudge_assignee" and pr["plan_id"] == impl["plan_id"]
+    assert impl["depth"] == 1 and impl["root_event_id"] == "e1"
+
+
+async def test_a_plan_may_depend_on_an_existing_open_task_by_id() -> None:
+    q, db, _ = make()
+    existing = await enqueue(q, kind="check_issue_state")
+    planner_task = await enqueue(q, kind="plan")
+    tp = await q.claim(planner_task)
+    assert tp is not None
+    ids = await q.complete(tp, {}, [
+        {"kind": "nudge", "payload": {}, "reason": "after", "depends_on": [existing]},
+    ])
+    doc = await db.get("tasks", ids[0])
+    assert doc is not None and doc["status"] == "blocked" and doc["depends_on"] == [existing]
+
+
+async def test_supersedes_cancels_the_named_open_tasks_and_their_dependents() -> None:
+    q, db, _ = make()
+    old_a = await enqueue(q, kind="check_issue_state")
+    old_b = await enqueue(q, kind="check_pr_exists", depends_on=[old_a])
+    planner_task = await enqueue(q, kind="plan")
+    tp = await q.claim(planner_task)
+    assert tp is not None
+    ids = await q.complete(tp, {}, [{"kind": "check_issue_state", "payload": {}, "reason": "new"}],
+                           supersedes=[old_a])
+    assert len(ids) == 1
+    assert await status(db, old_a) == "cancelled" and await status(db, old_b) == "cancelled"
+
+
+async def test_open_count_counts_only_open_statuses() -> None:
+    q, db, _ = make()
+    a = await enqueue(q)
+    await enqueue(q, kind="check_pr_exists", depends_on=[a])
+    done = await enqueue(q)
+    td = await q.claim(done)
+    assert td is not None
+    await q.complete(td, {}, [])
+    assert await q.open_count("acme") == 2
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1429,9 +1645,11 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'app.store.tasks'`.
 - [ ] **Step 3: Write `app/store/tasks.py`**
 
 ```python
-"""The durable queue. Firestore documents are the tasks; a lease is the claim; a cas() that
-marks a task done and creates its children in one transaction is what makes "did the work but
-failed to schedule the follow-up" impossible."""
+"""The durable task-graph queue. Firestore documents are the tasks; a lease is the claim;
+dependencies make a task `blocked` until every dependency is done; a cas() that marks a task
+done and creates its children (a plan) in one transaction is what makes "did the work but
+failed to schedule the follow-up" impossible. The model never touches this module: stages hand
+the runner child specs, and the runner calls complete()."""
 
 from __future__ import annotations
 
@@ -1439,12 +1657,15 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.core.clock import Clock, iso, parse_iso
+from app.core.clock import Clock, iso
 from app.core.keys import new_id
-from app.store.db import Create, Db, Doc
+from app.store.db import Create, Db, Doc, Update
 from app.verify.lineage import DEFAULT_POLICY, check_lineage
 
 BACKOFF_SECONDS = (60, 300, 900)
+OPEN_STATUSES = ("queued", "blocked", "leased", "deferred")
+TERMINAL_BAD = ("failed", "cancelled", "skipped")
+DEP_POLICIES = ("skip", "run_anyway", "cancel")
 
 
 class TaskQueue:
@@ -1452,6 +1673,8 @@ class TaskQueue:
         self._db = db
         self._clock = clock
         self._lease = timedelta(minutes=lease_minutes)
+
+    # --- documents ------------------------------------------------------------------------------
 
     def _doc(
         self,
@@ -1464,13 +1687,24 @@ class TaskQueue:
         depth: int,
         parent_task_id: str | None,
         root_event_id: str | None,
+        params: dict[str, Any] | None = None,
+        depends_on: Sequence[str] = (),
+        blocked: bool = False,
+        on_dep_failed: str = "skip",
+        on_unmet: str = "none",
+        context: dict[str, Any] | None = None,
+        key: str | None = None,
+        plan_id: str | None = None,
     ) -> dict[str, Any]:
+        if on_dep_failed not in DEP_POLICIES:
+            raise ValueError(f"on_dep_failed must be one of {DEP_POLICIES}, got {on_dep_failed!r}")
         return {
             "kind": kind,
+            "params": params or {},
             "project_id": project_id,
             "payload": payload,
             "reason": reason,
-            "status": "queued",
+            "status": "blocked" if blocked else "queued",
             "due_at": due_at,
             "created_at": iso(self._clock.now()),
             "lease_until": None,
@@ -1483,7 +1717,28 @@ class TaskQueue:
             "refused_enqueues": [],
             "finished_at": None,
             "defer_reason": None,
+            "key": key,
+            "plan_id": plan_id,
+            "depends_on": list(depends_on),
+            "on_dep_failed": on_dep_failed,
+            "on_unmet": on_unmet,
+            "context": context or {},
         }
+
+    async def _deps_state(self, dep_ids: Sequence[str]) -> tuple[bool, bool]:
+        """(all_done, any_bad) over the dependency ids. A missing dependency counts as bad —
+        we never run work whose precondition vanished."""
+        all_done, any_bad = True, False
+        for dep_id in dep_ids:
+            dep = await self._db.get("tasks", dep_id)
+            if dep is None or dep["status"] in TERMINAL_BAD:
+                any_bad = True
+                all_done = False
+            elif dep["status"] != "done":
+                all_done = False
+        return all_done, any_bad
+
+    # --- enqueue ------------------------------------------------------------------------------
 
     async def enqueue(
         self,
@@ -1496,8 +1751,17 @@ class TaskQueue:
         parent: Doc | None = None,
         root_event_id: str | None = None,
         policy: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        depends_on: Sequence[str] = (),
+        on_dep_failed: str = "skip",
+        on_unmet: str = "none",
+        context: dict[str, Any] | None = None,
+        key: str | None = None,
+        plan_id: str | None = None,
     ) -> str | None:
-        """Create one task. None when the lineage gate refuses (recorded on the parent)."""
+        """Create one task. None when the lineage gate refuses (recorded on the parent).
+        Blocked when any dependency is not yet done; dependency failure is resolved later by
+        promote_ready() according to on_dep_failed."""
         existing = 0
         if parent is not None:
             existing = await self._db.count("tasks", [("parent_task_id", "==", parent["id"])])
@@ -1508,23 +1772,83 @@ class TaskQueue:
                 refused.append({"kind": kind, "reason": verdict.reason})
                 await self._db.update("tasks", parent["id"], {"refused_enqueues": refused})
             return None
+        all_done, _ = await self._deps_state(depends_on)
         task_id = new_id()
         doc = self._doc(
-            kind=kind,
-            project_id=project_id,
-            payload=payload,
-            reason=reason,
-            due_at=iso(due_at or self._clock.now()),
-            depth=verdict.depth,
+            kind=kind, project_id=project_id, payload=payload, reason=reason,
+            due_at=iso(due_at or self._clock.now()), depth=verdict.depth,
             parent_task_id=parent["id"] if parent else None,
             root_event_id=root_event_id or (parent or {}).get("root_event_id"),
+            params=params, depends_on=depends_on, blocked=bool(depends_on) and not all_done,
+            on_dep_failed=on_dep_failed, on_unmet=on_unmet, context=context, key=key,
+            plan_id=plan_id,
         )
         await self._db.create("tasks", task_id, doc)
         return task_id
 
+    # --- dependencies -------------------------------------------------------------------------
+
+    async def promote_ready(self) -> int:
+        """Resolve every blocked task against its dependencies: all done → queued; any failed /
+        cancelled / skipped / missing → skip, run_anyway or cancel per on_dep_failed. Idempotent;
+        called by due() on every tick, so a crash between a completion and its promotion heals
+        within a minute."""
+        promoted = 0
+        for task in await self._db.query("tasks", [("status", "==", "blocked")], limit=500):
+            all_done, any_bad = await self._deps_state(task.get("depends_on") or [])
+            if any_bad:
+                policy = task.get("on_dep_failed", "skip")
+                if policy == "cancel":
+                    await self.cancel(task["id"], "a dependency failed")
+                elif policy == "skip":
+                    await self._db.cas(
+                        "tasks", task["id"], lambda t: t["status"] == "blocked",
+                        lambda t: {"status": "skipped", "error": "skipped: a dependency failed",
+                                   "finished_at": iso(self._clock.now())},
+                    )
+                else:  # run_anyway: a bad dependency counts as satisfied
+                    remaining = [
+                        d for d in task.get("depends_on") or []
+                        if (dep := await self._db.get("tasks", d)) is not None
+                        and dep["status"] not in TERMINAL_BAD and dep["status"] != "done"
+                    ]
+                    if not remaining:
+                        ok = await self._db.cas(
+                            "tasks", task["id"], lambda t: t["status"] == "blocked",
+                            lambda t: {"status": "queued"},
+                        )
+                        promoted += int(ok)
+            elif all_done:
+                ok = await self._db.cas(
+                    "tasks", task["id"], lambda t: t["status"] == "blocked",
+                    lambda t: {"status": "queued"},
+                )
+                promoted += int(ok)
+        return promoted
+
+    async def cancel(self, task_id: str, reason: str) -> list[str]:
+        """Cancel an open task and, recursively, everything that depends on it. Done tasks are
+        left alone. Returns every id that was cancelled."""
+        cancelled: list[str] = []
+        ok = await self._db.cas(
+            "tasks", task_id, lambda t: t["status"] in OPEN_STATUSES,
+            lambda t: {"status": "cancelled", "error": f"cancelled: {reason}",
+                       "finished_at": iso(self._clock.now()), "lease_until": None},
+        )
+        if not ok:
+            return cancelled
+        cancelled.append(task_id)
+        dependents = await self._db.query("tasks", [("depends_on", "array_contains", task_id)])
+        for dep in dependents:
+            cancelled.extend(await self.cancel(dep["id"], reason))
+        return cancelled
+
+    # --- tick -----------------------------------------------------------------------------------
+
     async def due(self, kinds: Sequence[str], limit: int) -> list[Doc]:
         """Due work for the kinds this process can run: queued or deferred tasks past due_at,
-        plus leased tasks whose lease expired (a crashed worker)."""
+        plus leased tasks whose lease expired (a crashed worker). Promotes blocked tasks first."""
+        await self.promote_ready()
         now = iso(self._clock.now())
         queued = await self._db.query(
             "tasks", [("status", "in", ["queued", "deferred"]), ("due_at", "<=", now)],
@@ -1557,15 +1881,24 @@ class TaskQueue:
         )
         return await self._db.get("tasks", task_id) if ok else None
 
+    # --- completion ---------------------------------------------------------------------------
+
     async def complete(
-        self, task: Doc, result: dict[str, Any], children: Sequence[dict[str, Any]]
+        self,
+        task: Doc,
+        result: dict[str, Any],
+        children: Sequence[dict[str, Any]],
+        *,
+        supersedes: Sequence[str] = (),
     ) -> list[str]:
-        """Mark done and create children in the same transaction. Children failing the lineage
-        gate are recorded in refused_enqueues instead. Returns created child ids; [] if the
-        lease was lost (nothing is written then)."""
+        """Mark done and, in the same transaction, create the children (a plan) and cancel the
+        superseded open tasks with their dependents. Children may depend on each other by `key`
+        or on existing tasks by id. Children failing the lineage gate are recorded in
+        refused_enqueues. Returns created child ids; [] if the lease was lost (nothing written)."""
         existing = await self._db.count("tasks", [("parent_task_id", "==", task["id"])])
-        creates: list[Create] = []
-        ids: list[str] = []
+        plan_id = new_id()
+        key_to_id: dict[str, str] = {}
+        accepted: list[tuple[dict[str, Any], str, int]] = []
         refused: list[dict[str, str]] = list(task.get("refused_enqueues") or [])
         for spec in children:
             verdict = check_lineage(task, existing, spec.get("policy") or DEFAULT_POLICY)
@@ -1574,32 +1907,69 @@ class TaskQueue:
                 continue
             existing += 1
             child_id = new_id()
-            ids.append(child_id)
+            if spec.get("key"):
+                key_to_id[str(spec["key"])] = child_id
+            accepted.append((spec, child_id, verdict.depth))
+
+        creates: list[Create] = []
+        for spec, child_id, depth in accepted:
+            deps = [key_to_id.get(str(d), str(d)) for d in spec.get("depends_on") or []]
+            sibling_ids = {cid for _, cid, _ in accepted}
+            external = [d for d in deps if d not in sibling_ids]
+            all_done, _ = await self._deps_state(external)
+            blocked = bool(deps) and (any(d in sibling_ids for d in deps) or not all_done)
             creates.append((
                 "tasks", child_id,
                 self._doc(
-                    kind=spec["kind"],
-                    project_id=task["project_id"],
-                    payload=spec.get("payload") or {},
-                    reason=spec["reason"],
-                    due_at=spec.get("due_at") or iso(self._clock.now()),
-                    depth=verdict.depth,
-                    parent_task_id=task["id"],
-                    root_event_id=task.get("root_event_id"),
+                    kind=spec["kind"], project_id=task["project_id"],
+                    payload=spec.get("payload") or {}, reason=spec["reason"],
+                    due_at=spec.get("due_at") or iso(self._clock.now()), depth=depth,
+                    parent_task_id=task["id"], root_event_id=task.get("root_event_id"),
+                    params=spec.get("params"), depends_on=deps, blocked=blocked,
+                    on_dep_failed=spec.get("on_dep_failed", "skip"),
+                    on_unmet=spec.get("on_unmet", "none"), context=spec.get("context"),
+                    key=spec.get("key"), plan_id=plan_id,
                 ),
             ))
+
+        updates: list[Update] = []
         finished = iso(self._clock.now())
+        for sid in await self._cascade_ids(supersedes):
+            updates.append(("tasks", sid, {
+                "status": "cancelled", "error": f"cancelled: superseded by plan {plan_id}",
+                "finished_at": finished, "lease_until": None,
+            }))
+
         ok = await self._db.cas(
             "tasks", task["id"],
             lambda t: t["status"] == "leased",
             lambda t: {"status": "done", "result": result, "refused_enqueues": refused,
                        "finished_at": finished, "lease_until": None},
-            creates,
+            creates, updates,
         )
-        return ids if ok else []
+        return [cid for _, cid, _ in accepted] if ok else []
+
+    async def _cascade_ids(self, roots: Sequence[str]) -> list[str]:
+        """Open tasks among `roots` plus everything open that depends on them, transitively."""
+        seen: list[str] = []
+        stack = list(roots)
+        while stack:
+            tid = stack.pop()
+            if tid in seen:
+                continue
+            doc = await self._db.get("tasks", tid)
+            if doc is None or doc["status"] not in OPEN_STATUSES:
+                continue
+            seen.append(tid)
+            for dep in await self._db.query("tasks", [("depends_on", "array_contains", tid)]):
+                stack.append(dep["id"])
+        return seen
+
+    # --- failure --------------------------------------------------------------------------------
 
     async def fail(self, task: Doc, reason: str, *, max_attempts: int = 3) -> str:
-        """Retry with backoff while attempts remain; otherwise mark failed. Returns new status."""
+        """Retry with backoff while attempts remain; otherwise mark failed. Dependents are
+        resolved by promote_ready() on the next tick. Returns the new status."""
         now = self._clock.now()
         attempts = int(task.get("attempts", 0))
         if attempts >= max_attempts:
@@ -1620,23 +1990,507 @@ class TaskQueue:
             "lease_until": None,
         })
 
-    @staticmethod
-    def due_at_of(task: Doc) -> datetime:
-        return parse_iso(task["due_at"])
+    async def open_count(self, project_id: str) -> int:
+        return await self._db.count(
+            "tasks", [("project_id", "==", project_id), ("status", "in", list(OPEN_STATUSES))]
+        )
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-uv run pytest tests/store -q && uv run mypy app && uv run lint-imports
+uv run pytest tests/store -q && uv run mypy app && uv run lint-imports && uv run ruff check .
 ```
-Expected: all store tests pass (`16 passed`, live skipped); mypy and import-linter clean.
+Expected: `30 passed` (live skipped); mypy and import-linter clean. If ruff flags the walrus inside the comprehension in `promote_ready`, rewrite it as a small `for` loop — behaviour is what the tests pin, not the shape.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add app/store/tasks.py tests/store/test_tasks.py
-git commit -m "feat(store): durable task queue with leases, lineage-gated children, backoff and deferral"
+git commit -m "feat(store): task-graph queue — leases, dependencies, promotion, cascade cancel, plan materialisation"
+```
+
+---
+
+### Task 6b: `kinds/` registry skeleton and `verify/plan.py`
+
+**Files:**
+- Create: `app/kinds/__init__.py`, `app/kinds/base.py`, `app/kinds/registry.py`, `app/verify/plan.py`
+- Test: `tests/kinds/test_registry.py`, `tests/verify/test_plan.py`
+
+**Interfaces:**
+- Produces:
+  ```python
+  # kinds/base.py
+  class KindSpec(BaseModel):            # frozen
+      name: str
+      params_schema: type[BaseModel]
+      unmet_actions: tuple[str, ...]    # allowed on_unmet values
+      description: str
+
+  # kinds/registry.py
+  KINDS: dict[str, KindSpec]           # check_issue_state, check_pr_exists, check_pr_reviewed,
+                                       # check_pr_merged, nudge, escalate, reconcile_item, daily_review, report
+  def get_kind(name: str) -> KindSpec | None
+  def validate_params(kind: str, params: dict) -> tuple[dict | None, str | None]   # (clean, error)
+
+  # verify/plan.py
+  @dataclass(frozen=True)
+  class PlanVerdict:
+      ok: bool
+      tasks: list[dict]        # the accepted tasks, in dependency (topological) order, with ISO due_at
+      rejected: list[dict]     # each: {"key", "reason"}
+      reasons: list[str]       # plan-level problems (cycle, size, open-task cap)
+
+  def check_plan(plan: dict, *, now: datetime, policy: dict, open_tasks: int,
+                 existing_ids: Callable[[str], bool], id_exists: Callable[[str], bool]) -> PlanVerdict
+  ```
+  Plan shape: `{"tasks": [{"key", "kind", "params", "due", "depends_on": [keys or ids], "reason", "on_unmet", "on_dep_failed", "context"}], "supersedes": [...], "notes": str}`.
+  Executors are Plan 2; today each kind is schema + metadata only.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/kinds/test_registry.py`:
+```python
+from app.kinds.registry import KINDS, get_kind, validate_params
+
+
+def test_the_catalog_lists_every_kind_the_spec_names() -> None:
+    assert set(KINDS) == {
+        "check_issue_state", "check_pr_exists", "check_pr_reviewed", "check_pr_merged",
+        "nudge", "escalate", "reconcile_item", "daily_review", "report",
+    }
+
+
+def test_params_are_validated_against_the_kinds_schema() -> None:
+    clean, err = validate_params("check_issue_state", {"issue": "INV-142", "expect": ["Done"]})
+    assert err is None and clean == {"issue": "INV-142", "expect": ["Done"]}
+    clean, err = validate_params("check_issue_state", {"issue": "INV-142"})
+    assert clean is None and err is not None and "expect" in err
+    clean, err = validate_params("check_pr_exists", {"issue": "INV-142", "bogus": 1})
+    assert clean is None and err is not None and "bogus" in err
+
+
+def test_unknown_kinds_are_rejected() -> None:
+    assert get_kind("delete_everything") is None
+    clean, err = validate_params("delete_everything", {})
+    assert clean is None and err == "unknown kind 'delete_everything'"
+
+
+def test_each_kind_declares_which_unmet_actions_it_allows() -> None:
+    assert "escalate_channel" in KINDS["check_issue_state"].unmet_actions
+    assert KINDS["nudge"].unmet_actions == ()
+```
+
+`tests/verify/test_plan.py`:
+```python
+from datetime import UTC, datetime
+
+from app.verify.plan import check_plan
+
+NOW = datetime(2026, 8, 27, 9, 0, tzinfo=UTC)
+POLICY = {"plan_horizon_days": 30, "max_plan_size": 12, "max_open_tasks": 50}
+KNOWN_IDS = {"INV-142", "INV-104", "Nodir Rahimov"}
+
+
+def plan(*tasks: dict, supersedes: list[str] | None = None) -> dict:  # type: ignore[type-arg]
+    return {"tasks": list(tasks), "supersedes": supersedes or [], "notes": ""}
+
+
+def task(key: str, kind: str, params: dict, due: str, **kw) -> dict:  # type: ignore[no-untyped-def, type-arg]
+    return {"key": key, "kind": kind, "params": params, "due": due, "reason": f"{key} reason",
+            "depends_on": kw.get("depends_on", []), "on_unmet": kw.get("on_unmet", "none"),
+            "on_dep_failed": kw.get("on_dep_failed", "skip"), "context": kw.get("context", {})}
+
+
+def check(p: dict, open_tasks: int = 0):  # type: ignore[no-untyped-def, type-arg]
+    return check_plan(p, now=NOW, policy=POLICY, open_tasks=open_tasks,
+                      existing_ids=lambda tid: tid.startswith("existing-"),
+                      id_exists=lambda ref: ref in KNOWN_IDS)
+
+
+def test_a_valid_dependency_chain_is_accepted_in_topological_order_with_iso_due_dates() -> None:
+    v = check(plan(
+        task("review", "check_pr_reviewed", {"issue": "INV-142"}, "2026-08-30T16:00:00Z",
+             depends_on=["pr"], on_unmet="nudge_reviewer"),
+        task("impl", "check_issue_state", {"issue": "INV-142", "expect": ["In Progress"]},
+             "2026-08-28T16:00:00Z", on_unmet="nudge_assignee"),
+        task("pr", "check_pr_exists", {"issue": "INV-142"}, "2026-08-29T16:00:00Z",
+             depends_on=["impl"]),
+    ))
+    assert v.ok and v.reasons == [] and v.rejected == []
+    assert [t["key"] for t in v.tasks] == ["impl", "pr", "review"]
+    assert v.tasks[0]["due_at"] == "2026-08-28T16:00:00+00:00"
+    assert v.tasks[1]["depends_on"] == ["impl"]
+
+
+def test_an_unknown_kind_or_bad_params_rejects_that_task_only() -> None:
+    v = check(plan(
+        task("ok", "check_issue_state", {"issue": "INV-142", "expect": ["Done"]}, "2026-08-28T09:00:00Z"),
+        task("bad_kind", "launch_rockets", {}, "2026-08-28T09:00:00Z"),
+        task("bad_params", "check_pr_exists", {"pull": 7}, "2026-08-28T09:00:00Z"),
+    ))
+    assert v.ok is False  # something was rejected, so the plan is not clean
+    assert [t["key"] for t in v.tasks] == ["ok"]
+    assert {r["key"] for r in v.rejected} == {"bad_kind", "bad_params"}
+
+
+def test_a_task_referencing_an_unknown_issue_is_rejected_by_the_id_gate() -> None:
+    v = check(plan(task("ghost", "check_issue_state", {"issue": "INV-999", "expect": ["Done"]},
+                        "2026-08-28T09:00:00Z")))
+    assert v.tasks == [] and "INV-999" in v.rejected[0]["reason"]
+
+
+def test_a_due_in_the_past_or_beyond_the_horizon_is_rejected() -> None:
+    v = check(plan(
+        task("past", "check_issue_state", {"issue": "INV-142", "expect": ["Done"]}, "2026-08-27T08:00:00Z"),
+        task("far", "check_issue_state", {"issue": "INV-142", "expect": ["Done"]}, "2026-10-15T09:00:00Z"),
+    ))
+    assert v.tasks == []
+    reasons = " ".join(r["reason"] for r in v.rejected)
+    assert "in the past" in reasons and "horizon" in reasons
+
+
+def test_a_cycle_rejects_the_whole_plan_with_a_reason() -> None:
+    v = check(plan(
+        task("a", "check_issue_state", {"issue": "INV-142", "expect": ["Done"]}, "2026-08-28T09:00:00Z",
+             depends_on=["b"]),
+        task("b", "check_pr_exists", {"issue": "INV-142"}, "2026-08-28T09:00:00Z", depends_on=["a"]),
+    ))
+    assert v.ok is False and v.tasks == [] and any("cycle" in r for r in v.reasons)
+
+
+def test_dependencies_on_rejected_or_unknown_keys_cascade_to_rejection() -> None:
+    v = check(plan(
+        task("bad", "launch_rockets", {}, "2026-08-28T09:00:00Z"),
+        task("child", "check_pr_exists", {"issue": "INV-142"}, "2026-08-28T09:00:00Z",
+             depends_on=["bad"]),
+        task("orphan", "check_pr_exists", {"issue": "INV-142"}, "2026-08-28T09:00:00Z",
+             depends_on=["nope"]),
+    ))
+    assert v.tasks == []
+    assert {r["key"] for r in v.rejected} == {"bad", "child", "orphan"}
+
+
+def test_a_dependency_on_an_existing_open_task_id_is_allowed() -> None:
+    v = check(plan(task("after", "nudge", {"person": "Nodir Rahimov", "about": "INV-142",
+                                            "template": "still_open"},
+                        "2026-08-28T09:00:00Z", depends_on=["existing-123"])))
+    assert v.ok and v.tasks[0]["depends_on"] == ["existing-123"]
+
+
+def test_an_unmet_action_the_kind_does_not_allow_is_rejected() -> None:
+    v = check(plan(task("x", "check_pr_exists", {"issue": "INV-142"}, "2026-08-28T09:00:00Z",
+                        on_unmet="escalate_channel")))
+    assert v.tasks == [] and "on_unmet" in v.rejected[0]["reason"]
+
+
+def test_plan_size_and_open_task_caps_trim_from_the_end_and_say_so() -> None:
+    many = [task(f"t{i}", "check_issue_state", {"issue": "INV-142", "expect": ["Done"]},
+                 "2026-08-28T09:00:00Z") for i in range(14)]
+    v = check(plan(*many))
+    assert len(v.tasks) == 12 and any("max_plan_size" in r for r in v.reasons)
+    v = check(plan(*many[:5]), open_tasks=48)
+    assert len(v.tasks) == 2 and any("max_open_tasks" in r for r in v.reasons)
+
+
+def test_duplicate_keys_reject_the_later_one() -> None:
+    v = check(plan(
+        task("dup", "check_pr_exists", {"issue": "INV-142"}, "2026-08-28T09:00:00Z"),
+        task("dup", "check_pr_exists", {"issue": "INV-104"}, "2026-08-28T09:00:00Z"),
+    ))
+    assert len(v.tasks) == 1 and v.rejected[0]["reason"] == "duplicate key 'dup'"
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+```bash
+uv run pytest tests/kinds tests/verify/test_plan.py -q
+```
+Expected: FAIL with `ModuleNotFoundError`.
+
+- [ ] **Step 3: Write the kinds registry**
+
+`app/kinds/__init__.py`: empty.
+
+`app/kinds/base.py`:
+```python
+"""A task kind is the unit of what the planner may schedule: a name, a parameter schema, and the
+unmet-actions it may trigger. Executors (Plan 2) are looked up by the same name in stages/."""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict
+
+
+class KindSpec(BaseModel):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    name: str
+    params_schema: type[BaseModel]
+    unmet_actions: tuple[str, ...]
+    description: str
+
+
+class StrictParams(BaseModel):
+    """Params models forbid unknown fields, so a planner cannot smuggle intent through extras."""
+
+    model_config = ConfigDict(extra="forbid")
+```
+
+`app/kinds/registry.py`:
+```python
+"""The whitelist. Adding a capability to the agent = one KindSpec here + one executor in stages."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import ValidationError
+
+from app.kinds.base import KindSpec, StrictParams
+
+UNMET_ACTIONS = ("none", "nudge_assignee", "nudge_reviewer", "escalate_channel")
+
+
+class IssueStateParams(StrictParams):
+    issue: str
+    expect: list[str]
+
+
+class IssueParams(StrictParams):
+    issue: str
+
+
+class IssueOrPrParams(StrictParams):
+    issue: str | None = None
+    pr: str | None = None
+
+
+class NudgeParams(StrictParams):
+    person: str
+    about: str
+    template: str
+
+
+class EscalateParams(StrictParams):
+    about: str
+    template: str
+
+
+class ItemParams(StrictParams):
+    item: dict[str, Any]
+
+
+class ProjectParams(StrictParams):
+    project: str
+
+
+class ReportParams(StrictParams):
+    project: str
+    window: str = "7d"
+
+
+KINDS: dict[str, KindSpec] = {
+    spec.name: spec
+    for spec in (
+        KindSpec(name="check_issue_state", params_schema=IssueStateParams,
+                 unmet_actions=("nudge_assignee", "escalate_channel"),
+                 description="Is the Linear issue in one of the expected states?"),
+        KindSpec(name="check_pr_exists", params_schema=IssueParams,
+                 unmet_actions=("nudge_assignee",),
+                 description="Does a pull request reference the issue?"),
+        KindSpec(name="check_pr_reviewed", params_schema=IssueOrPrParams,
+                 unmet_actions=("nudge_reviewer",),
+                 description="Has the PR received at least one review?"),
+        KindSpec(name="check_pr_merged", params_schema=IssueOrPrParams,
+                 unmet_actions=("nudge_assignee", "escalate_channel"),
+                 description="Is the PR merged?"),
+        KindSpec(name="nudge", params_schema=NudgeParams, unmet_actions=(),
+                 description="Send one templated nudge to a person about something."),
+        KindSpec(name="escalate", params_schema=EscalateParams, unmet_actions=(),
+                 description="Post one templated escalation to the project channel."),
+        KindSpec(name="reconcile_item", params_schema=ItemParams, unmet_actions=(),
+                 description="Re-run reconcile for one action item."),
+        KindSpec(name="daily_review", params_schema=ProjectParams, unmet_actions=(),
+                 description="Gather project state and enqueue a plan."),
+        KindSpec(name="report", params_schema=ReportParams, unmet_actions=(),
+                 description="Run the status report stage."),
+    )
+}
+
+
+def get_kind(name: str) -> KindSpec | None:
+    return KINDS.get(name)
+
+
+def validate_params(kind: str, params: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    """(clean params, None) or (None, one-line error the planner can act on)."""
+    spec = KINDS.get(kind)
+    if spec is None:
+        return None, f"unknown kind {kind!r}"
+    try:
+        return spec.params_schema.model_validate(params).model_dump(), None
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        loc = ".".join(str(p) for p in first.get("loc", ())) or "params"
+        return None, f"{kind}: {loc}: {first.get('msg', 'invalid')}"
+```
+
+- [ ] **Step 4: Write `app/verify/plan.py`**
+
+```python
+"""The plan gate. A planner's proposal becomes queue tasks only after this: known kinds, valid
+params, unique keys, resolvable dependencies, no cycles, due times inside the horizon, every
+referenced issue/person real, and the project's size caps respected."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Any
+
+from app.core.clock import iso, parse_iso
+from app.kinds.registry import KINDS, UNMET_ACTIONS, validate_params
+
+ID_PARAM_FIELDS = ("issue", "person", "pr")
+DEP_POLICIES = ("skip", "run_anyway", "cancel")
+
+
+@dataclass(frozen=True)
+class PlanVerdict:
+    ok: bool
+    tasks: list[dict[str, Any]] = field(default_factory=list)
+    rejected: list[dict[str, str]] = field(default_factory=list)
+    reasons: list[str] = field(default_factory=list)
+
+
+def _parse_due(raw: Any) -> datetime | None:
+    try:
+        return parse_iso(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def check_plan(
+    plan: dict[str, Any],
+    *,
+    now: datetime,
+    policy: dict[str, Any],
+    open_tasks: int,
+    existing_ids: Callable[[str], bool],
+    id_exists: Callable[[str], bool],
+) -> PlanVerdict:
+    horizon = now + timedelta(days=int(policy.get("plan_horizon_days", 30)))
+    max_plan = int(policy.get("max_plan_size", 12))
+    max_open = int(policy.get("max_open_tasks", 50))
+    grace = now - timedelta(minutes=5)
+
+    accepted: dict[str, dict[str, Any]] = {}
+    rejected: list[dict[str, str]] = []
+    reasons: list[str] = []
+
+    # 1. per-task validation
+    for raw in plan.get("tasks") or []:
+        key = str(raw.get("key") or "")
+        if not key:
+            rejected.append({"key": "", "reason": "missing key"})
+            continue
+        if key in accepted:
+            rejected.append({"key": key, "reason": f"duplicate key {key!r}"})
+            continue
+        kind = str(raw.get("kind") or "")
+        clean, err = validate_params(kind, raw.get("params") or {})
+        if err is not None or clean is None:
+            rejected.append({"key": key, "reason": err or "invalid params"})
+            continue
+        spec = KINDS[kind]
+        on_unmet = str(raw.get("on_unmet") or "none")
+        if on_unmet not in UNMET_ACTIONS or (on_unmet != "none" and on_unmet not in spec.unmet_actions):
+            rejected.append({"key": key, "reason": f"on_unmet {on_unmet!r} not allowed for {kind}"})
+            continue
+        on_dep_failed = str(raw.get("on_dep_failed") or "skip")
+        if on_dep_failed not in DEP_POLICIES:
+            rejected.append({"key": key, "reason": f"on_dep_failed {on_dep_failed!r} invalid"})
+            continue
+        due = _parse_due(raw.get("due"))
+        if due is None:
+            rejected.append({"key": key, "reason": "due is not an ISO-8601 timestamp"})
+            continue
+        if due < grace:
+            rejected.append({"key": key, "reason": f"due {iso(due)} is in the past"})
+            continue
+        if due > horizon:
+            rejected.append({"key": key, "reason": f"due {iso(due)} is beyond the plan horizon"})
+            continue
+        missing = [str(clean[f]) for f in ID_PARAM_FIELDS if clean.get(f) and not id_exists(str(clean[f]))]
+        if missing:
+            rejected.append({"key": key, "reason": f"unknown identifier(s): {', '.join(missing)}"})
+            continue
+        accepted[key] = {
+            "key": key, "kind": kind, "params": clean, "due_at": iso(due),
+            "reason": str(raw.get("reason") or ""), "depends_on": [str(d) for d in raw.get("depends_on") or []],
+            "on_unmet": on_unmet, "on_dep_failed": on_dep_failed,
+            "context": dict(raw.get("context") or {}), "payload": {},
+        }
+
+    # 2. dependency resolution — a dependency must be an accepted key or an existing open task id
+    changed = True
+    while changed:
+        changed = False
+        for key, t in list(accepted.items()):
+            bad = [d for d in t["depends_on"] if d not in accepted and not existing_ids(d)]
+            if bad:
+                rejected.append({"key": key, "reason": f"depends on unknown or rejected: {', '.join(bad)}"})
+                del accepted[key]
+                changed = True
+
+    # 3. cycle check + topological order (Kahn) over in-plan dependencies
+    indeg = {k: sum(1 for d in t["depends_on"] if d in accepted) for k, t in accepted.items()}
+    ready = sorted(k for k, n in indeg.items() if n == 0)
+    ordered: list[str] = []
+    while ready:
+        k = ready.pop(0)
+        ordered.append(k)
+        for other, t in accepted.items():
+            if k in t["depends_on"]:
+                indeg[other] -= 1
+                if indeg[other] == 0:
+                    ready.append(other)
+                    ready.sort()
+    if len(ordered) != len(accepted):
+        reasons.append("dependency cycle detected; the whole plan is rejected")
+        return PlanVerdict(ok=False, tasks=[], rejected=rejected, reasons=reasons)
+
+    # 4. size caps — trim from the end of the topological order so no accepted task loses a dependency
+    tasks = [accepted[k] for k in ordered]
+    if len(tasks) > max_plan:
+        reasons.append(f"plan trimmed from {len(tasks)} to max_plan_size {max_plan}")
+        tasks = tasks[:max_plan]
+    room = max(0, max_open - open_tasks)
+    if len(tasks) > room:
+        reasons.append(f"plan trimmed from {len(tasks)} to {room} by max_open_tasks {max_open}")
+        tasks = tasks[:room]
+    kept = {t["key"] for t in tasks}
+    tasks = [{**t, "depends_on": [d for d in t["depends_on"] if d in kept or existing_ids(d)]} for t in tasks]
+
+    return PlanVerdict(ok=not rejected and not reasons, tasks=tasks, rejected=rejected, reasons=reasons)
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+```bash
+uv run pytest tests/kinds tests/verify -q && uv run mypy app && uv run lint-imports && uv run ruff check .
+```
+Expected: pass; import-linter allows `verify → kinds` and `kinds → core` only.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add app/kinds/__init__.py app/kinds/base.py app/kinds/registry.py app/verify/plan.py \
+  tests/kinds/__init__.py tests/kinds/test_registry.py tests/verify/test_plan.py
+git commit -m "feat: task kinds catalog and the plan gate (kinds, params, deps, cycles, horizon, caps)"
 ```
 
 ---
@@ -2017,7 +2871,8 @@ ACME = {
         {"name": "Tom Alvarez", "aliases": ["Tom"], "linear_user_id": "", "slack_id": "",
          "role": "support"},
     ],
-    "policy": {"max_depth": 4, "max_children": 5},
+    "policy": {"max_depth": 4, "max_children": 12, "max_plan_size": 12, "max_open_tasks": 50,
+               "plan_horizon_days": 30},
 }
 
 
@@ -3878,8 +4733,8 @@ git commit -m "feat(deploy): Cloud Run service, one-minute Scheduler tick, Fatho
 
 ## Self-review against the spec
 
-**Coverage (day-1 scope):** §4 architecture (Cloud Run + Firestore + Scheduler; no bus) — Tasks 6, 11, 14. §5 data model — `events`, `tasks`, `decisions`, `projects` created (Tasks 6, 8, 10); `actions`, `corrections` arrive with Act and corrections in Plans 2–3 by design. §6 queue — Task 6 implements enqueue/tick/lease/lineage-in-transaction/backoff/deferral; caps gate deferral is Plan 2 (needs Act). §7.1 extract with evidence gate and one bounce — Tasks 9–10; Gemma pre-filter is Plan 4, `PassthroughTriage` stands in. §8 extractor agent, sessions ephemeral, output schema — Task 12; tracing is Plan 3. §10 failure rows for webhook/redelivery/no-transcript/model failure/schema/gate/timeout/poison — Tasks 6, 8, 11 (Slack notice for no-transcript deferred to Plan 2, noted in code). §11 secrets in Secret Manager, signature verification — Tasks 0, 7, 14. §13 fixtures — Task 13 (Linear seed and Notion pages are Plan 2 / manual). §15 layout and layering — Task 1 (independence contract deferred until a second stage exists, as the plan header states). §16 testing — every task.
+**Coverage (day-1 scope):** §4 architecture (Cloud Run + Firestore + Scheduler; no bus) — Tasks 6, 11, 14. §5 data model — `events`, `tasks`, `decisions`, `projects` created (Tasks 6, 8, 10); `actions`, `corrections` arrive with Act and corrections in Plans 2–3 by design. §6 queue — Task 6 implements enqueue/tick/lease/lineage-in-transaction/backoff/deferral plus dependencies (`blocked`, promotion, `on_dep_failed`, cascade cancel), plan materialisation with key resolution and `supersedes`; caps gate deferral is Plan 2 (needs Act). §7.4 plan gate and §7.5 kinds registry (schemas, no executors) — Task 6b. §7.1 extract with evidence gate and one bounce — Tasks 9–10; Gemma pre-filter is Plan 4, `PassthroughTriage` stands in. §8 extractor agent, sessions ephemeral, output schema — Task 12; tracing is Plan 3. §10 failure rows for webhook/redelivery/no-transcript/model failure/schema/gate/timeout/poison — Tasks 6, 8, 11 (Slack notice for no-transcript deferred to Plan 2, noted in code). §11 secrets in Secret Manager, signature verification — Tasks 0, 7, 14. §13 fixtures — Task 13 (Linear seed and Notion pages are Plan 2 / manual). §15 layout and layering — Task 1 (independence contract deferred until a second stage exists, as the plan header states). §16 testing — every task.
 
 **Placeholders:** none of "TBD/TODO/implement later"; the only user-specific values (workspace ids) are empty strings in fixture JSON with the seed script documenting when they are filled. Model ids are config with a verification step.
 
-**Type consistency:** `Db` methods and `FakeDb` match (Task 4 ↔ 6, 8, 10). `TaskQueue.complete(task, result, children)` returns `list[str]` and is called that way in `runner.run_task` (Task 11). `StageResult(result, children)` shape matches `extract.run` and `runner`. `Deps` fields match `conftest.py` and `build_deps`. `Extractor.run(payload) -> dict` matches `GeminiExtractor` and `FakeExtractor`. `check_evidence(items, transcript_text) -> EvidenceVerdict(kept, dropped)` matches its use in `extract._gate`. Test-only helper `seed_event_and_task` is local to its test module.
+**Type consistency:** `Db` methods (incl. `cas(..., creates, updates)` and `array_contains`) and `FakeDb` match (Task 4 ↔ 6, 8, 10). `TaskQueue.complete(task, result, children, *, supersedes=())` returns `list[str]` and is called with three positional args in `runner.run_task` (Task 11). `check_plan` consumes `KINDS`/`validate_params` from Task 6b and emits tasks whose keys (`kind, params, due_at, depends_on, on_unmet, on_dep_failed, context, key, reason, payload`) are exactly the child-spec keys `TaskQueue.complete` accepts. `StageResult(result, children)` shape matches `extract.run` and `runner`. `Deps` fields match `conftest.py` and `build_deps`. `Extractor.run(payload) -> dict` matches `GeminiExtractor` and `FakeExtractor`. `check_evidence(items, transcript_text) -> EvidenceVerdict(kept, dropped)` matches its use in `extract._gate`. Test-only helper `seed_event_and_task` is local to its test module.
