@@ -15,6 +15,9 @@ from app.harness.store.db import Doc
 class StageResult:
     result: dict[str, Any]
     children: list[dict[str, Any]] = field(default_factory=list)
+    # Open task ids this stage's work makes obsolete; the queue cancels them in the same
+    # transaction that creates the children, so a re-plan is never briefly double-booked.
+    supersedes: list[str] = field(default_factory=list)
 
 
 StageHandler = Callable[[Doc, Deps], Awaitable[StageResult]]

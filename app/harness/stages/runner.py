@@ -6,12 +6,15 @@ import asyncio
 
 from app.harness.core.redact import redact
 from app.harness.deps import Deps
-from app.harness.stages import extract
+from app.harness.stages import act, extract, plan, reconcile
 from app.harness.stages.base import StageHandler
 from app.harness.store.db import Doc
 
 STAGES: dict[str, StageHandler] = {
     "extract": extract.run,
+    "reconcile": reconcile.run,
+    "act": act.run,
+    "plan": plan.run,
 }
 
 
@@ -29,5 +32,7 @@ async def run_task(task: Doc, deps: Deps) -> str:
         )
     except Exception as exc:  # noqa: BLE001 — the queue owns retry policy; we only classify
         return await deps.queue.fail(claimed, redact(f"{type(exc).__name__}: {exc}"))
-    await deps.queue.complete(claimed, outcome.result, outcome.children)
+    await deps.queue.complete(
+        claimed, outcome.result, outcome.children, supersedes=outcome.supersedes
+    )
     return "done"
