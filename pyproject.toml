@@ -1,0 +1,72 @@
+[project]
+name = "pm-agent"
+version = "0.1.0"
+description = "Autonomous PM agent: a product call ends → reconciled, cited Linear issues → self-scheduled follow-ups"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "google-cloud-firestore>=2.16",
+    "google-adk>=1.0",
+    "google-genai>=1.0",
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "import-linter>=2.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.10"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "app"
+module-root = ""
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["live: hits real Google APIs; skipped unless GOOGLE_API_KEY is set"]
+
+[tool.ruff]
+line-length = 100
+src = ["app", "tests", "scripts"]
+extend-exclude = ["fixtures"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "W", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "app"
+
+[[tool.mypy.overrides]]
+# Third-party packages that ship no type stubs. This is NOT a debt list for our code.
+module = ["google.cloud.*", "google.adk.*", "google.genai.*", "google.api_core.*"]
+ignore_missing_imports = true
+
+[tool.importlinter]
+root_packages = ["app"]
+
+[[tool.importlinter.contracts]]
+name = "core, store, verify, clients and kinds never import the model side or the wiring"
+type = "forbidden"
+source_modules = ["app.core", "app.store", "app.verify", "app.clients", "app.kinds"]
+forbidden_modules = ["app.agents", "app.stages", "app.http", "app.deps", "app.main"]
+
+[[tool.importlinter.contracts]]
+name = "agents import only clients, core and kinds — the model cannot reach the store or the queue"
+type = "forbidden"
+source_modules = ["app.agents"]
+forbidden_modules = ["app.store", "app.verify", "app.stages", "app.http", "app.deps", "app.main"]
