@@ -6,7 +6,7 @@ import asyncio
 
 from app.harness.core.redact import redact
 from app.harness.deps import Deps
-from app.harness.stages import act, extract, plan, reconcile
+from app.harness.stages import act, checks, extract, plan, reconcile
 from app.harness.stages.base import StageHandler
 from app.harness.store.db import Doc
 
@@ -15,6 +15,11 @@ STAGES: dict[str, StageHandler] = {
     "reconcile": reconcile.run,
     "act": act.run,
     "plan": plan.run,
+    "check_issue_state": checks.run_check,
+    "check_pr_exists": checks.run_check,
+    "check_pr_reviewed": checks.run_check,
+    "check_pr_merged": checks.run_check,
+    "nudge": checks.run_nudge,
 }
 
 
