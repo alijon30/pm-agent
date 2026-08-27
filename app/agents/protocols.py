@@ -1,0 +1,19 @@
+"""What a stage needs from the model side. Stages depend on these, never on ADK directly, so
+every stage test runs against a fake."""
+
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+
+class Extractor(Protocol):
+    async def run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """payload: {"transcript": str, "roster_names": [str], "feedback": str | None}.
+        Returns a dict shaped like agents.schemas.ExtractResult (validated by the stage)."""
+        ...
+
+
+class Triage(Protocol):
+    def decision_bearing(self, segments: list[dict[str, Any]]) -> list[bool]:
+        """One flag per transcript segment: worth showing the extractor?"""
+        ...
