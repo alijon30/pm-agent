@@ -8,13 +8,14 @@ from typing import Any
 from fastapi import FastAPI
 
 from app.harness.deps import Deps
-from app.harness.http import webhooks
+from app.harness.http import tick, webhooks
 
 
 def create_app(deps: Deps) -> FastAPI:
     app = FastAPI(title="pm-agent", docs_url=None, redoc_url=None)
     app.state.deps = deps
     app.include_router(webhooks.router)
+    app.include_router(tick.router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
