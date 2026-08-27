@@ -31,6 +31,12 @@ class AgentSpec:
     temperature: float = 0.1
 
 
+# ADK delivers structured output by calling a synthetic tool of its own when an agent has both
+# an output_schema and real tools. It is the framework talking to itself, not the model reaching
+# for something, so the guard must let it through — denying it silently empties the response.
+ADK_INTERNAL_TOOLS = frozenset({"set_model_response", "transfer_to_agent", "exit_loop"})
+
+
 class ToolGuard:
     """Denies tools outside the allow-list and stops a run that will not stop calling them.
 
@@ -46,6 +52,8 @@ class ToolGuard:
 
     def __call__(self, tool: Any, args: dict[str, Any], tool_context: Any) -> dict[str, Any] | None:
         name = getattr(tool, "name", "") or getattr(tool, "__name__", "")
+        if name in ADK_INTERNAL_TOOLS:
+            return None
         if name not in self._allowed:
             self.denied.append(name)
             log.warning("tool %r denied: not in the agent's allow-list", name)

@@ -265,3 +265,19 @@ async def test_a_call_that_produced_nothing_plans_nothing(deps: Deps) -> None:
     out = await run(task, deps)
     assert out.children == []
     assert len(deps.slack.posts) == 1  # the team still hears that nothing was filed
+
+
+def test_the_same_disagreement_reported_twice_reaches_the_team_once() -> None:
+    from app.harness.stages.act import dedupe_conflicts
+
+    code_vs_spec = {"kind": "code_vs_spec", "about": "reminder window", "sides": [
+        {"claim": "7 days", "source": "code:acme/config.py:6"},
+        {"claim": "5 days", "source": "notion:page-prd"}]}
+    same_pair_relabelled = {**code_vs_spec, "kind": "spec_vs_call"}
+    spec_vs_call = {"kind": "spec_vs_call", "about": "Reminder Window", "sides": [
+        {"claim": "5 days", "source": "notion:page-prd"},
+        {"claim": "3 days", "source": "fathom:8841201@00:01:42"}]}
+
+    kept = dedupe_conflicts([code_vs_spec, spec_vs_call, code_vs_spec, same_pair_relabelled])
+    assert len(kept) == 2
+    assert kept[0]["kind"] == "code_vs_spec"

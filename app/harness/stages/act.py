@@ -65,6 +65,17 @@ def build_description(
     return "\n".join(lines).strip()
 
 
+def dedupe_conflicts(conflicts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One entry per disagreement, keyed by what it is about and which sources disagree —
+    not by `kind`, since the same pair can be labelled differently on two passes."""
+    seen: dict[tuple[str, tuple[str, ...]], dict[str, Any]] = {}
+    for conflict in conflicts:
+        sources = tuple(sorted(s.get("source", "") for s in conflict.get("sides") or []))
+        key = ((conflict.get("about") or "").strip().lower(), sources)
+        seen.setdefault(key, conflict)
+    return list(seen.values())
+
+
 def decide(item: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
     """Apply the roster, priority and date gates. Returns what will be written plus the notes
     explaining every place the proposal was not taken at face value."""
@@ -208,8 +219,12 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         performed.append({"id": record["action_id"], "label": record["identifier"] or "action"})
         (created if record["outcome"] == "created" else updated).append(record)
 
-    conflicts = [c for item in reconciled.get("items") or [] for c in item.get("conflicts") or []]
-    conflicts += reconciled.get("decision_conflicts") or []
+    # The same disagreement often arrives twice — once against the item, once against the
+    # decision that produced it. The team should hear about it once.
+    conflicts = dedupe_conflicts(
+        [c for item in reconciled.get("items") or [] for c in item.get("conflicts") or []]
+        + (reconciled.get("decision_conflicts") or [])
+    )
 
     summary_action = await _post_summary(
         task, project, meeting, created, updated, skipped, conflicts, performed, counts, deps
