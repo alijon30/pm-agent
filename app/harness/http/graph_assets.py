@@ -170,17 +170,24 @@ function colorOf(node) {
   return COLORS.check;
 }
 
-function initials(label) {
-  const parts = String(label || "").trim().split(/\\s+/).filter(Boolean);
-  if (!parts.length) return "?";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (parts[0][0] + last).toUpperCase();
-}
-
 function glyphOf(node) {
-  if (node.type === "person") return initials(node.label);
   if (node.type === "check") return node.status === "done" ? "\\u2713" : "\\u25CB";
   return GLYPHS[node.type] || "";
+}
+
+// A person is a silhouette, not a monogram: an icon says "human" to someone who has never met
+// the roster, and the name sits underneath where issues already set the precedent.
+function personGlyph(r) {
+  const g = svgEl("g");
+  g.setAttribute("class", "personGlyph");
+  const head = svgEl("circle");
+  head.setAttribute("cx", "0"); head.setAttribute("cy", String(-r * 0.28));
+  head.setAttribute("r", String(r * 0.30));
+  const body = svgEl("path");
+  const w = r * 0.62, top = r * 0.12, bottom = r * 0.62;
+  body.setAttribute("d", `M ${-w} ${bottom} Q 0 ${top - r * 0.35} ${w} ${bottom} Z`);
+  g.appendChild(head); g.appendChild(body);
+  return g;
 }
 
 function identifierOf(node) {
@@ -406,15 +413,19 @@ function element(node) {
   circle.setAttribute("filter", `url(#${filterId(hue)})`);
   g.appendChild(circle);
 
-  const glyph = svgEl("text");
-  glyph.setAttribute("class", "glyph");
-  glyph.setAttribute("font-size", String(Math.round(node.r * (node.type === "person" ? 0.8 : 1.1))));
-  glyph.textContent = glyphOf(node);
-  g.appendChild(glyph);
+  if (node.type === "person") {
+    g.appendChild(personGlyph(node.r));
+  } else {
+    const glyph = svgEl("text");
+    glyph.setAttribute("class", "glyph");
+    glyph.setAttribute("font-size", String(Math.round(node.r * 1.1)));
+    glyph.textContent = glyphOf(node);
+    g.appendChild(glyph);
+  }
 
-  // Only issues keep a standing label: the identifier is what a reader tracks across the graph,
-  // and everything else says who it is with its glyph or on hover.
-  if (node.type === "issue") {
+  // Issues and people keep a standing label: the identifier and the name are what a reader
+  // tracks across the graph; everything else says what it is with its glyph or on hover.
+  if (node.type === "issue" || node.type === "person") {
     const label = svgEl("text");
     label.setAttribute("class", "label");
     label.setAttribute("y", String(node.r + 14));
