@@ -27,6 +27,10 @@ class Db(Protocol):
 
     async def update(self, collection: str, doc_id: str, fields: dict[str, Any]) -> None: ...
 
+    async def delete(self, collection: str, doc_id: str) -> None:
+        """Remove a document; deleting one that does not exist is a no-op."""
+        ...
+
     async def query(
         self,
         collection: str,

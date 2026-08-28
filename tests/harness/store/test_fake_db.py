@@ -100,3 +100,11 @@ async def test_array_contains_matches_list_fields() -> None:
     await db.set("tasks", "c", {"depends_on": []})
     rows = await db.query("tasks", [("depends_on", "array_contains", "y")])
     assert [r["id"] for r in rows] == ["a"]
+
+
+async def test_delete_removes_a_doc_and_deleting_a_missing_one_is_a_no_op() -> None:
+    db = FakeDb()
+    await db.set("tasks", "t1", {"status": "queued"})
+    await db.delete("tasks", "t1")
+    assert await db.get("tasks", "t1") is None
+    await db.delete("tasks", "never-existed")

@@ -39,6 +39,9 @@ class FirestoreDb:
     async def update(self, collection: str, doc_id: str, fields: dict[str, Any]) -> None:
         await self._ref(collection, doc_id).update(fields)
 
+    async def delete(self, collection: str, doc_id: str) -> None:
+        await self._ref(collection, doc_id).delete()
+
     def _filtered(self, collection: str, filters: Sequence[Filter]) -> Any:
         q: Any = self._client.collection(collection)
         for field, op, value in filters:

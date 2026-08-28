@@ -51,3 +51,22 @@ curl -s -X POST https://api.fathom.ai/external/v1/webhooks \
 
 If Fathom rejects `triggered_for`, its create-webhook docs list the allowed values; use the one
 meaning "my own recordings".
+
+## Firestore composite indexes
+
+Queries that filter on one field and order by another need these (single-field queries are
+auto-indexed). Created once per project:
+
+```bash
+for spec in "tasks:status,due_at" "tasks:status,lease_until" \
+            "actions:idempotency_key,created_at" "actions:project_id,created_at" \
+            "_contract:status,due_at" "_contract:status,lease_until"; do
+  col="${spec%%:*}"; fields="${spec#*:}"; f1="${fields%%,*}"; f2="${fields#*,}"
+  gcloud firestore indexes composite create --collection-group="$col" \
+    --field-config="field-path=$f1,order=ascending" \
+    --field-config="field-path=$f2,order=ascending" --async
+done
+```
+
+`_contract` exists only for the live Db contract test, which uses the same query shapes as the
+real queue.

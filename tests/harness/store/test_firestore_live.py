@@ -1,7 +1,6 @@
 """Runs the FakeDb contract against real Firestore. Needs ADC and PM_GCP_PROJECT; skipped in CI."""
 
 import os
-import uuid
 
 import pytest
 from app.harness.store.firestore import FirestoreDb
@@ -13,7 +12,11 @@ live = pytest.mark.skipif(not os.environ.get("PM_GCP_PROJECT"), reason="no PM_GC
 @live
 async def test_firestore_db_honours_the_fake_db_contract() -> None:
     db = FirestoreDb(os.environ["PM_GCP_PROJECT"])
-    col = f"_contract_{uuid.uuid4().hex[:8]}"
+    # A fixed collection, because the filtered-and-ordered queries below need composite indexes
+    # and Firestore indexes are declared per collection group (deploy/secrets.md lists them).
+    col = "_contract"
+    for doc_id in ("t1", "t2", "t3", "child"):
+        await db.delete(col, doc_id)
     assert await db.create(col, "t1", {"status": "queued", "attempts": 0, "due_at": "b"}) is True
     assert await db.create(col, "t1", {"status": "x"}) is False
     await db.set(col, "t2", {"status": "queued", "attempts": 0, "due_at": "a"})

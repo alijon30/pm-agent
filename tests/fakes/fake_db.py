@@ -58,6 +58,9 @@ class FakeDb:
     async def update(self, collection: str, doc_id: str, fields: dict[str, Any]) -> None:
         self._col(collection)[doc_id].update(copy.deepcopy(fields))
 
+    async def delete(self, collection: str, doc_id: str) -> None:
+        self._col(collection).pop(doc_id, None)
+
     async def query(
         self,
         collection: str,
