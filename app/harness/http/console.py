@@ -820,14 +820,16 @@ def graph_page(project_name: str) -> str:
         "<span id='now-line'>waking up…</span><span class='caret'>▾</span></div>"
         "<div id='now-body'></div>"
         "<div id='now-hint' class='now-past-hint' style='display:none'>"
-        "viewing the past — scrub to the end for now</div></div>"
+        "viewing the past — scrub to the end for now</div></div></div>"
+        # The legend anchors the bottom-left corner on its own: a colour key is furniture, and
+        # it should not sit above the fold pretending to be status.
         "<div id='legend'>"
         + "".join(
             f"<span><i id='legend-{esc(name)}' style='background:{colour}'>{esc(glyph)}</i>"
             f"{esc(name)}</span>"
             for name, colour, glyph in GRAPH_LEGEND
         )
-        + "</div></div>"
+        + "</div>"
         "<div id='tooltip'></div>"
         "<aside id='panel'><button id='panel-close' title='Close'>✕</button>"
         "<div id='panel-body'></div></aside>"

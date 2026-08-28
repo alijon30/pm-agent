@@ -18,96 +18,132 @@ them on the server, and this page must not undo that by concatenating them into 
 from __future__ import annotations
 
 GRAPH_STYLE = """
-:root { --bg:#0b0d12; --fg:#e6e8ec; --muted:#8892a4; --line:#222736; --panel:#141824;
-        --accent:#88c0d0; }
+:root { --bg:#06080d; --fg:#e8ecf4; --muted:#7e899c; --line:rgba(148,163,184,.14);
+        --panel:rgba(15,19,29,.78); --solid:#10141d; --accent:#7dd3e0;
+        --good:#a3be8c; --warm:#ebcb8b; }
 * { box-sizing: border-box; }
 html, body { margin:0; height:100%; overflow:hidden; color:var(--fg);
-  font:14px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
-/* The void has a middle. Without it the canvas reads as a flat sheet and the nodes look
-   pasted on rather than suspended in something. */
-body { background:#07090d;
-  background-image: radial-gradient(ellipse 90% 75% at 50% 45%, #11141c 0%, #07090d 78%); }
+  font:14px/1.5 ui-sans-serif,-apple-system,"SF Pro Text","Segoe UI",Roboto,sans-serif; }
+/* The void has depth and a texture: a cool core the graph hangs in, fading to true dark, with
+   a faint dot grid that gives empty space a surface instead of an absence. */
+body { background:
+  radial-gradient(ellipse 100% 85% at 50% 40%, rgba(56,78,118,.18) 0%, rgba(10,14,22,0) 60%),
+  radial-gradient(circle at 50% 45%, #0c111d 0%, #080b12 55%, #05070b 100%); }
+body::before { content:""; position:fixed; inset:0; pointer-events:none;
+  background-image:radial-gradient(circle, rgba(148,163,184,.06) 1px, transparent 1.4px);
+  background-size:26px 26px;
+  -webkit-mask-image:radial-gradient(ellipse 80% 70% at 50% 45%, #000 25%, transparent 78%);
+  mask-image:radial-gradient(ellipse 80% 70% at 50% 45%, #000 25%, transparent 78%); }
 #stage { position:fixed; inset:0; }
 svg { width:100%; height:100%; display:block; }
 
-header { position:fixed; top:18px; left:20px; z-index:3; pointer-events:none; }
-header h1 { margin:0; font-size:16px; font-weight:650; letter-spacing:.01em; }
-header p { margin:2px 0 0; font-size:12.5px; color:var(--muted); }
+header { position:fixed; top:22px; left:24px; z-index:3; pointer-events:none; }
+header h1 { margin:0; font-size:19px; font-weight:700; letter-spacing:-.01em;
+  background:linear-gradient(135deg, #f2f5fa 30%, #9fb2cc);
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+header p { margin:3px 0 0; font-size:12px; color:var(--muted); letter-spacing:.01em; }
 header a { pointer-events:auto; color:var(--muted); text-decoration:none;
   border-bottom:1px solid var(--line); }
 header a:hover { color:var(--fg); }
 
-#rail { position:fixed; top:82px; left:20px; z-index:3; display:flex; flex-direction:column;
-  gap:14px; width:250px; }
-#now { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-  padding:10px 12px; font-size:12px; transition:opacity 180ms ease; }
-#now.past { opacity:.4; pointer-events:none; }
-#now-head { display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--fg);
-  line-height:1.4; }
-#now-head .caret { color:var(--muted); font-size:9px; margin-left:auto; }
-#pulse { width:7px; height:7px; border-radius:50%; background:var(--muted); flex:none;
-  margin-top:1px; }
+/* Every floating surface is the same glass, so the chrome reads as one material. */
+#now, #controls, #tooltip, #legend { background:var(--panel);
+  -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4);
+  border:1px solid var(--line);
+  box-shadow:0 18px 50px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.05); }
+
+#rail { position:fixed; top:88px; left:24px; z-index:3; display:flex; flex-direction:column;
+  gap:14px; width:288px; }
+#now { border-radius:16px; padding:13px 15px 12px; font-size:12px;
+  transition:opacity 180ms ease; }
+#now.past { opacity:.35; pointer-events:none; }
+#now-head { display:flex; align-items:flex-start; gap:9px; cursor:pointer; color:var(--fg);
+  line-height:1.45; font-size:12.5px; }
+#now-head .caret { color:var(--muted); font-size:9px; margin-left:auto; padding-top:3px; }
+#pulse { width:8px; height:8px; border-radius:50%; background:#57627a; flex:none;
+  margin-top:5px; box-shadow:0 0 0 3px rgba(87,98,122,.15); }
 #pulse.busy { background:var(--accent); animation:beat 1.6s ease-in-out infinite; }
 @keyframes beat {
-  0%,100% { box-shadow:0 0 0 0 rgba(136,192,208,.55); }
-  60% { box-shadow:0 0 0 6px rgba(136,192,208,0); }
+  0%,100% { box-shadow:0 0 0 0 rgba(125,211,224,.5); }
+  60% { box-shadow:0 0 0 7px rgba(125,211,224,0); }
 }
 #now-body { margin-top:2px; }
 #now.shut #now-body { display:none; }
-.now-group { margin-top:10px; border-top:1px solid var(--line); padding-top:8px; }
-.now-group h4 { margin:0 0 5px; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
+.now-group { margin-top:11px; border-top:1px solid var(--line); padding-top:9px; }
+.now-group h4 { margin:0 0 6px; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
   color:var(--muted); font-weight:600; }
-.now-row { display:flex; gap:8px; align-items:baseline; padding:2px 0; color:var(--fg);
-  line-height:1.35; }
-.now-row em { font-style:normal; color:var(--muted); font-size:11px; margin-left:auto;
-  white-space:nowrap; padding-left:6px; }
+.now-row { display:flex; gap:8px; align-items:baseline; padding:2.5px 0; color:#c6cede;
+  line-height:1.4; font-size:12px; }
+.now-row em { font-style:normal; color:var(--accent); font-size:10.5px; margin-left:auto;
+  white-space:nowrap; background:rgba(125,211,224,.1); border:1px solid rgba(125,211,224,.22);
+  border-radius:999px; padding:1px 8px; font-variant-numeric:tabular-nums; }
 .now-more { color:var(--muted); font-size:11px; padding-top:3px; }
-.now-past-hint { color:var(--muted); font-size:11px; margin-top:6px; font-style:italic; }
+.now-past-hint { color:var(--muted); font-size:11px; margin-top:7px; font-style:italic; }
 
-#legend { z-index:3; display:flex; flex-direction:column;
-  gap:6px; font-size:12px; color:var(--muted); }
-#legend span { display:flex; align-items:center; gap:8px; }
-#legend i { width:15px; height:15px; border-radius:50%; display:flex; align-items:center;
-  justify-content:center; font-size:8px; font-style:normal; color:#0b0d12; font-weight:700; }
+#legend { position:fixed; right:24px; top:24px; z-index:3; display:flex; flex-direction:row;
+  align-items:center; gap:13px; font-size:11px; color:var(--muted);
+  border-radius:999px; padding:8px 16px; letter-spacing:.02em; }
+#legend span { display:flex; align-items:center; gap:6px; }
+#legend i { width:12px; height:12px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; font-size:6.5px; font-style:normal; color:#0b0d12; font-weight:700;
+  box-shadow:0 0 8px rgba(255,255,255,.06); }
 
-#controls { position:fixed; left:50%; transform:translateX(-50%); bottom:20px; z-index:3;
-  display:flex; align-items:center; gap:14px; background:var(--panel);
-  border:1px solid var(--line); border-radius:11px; padding:10px 14px;
-  box-shadow:0 10px 34px rgba(0,0,0,.5); }
-button { background:#1b2030; color:var(--fg); border:1px solid var(--line); border-radius:8px;
-  padding:6px 13px; font:inherit; font-size:13px; cursor:pointer; min-width:92px; }
-button:hover { background:#232a3d; }
-input[type=range] { width:min(44vw,420px); accent-color:var(--accent); cursor:pointer; }
+#controls { position:fixed; left:50%; transform:translateX(-50%); bottom:22px; z-index:3;
+  display:flex; align-items:center; gap:14px; border-radius:999px; padding:9px 18px 9px 9px; }
+button { background:rgba(148,163,184,.1); color:var(--fg); border:1px solid var(--line);
+  border-radius:999px; padding:7px 15px; font:inherit; font-size:12.5px; cursor:pointer; }
+button:hover { background:rgba(148,163,184,.18); }
+#play { background:linear-gradient(180deg, #92dbe7, #67bccf); color:#06232c; border:none;
+  font-weight:700; min-width:96px; padding:8px 16px;
+  box-shadow:0 2px 14px rgba(125,211,224,.35); }
+#play:hover { background:linear-gradient(180deg, #a3e2ec, #79c8d9); }
+input[type=range] { -webkit-appearance:none; appearance:none; width:min(40vw,400px);
+  height:22px; background:transparent; cursor:pointer; }
+input[type=range]::-webkit-slider-runnable-track { height:3px; border-radius:2px;
+  background:rgba(148,163,184,.28); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px;
+  border-radius:50%; background:var(--accent); margin-top:-5px;
+  box-shadow:0 0 10px rgba(125,211,224,.55); border:none; }
+input[type=range]::-moz-range-track { height:3px; border-radius:2px;
+  background:rgba(148,163,184,.28); }
+input[type=range]::-moz-range-thumb { width:13px; height:13px; border-radius:50%;
+  background:var(--accent); border:none; box-shadow:0 0 10px rgba(125,211,224,.55); }
 #clock { font-variant-numeric:tabular-nums; color:var(--muted); min-width:118px;
-  font-size:12.5px; transition:font-size 180ms ease, color 180ms ease; }
-#clock.playing { font-size:15px; color:var(--fg); }
-#count { color:var(--muted); font-size:12.5px; min-width:72px; text-align:right; }
-#mode { font-size:10px; letter-spacing:.12em; padding:3px 8px; border-radius:99px;
-  border:1px solid var(--line); color:var(--muted); transition:color 180ms, border-color 180ms; }
-#mode.replay { color:var(--accent); border-color:var(--accent); }
-
-.edge { fill:none; stroke:#39415a; stroke-width:1.1; opacity:.55;
-  transition:opacity 150ms ease; }
-.edge.watches { stroke-dasharray:3 3; }
-.edge.learned { stroke:#5a4634; stroke-dasharray:2 4; }
-.edge.lit { opacity:1; stroke-width:1.6; }
-.edge.dimmed { opacity:.12; }
-
-.node { cursor:default; transition:opacity 150ms ease; }
-.node.link { cursor:pointer; }
-.node.dimmed { opacity:.12; }
-.node circle.body { stroke:#0b0d12; stroke-width:1.5; }
-.node.link:hover circle.body { stroke:#e6e8ec; }
-.glyph { fill:#0b0d12; font-weight:700; text-anchor:middle; dominant-baseline:central;
-  pointer-events:none; font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
-.label { fill:#aeb6c6; font-size:10.5px; text-anchor:middle; pointer-events:none;
-  paint-order:stroke; stroke:#07090d; stroke-width:3px; stroke-linejoin:round;
+  font-size:12px; transition:font-size 180ms ease, color 180ms ease; }
+#clock.playing { font-size:14.5px; color:var(--fg); }
+#count { color:var(--muted); font-size:12px; min-width:64px; text-align:right;
   font-variant-numeric:tabular-nums; }
+#mode { font-size:9.5px; letter-spacing:.14em; padding:4px 10px; border-radius:99px;
+  border:1px solid rgba(163,190,140,.35); color:var(--good); font-weight:700;
+  transition:color 180ms, border-color 180ms; display:flex; align-items:center; gap:5px; }
+#mode::before { content:""; width:5px; height:5px; border-radius:50%; background:var(--good); }
+#mode.replay { color:var(--accent); border-color:rgba(125,211,224,.4); }
+#mode.replay::before { background:var(--accent); }
+
+.edge { fill:none; stroke:#4a5573; stroke-width:1.6; opacity:.52;
+  transition:opacity 150ms ease; }
+.edge.watches { stroke-dasharray:3 4; }
+.edge.learned { stroke:#8a6a44 !important; stroke-dasharray:2 4; }
+.edge.lit { opacity:.95; stroke-width:2; }
+.edge.dimmed { opacity:.06; }
+
+.node { cursor:pointer; transition:opacity 150ms ease; }
+.node.link { cursor:pointer; }
+.node.dimmed { opacity:.1; }
+.node circle.body { stroke:rgba(5,7,11,.85); stroke-width:1.5; }
+.node:hover circle.body { stroke:rgba(232,236,244,.75); }
+.glyph { fill:#0a0f18; font-weight:700; text-anchor:middle; dominant-baseline:central;
+  pointer-events:none; font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.label { fill:#bdc6d8; font-size:11.5px; text-anchor:middle; pointer-events:none;
+  paint-order:stroke; stroke:#05070b; stroke-width:3.5px; stroke-linejoin:round;
+  font-variant-numeric:tabular-nums; }
+.label.title { font-size:12.5px; fill:#dde3ee; font-weight:600; }
+.label.minor { font-size:10px; fill:#99a5ba; }
 .halo { fill:none; }
 .early circle.body { animation:pulse 1.9s ease-in-out infinite; }
 @keyframes pulse {
   0%,100% { filter:drop-shadow(0 0 0 rgba(163,190,140,0)); }
-  50% { filter:drop-shadow(0 0 8px rgba(163,190,140,.95)); }
+  50% { filter:drop-shadow(0 0 10px rgba(163,190,140,.95)); }
 }
 .ripple { fill:none; stroke-width:2; transform-box:fill-box; transform-origin:center;
   animation:ripple 500ms ease-out forwards; pointer-events:none; }
@@ -117,42 +153,50 @@ input[type=range] { width:min(44vw,420px); accent-color:var(--accent); cursor:po
 }
 
 #tooltip { position:fixed; z-index:5; pointer-events:none; opacity:0; max-width:320px;
-  background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:9px 12px;
-  box-shadow:0 12px 36px rgba(0,0,0,.6); transition:opacity 120ms ease; }
+  border-radius:12px; padding:11px 14px; transition:opacity 120ms ease; }
 #tooltip.on { opacity:1; }
-#tooltip .t-type { color:var(--muted); font-size:10px; letter-spacing:.12em;
+#tooltip .t-type { color:var(--muted); font-size:9.5px; letter-spacing:.14em;
   text-transform:uppercase; }
-#tooltip .t-label { color:var(--fg); font-size:13px; margin:4px 0 5px; line-height:1.4; }
+#tooltip .t-label { color:var(--fg); font-size:13px; margin:4px 0 5px; line-height:1.45; }
 #tooltip .t-meta { color:var(--muted); font-size:11.5px; }
 
-#panel { position:fixed; top:0; right:0; bottom:0; width:360px; z-index:4;
-  background:var(--panel); border-left:1px solid var(--line); overflow-y:auto;
-  transform:translateX(100%); transition:transform 180ms ease;
-  box-shadow:-14px 0 44px rgba(0,0,0,.45); padding:20px 20px 28px; }
+#panel { position:fixed; top:0; right:0; bottom:0; width:404px; z-index:4;
+  background:rgba(12,16,25,.92);
+  -webkit-backdrop-filter:blur(24px) saturate(1.4); backdrop-filter:blur(24px) saturate(1.4);
+  border-left:1px solid var(--line); overflow-y:auto;
+  transform:translateX(100%); transition:transform 220ms cubic-bezier(.32,.72,.28,1);
+  box-shadow:-20px 0 60px rgba(0,0,0,.55); padding:26px 26px 32px; }
 #panel.open { transform:translateX(0); }
-#panel-close { position:absolute; top:14px; right:14px; min-width:0; padding:2px 8px;
-  font-size:14px; line-height:1.2; }
-.p-chip { display:inline-flex; align-items:center; gap:7px; font-size:10px; letter-spacing:.12em;
-  text-transform:uppercase; color:var(--muted); }
-.p-chip i { width:15px; height:15px; border-radius:50%; display:flex; align-items:center;
+#panel-close { position:absolute; top:16px; right:16px; min-width:0; padding:3px 10px;
+  font-size:13px; line-height:1.3; }
+.p-chip { display:inline-flex; align-items:center; gap:8px; font-size:9.5px;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+.p-chip i { width:16px; height:16px; border-radius:50%; display:flex; align-items:center;
   justify-content:center; font-size:8px; font-style:normal; color:#0b0d12; font-weight:700; }
-.p-title { font-size:15px; line-height:1.45; margin:10px 0 3px; color:var(--fg); }
-.p-when { font-size:11.5px; color:var(--muted); margin-bottom:16px; }
-.p-head { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);
-  margin:18px 0 8px; border-top:1px solid var(--line); padding-top:14px; }
-.p-fact { display:flex; gap:10px; font-size:12.5px; padding:3px 0; }
+.p-title { font-size:17px; line-height:1.4; margin:12px 0 4px; color:var(--fg);
+  font-weight:650; letter-spacing:-.005em; }
+.p-when { font-size:11.5px; color:var(--muted); margin-bottom:18px; }
+.p-head { font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+  margin:20px 0 9px; border-top:1px solid var(--line); padding-top:16px; font-weight:600; }
+.p-fact { display:flex; gap:12px; font-size:12.5px; padding:3.5px 0; }
 .p-fact b { color:var(--muted); font-weight:400; min-width:96px; flex:none; }
-.p-fact span { color:var(--fg); }
-.p-line { display:flex; gap:9px; align-items:baseline; padding:6px 0;
-  border-bottom:1px solid var(--line); font-size:12.5px; }
-.p-line em { font-style:normal; color:var(--muted); font-size:11px; white-space:nowrap;
-  margin-left:auto; padding-left:8px; }
-.p-dot { width:6px; height:6px; border-radius:50%; flex:none; margin-top:5px; }
+.p-fact span { color:#d6dce8; }
+.p-story { border-left:2px solid var(--line); margin:2px 0 0 3px; padding-left:14px;
+  display:flex; flex-direction:column; gap:2px; }
+.p-line { position:relative; display:flex; gap:9px; align-items:baseline; padding:6px 0;
+  font-size:12.5px; color:#c9d1df; line-height:1.5; }
+.p-line em { font-style:normal; color:var(--muted); font-size:10.5px; white-space:nowrap;
+  margin-left:auto; padding-left:8px; font-variant-numeric:tabular-nums; }
+.p-dot { width:7px; height:7px; border-radius:50%; flex:none; align-self:center;
+  position:absolute; left:-18.5px; box-shadow:0 0 6px rgba(0,0,0,.8); }
 .p-none { color:var(--muted); font-size:12.5px; font-style:italic; }
-.p-open { display:inline-block; margin-top:18px; font-size:12.5px; color:var(--accent);
-  text-decoration:none; border-bottom:1px solid var(--accent); }
-.node.selected circle.body { stroke:#e6e8ec; stroke-width:2.5; }
-.livering { fill:none; stroke:#88c0d0; stroke-width:1.5; animation:live 2s ease-in-out infinite; }
+.p-open { display:inline-block; margin-top:20px; font-size:12.5px; color:#06232c;
+  text-decoration:none; background:linear-gradient(180deg, #92dbe7, #67bccf);
+  font-weight:700; border-radius:999px; padding:7px 16px;
+  box-shadow:0 2px 14px rgba(125,211,224,.3); }
+.p-open:hover { background:linear-gradient(180deg, #a3e2ec, #79c8d9); }
+.node.selected circle.body { stroke:#e8ecf4; stroke-width:2.5; }
+.livering { fill:none; stroke:#7dd3e0; stroke-width:1.75; animation:live 2s ease-in-out infinite; }
 @keyframes live {
   0%,100% { opacity:.15; transform:scale(1); }
   50% { opacity:.85; transform:scale(1.14); }
@@ -167,13 +211,13 @@ input[type=range] { width:min(44vw,420px); accent-color:var(--accent); cursor:po
 # from anything.
 GRAPH_SCRIPT = """
 const SIM = {
-  repulsion: 2600,      // how hard any two nodes push apart
+  repulsion: 5200,      // how hard any two nodes push apart
   spring: 0.014,        // how hard an edge pulls its ends together
-  restLength: 96,       // the length an edge is happy at
-  centering: 0.0018,    // a gentle pull to the middle, so nothing drifts off screen
+  restLength: 132,      // the length an edge is happy at
+  centering: 0.0026,    // a gentle pull to the middle, so nothing drifts off screen
   damping: 0.87,        // velocity kept per frame; lower settles faster and feels stiffer
   maxSpeed: 14,
-  collisionPad: 14,     // clear space between two circles, so labels stop colliding
+  collisionPad: 30,     // clear space between two circles, so labels stop colliding
   curve: 0.12,          // how far an edge bows off the straight line, as a fraction of it
   enterBurst: 2.4,      // the kick a node gets as it appears, so arrivals feel alive
   enterMs: 320,         // how long a node takes to scale in
@@ -188,7 +232,7 @@ const COLORS = {
   person: "#a3be8c", check: "#4c566a", lesson: "#d08770",
 };
 const CHECK_DONE = "#a3be8c", CHECK_FAILED = "#bf616a";
-const RADIUS = { meeting: 16, decision: 8, issue: 10, person: 9, check: 6, lesson: 7 };
+const RADIUS = { meeting: 24, decision: 11, issue: 15, person: 13, check: 9, lesson: 10 };
 // The call is the sun: heavy things move less, so the story arranges itself around its origin
 // instead of drifting wherever the last spring happened to pull.
 const MASS = { meeting: 3, issue: 1.6, person: 1.4 };
@@ -296,8 +340,34 @@ function identifierOf(node) {
 // --- the one-time definitions ------------------------------------------------------------------
 
 function filterId(hue) { return "glow" + hue.replace("#", ""); }
+function gradId(hue) { return "grad" + hue.replace("#", ""); }
+
+function lighten(hue, amount) {
+  // Mix a hex colour towards white. The node cores are lit from the upper left; a flat fill
+  // reads as a sticker, a lit one as a sphere.
+  const n = parseInt(hue.slice(1), 16);
+  const channel = (shift) => {
+    const value = (n >> shift) & 255;
+    return Math.round(value + (255 - value) * amount);
+  };
+  return `rgb(${channel(16)},${channel(8)},${channel(0)})`;
+}
+
+function defineGradient(hue) {
+  const gradient = svgEl("radialGradient");
+  gradient.setAttribute("id", gradId(hue));
+  gradient.setAttribute("cx", "0.36"); gradient.setAttribute("cy", "0.30");
+  gradient.setAttribute("r", "0.9");
+  const inner = svgEl("stop");
+  inner.setAttribute("offset", "0"); inner.setAttribute("stop-color", lighten(hue, 0.42));
+  const outer = svgEl("stop");
+  outer.setAttribute("offset", "1"); outer.setAttribute("stop-color", hue);
+  gradient.appendChild(inner); gradient.appendChild(outer);
+  gDefs.appendChild(gradient);
+}
 
 function defineGlow(hue) {
+  defineGradient(hue);
   // Colour the blurred silhouette rather than the shape, then put the shape back on top: a
   // plain drop-shadow would tint the fill as well and mud every node the same grey.
   const filter = svgEl("filter");
@@ -306,11 +376,11 @@ function defineGlow(hue) {
   filter.setAttribute("width", "280%"); filter.setAttribute("height", "280%");
   const blur = svgEl("feGaussianBlur");
   blur.setAttribute("in", "SourceAlpha");
-  blur.setAttribute("stdDeviation", "4");
+  blur.setAttribute("stdDeviation", "6");
   blur.setAttribute("result", "blurred");
   const flood = svgEl("feFlood");
   flood.setAttribute("flood-color", hue);
-  flood.setAttribute("flood-opacity", "0.5");
+  flood.setAttribute("flood-opacity", "0.6");
   flood.setAttribute("result", "tint");
   const composite = svgEl("feComposite");
   composite.setAttribute("in", "tint");
@@ -517,7 +587,7 @@ function element(node) {
   const circle = svgEl("circle");
   circle.setAttribute("class", "body");
   circle.setAttribute("r", String(node.r));
-  circle.setAttribute("fill", hue);
+  circle.setAttribute("fill", `url(#${gradId(hue)})`);
   circle.setAttribute("filter", `url(#${filterId(hue)})`);
   g.appendChild(circle);
 
@@ -531,13 +601,23 @@ function element(node) {
     g.appendChild(glyph);
   }
 
-  // Issues and people keep a standing label: the identifier and the name are what a reader
-  // tracks across the graph; everything else says what it is with its glyph or on hover.
-  if (node.type === "issue" || node.type === "person") {
+  // Every node says what it is without being hovered: an unnamed dot asks the reader to do the
+  // work the graph exists to do for them. Issues and people carry their identifier; everything
+  // with a sentence for a name carries a trimmed one, quieter and smaller.
+  const short = (text, max) =>
+    text.length > max ? text.slice(0, max - 1).trimEnd() + "\\u2026" : text;
+  const standing =
+    node.type === "issue" || node.type === "person" ? identifierOf(node)
+    : node.type === "meeting" ? short(String(node.label || ""), 30)
+    : node.type === "decision" || node.type === "lesson" ? short(String(node.label || ""), 26)
+    : "";
+  if (standing) {
     const label = svgEl("text");
-    label.setAttribute("class", "label");
-    label.setAttribute("y", String(node.r + 14));
-    label.textContent = identifierOf(node);
+    label.setAttribute("class",
+      "label" + (node.type === "meeting" ? " title"
+        : node.type === "issue" || node.type === "person" ? "" : " minor"));
+    label.setAttribute("y", String(node.r + 16));
+    label.textContent = standing;
     g.appendChild(label);
   }
 
@@ -561,6 +641,9 @@ function edgeElement(edge) {
   const kind = edge.rel === "watches" ? " watches"
     : edge.rel === "learned from" ? " learned" : "";
   path.setAttribute("class", "edge" + kind);
+  // An edge wears the colour of what it comes from, so structure is legible from across the
+  // room: a fan of mauve means "the call produced all this" before any label is read.
+  path.style.stroke = colorOf(edge.a);
   if (edge.rel === "waits on") path.setAttribute("marker-end", "url(#arrow)");
   gEdges.appendChild(path);
   edge.el = path;
@@ -860,7 +943,12 @@ function openPanel(node) {
   panelBody.appendChild(heading("What I did"));
   const story = node.story || [];
   if (story.length) {
-    for (const entry of story) panelBody.appendChild(storyRow(entry));
+    // The entries hang off one rail, read as a timeline: each dot sits on the line the way
+    // the moment sits in the sequence.
+    const rail = document.createElement("div");
+    rail.className = "p-story";
+    for (const entry of story) rail.appendChild(storyRow(entry));
+    panelBody.appendChild(rail);
   } else {
     const none = document.createElement("div");
     none.className = "p-none";
