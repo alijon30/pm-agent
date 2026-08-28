@@ -325,10 +325,10 @@ async def _post_summary(
 async def _status_message(task: Doc, deps: Deps) -> dict[str, str] | None:
     """The "reading the call…" message the webhook posted for this call, if there is one.
 
-    A replayed root carries a `#retryN` suffix in the harness this pattern comes from; this
-    codebase does not produce one today, and splitting on `#` costs nothing and keeps the
-    lookup correct if it ever does. A mention-triggered flow has no status message at all, and
-    neither does a call whose Slack post failed — both simply post fresh."""
+    A replayed root carries a `#retryN` suffix (scripts and operators use it to rerun a call
+    with fresh idempotency), so the event id is everything before the `#`. A mention-triggered
+    flow has no status message at all, and neither does a call whose Slack post failed — both
+    simply post fresh."""
     root = str(task.get("root_event_id") or "")
     if not root:
         return None
