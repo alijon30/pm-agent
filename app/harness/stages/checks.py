@@ -97,6 +97,38 @@ CHECKS = {
 }
 
 
+# What a check that came back unmet found, in one clause, for the person who asked for it.
+FINDINGS = {
+    "check_pr_exists": "no pull request yet",
+    "check_pr_reviewed": "no review yet",
+    "check_pr_merged": "it hasn't landed",
+}
+
+
+def requester_of(task: Doc) -> dict[str, str] | None:
+    """Who commissioned this check, if anyone did. Intake stamps this on; the planner's own
+    follow-through has no requester and answers the assignee instead."""
+    context = task.get("context") or {}
+    slack_id = str(context.get("requester_slack_id") or "")
+    if not slack_id:
+        return None
+    return {
+        "slack_id": slack_id,
+        "channel": str(context.get("request_channel") or ""),
+        "ts": str(context.get("request_ts") or ""),
+    }
+
+
+def finding_for(task: Doc, observed: dict[str, Any]) -> str:
+    """A state check reports the state it actually saw: "it hasn't started" is false when the
+    issue is in review and the check wanted it merged, and a false sentence in a ping is how an
+    agent loses the person it is talking to."""
+    if task["kind"] == "check_issue_state":
+        state = str(observed.get("state") or "")
+        return f"it's still {state}" if state else "it hasn't started"
+    return FINDINGS.get(str(task["kind"]), "it hasn't moved")
+
+
 def _template_for(task: Doc, observed: dict[str, Any]) -> str:
     kind, action = task["kind"], task.get("on_unmet")
     if action == "escalate_channel":
@@ -128,7 +160,11 @@ def _values(observed: dict[str, Any], person: dict[str, Any] | None) -> dict[str
 
 async def on_unmet(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]:
     """Say something, once, to one person, within the project's limits. Returns the action ids
-    performed — empty when the agent decided to stay quiet, which is a real outcome."""
+    performed — empty when the agent decided to stay quiet, which is a real outcome.
+
+    Who hears about it depends on who asked for the check: `ping_requester` answers the teammate
+    who commissioned it, in their own thread, because they are the one waiting. Everything else
+    goes to the project channel and is addressed to the owner."""
     action = task.get("on_unmet") or "none"
     if action == "none" or observed.get("status") != "ok":
         return []
@@ -137,7 +173,13 @@ async def on_unmet(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]
     project = await deps.projects.get(task["project_id"])
     if project is None:
         return []
-    channel = project.get("slack_channel_id")
+
+    requester = requester_of(task) if action == "ping_requester" else None
+    if action == "ping_requester" and requester is None:
+        # Commissioned by nobody: there is no one to answer, and the assignee never agreed to
+        # anything, so the agent stays quiet.
+        return []
+    channel = (requester or {}).get("channel") or project.get("slack_channel_id")
     if not channel:
         return []
 
@@ -149,18 +191,27 @@ async def on_unmet(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]
         await deps.queue.defer(task, allowed.defer_until or deps.clock.now(), allowed.reason)
         return []
 
-    person = resolve_owner(observed.get("assignee"), project.get("roster") or [])
-    text = render(_template_for(task, observed), **_values(observed, person))
+    if requester is not None:
+        template = "requester_unmet"
+        values = _values(observed, None)
+        text = render(template, **{**values, "person": f"<@{requester['slack_id']}>",
+                                   "finding": finding_for(task, observed)})
+    else:
+        template = _template_for(task, observed)
+        person = resolve_owner(observed.get("assignee"), project.get("roster") or [])
+        text = render(template, **_values(observed, person))
 
     key = idempotency_key(task["id"], 0, "slack.nudge")
     if await deps.actions.find_by_key(key) is not None:
         return []
     action_id = await deps.actions.begin(
         task_id=task["id"], project_id=task["project_id"], kind="slack.post",
-        idempotency_key=key, inputs={"channel": channel, "template": _template_for(task, observed)},
+        idempotency_key=key, inputs={"channel": channel, "template": template},
     )
     try:
-        ts = await deps.slack.post(channel, text)
+        ts = await deps.slack.post(
+            channel, text, thread_ts=(requester or {}).get("ts") or None
+        )
     except SourceUnavailable as exc:
         await deps.actions.fail(action_id, redact(str(exc)))
         return []

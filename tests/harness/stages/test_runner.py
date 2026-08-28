@@ -76,3 +76,88 @@ async def test_a_task_someone_else_claimed_is_skipped(deps: Deps) -> None:
     task = (await deps.queue.due(["extract"], 10))[0]
     assert await deps.queue.claim(task["id"]) is not None
     assert await runner.run_task(task, deps) == "skipped"
+
+
+# --- when work somebody asked for runs out of retries --------------------------------------------
+
+COMMISSIONED = {"requester_slack_id": "U-maya", "request_channel": "C-random",
+                "request_ts": "1787821201.000100"}
+
+
+async def a_doomed_check(deps: Deps, *, context: dict[str, Any]) -> str:
+    """A commissioned check whose executor always raises, already out of retries."""
+    from app.harness.store.actions import ActionStore
+
+    from tests.conftest import ACME
+    from tests.fakes.fake_slack import FakeSlack
+
+    await deps.projects.upsert("acme", {**ACME, "slack_channel_id": "C-product"})
+    deps.actions = ActionStore(deps.db, deps.clock)
+    deps.slack = FakeSlack()
+    deps.github = None  # check_pr_exists reports "unavailable" rather than raising, so:
+
+    async def explode(task: Doc, d: Deps) -> StageResult:
+        raise RuntimeError("github token ghp_SECRET rejected")
+
+    runner.STAGES["doomed"] = explode
+    tid = await deps.queue.enqueue(
+        kind="doomed", project_id="acme", payload={}, params={"issue": "INV-26"},
+        reason="you asked me to watch INV-26", context=context)
+    assert tid is not None
+    await deps.db.update("tasks", tid, {"attempts": 3})
+    return tid
+
+
+async def test_a_requester_is_told_once_when_their_work_is_abandoned(deps: Deps) -> None:
+    tid = await a_doomed_check(deps, context=COMMISSIONED)
+    try:
+        task = (await deps.queue.due(["doomed"], 10))[0]
+        assert await runner.run_task(task, deps) == "failed"
+    finally:
+        del runner.STAGES["doomed"]
+
+    assert len(deps.slack.posts) == 1
+    told = deps.slack.posts[0]
+    assert told["channel"] == "C-random" and told["thread_ts"] == "1787821201.000100"
+    assert told["text"].startswith("<@U-maya>, I'm blocked on ")
+    assert "I'll leave this with you." in told["text"]
+    assert "ghp_SECRET" not in told["text"] and "[redacted]" in told["text"]
+    assert (await deps.db.get("tasks", tid) or {})["status"] == "failed"
+
+
+async def test_the_blocked_note_is_recorded_and_capped_like_any_interruption(
+    deps: Deps,
+) -> None:
+    await a_doomed_check(deps, context=COMMISSIONED)
+    try:
+        task = (await deps.queue.due(["doomed"], 10))[0]
+        await runner.run_task(task, deps)
+    finally:
+        del runner.STAGES["doomed"]
+
+    posts = await deps.db.query("actions", [("kind", "==", "slack.post")])
+    assert len(posts) == 1
+    assert posts[0]["status"] == "done" and posts[0]["cap_kind"] == "ping"
+
+
+async def test_a_retry_that_still_has_attempts_left_says_nothing_yet(deps: Deps) -> None:
+    tid = await a_doomed_check(deps, context=COMMISSIONED)
+    await deps.db.update("tasks", tid, {"attempts": 0})
+    try:
+        task = (await deps.queue.due(["doomed"], 10))[0]
+        assert await runner.run_task(task, deps) == "queued"
+    finally:
+        del runner.STAGES["doomed"]
+
+    assert deps.slack.posts == []  # it will try again; nobody needs telling
+
+
+async def test_work_nobody_asked_for_fails_without_bothering_anyone(deps: Deps) -> None:
+    await a_doomed_check(deps, context={})
+    try:
+        task = (await deps.queue.due(["doomed"], 10))[0]
+        assert await runner.run_task(task, deps) == "failed"
+    finally:
+        del runner.STAGES["doomed"]
+
+    assert deps.slack.posts == []

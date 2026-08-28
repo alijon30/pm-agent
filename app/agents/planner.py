@@ -28,6 +28,8 @@ You receive JSON with:
 - "recent_results": what recent checks observed, including anything that came back unmet
 - "policy": the limits you must plan within (horizon in days, maximum tasks, default offsets)
 - "now": the current time, ISO-8601
+- "lessons": things this agent worked out from its own past outcomes. Advisory — weigh them
+  against what you see today; they are not rules and they can be wrong.
 - "feedback": null, or what was wrong with your previous plan
 
 Emit a plan of tasks. Each task has:

@@ -8,6 +8,7 @@ message so the record in the channel matches the record in the tracker."""
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -20,6 +21,36 @@ from app.harness.core.redact import redact
 from app.harness.deps import Deps
 
 router = APIRouter()
+
+# "stop watching INV-26", "cancel INV-26", "forget about INV-26". Read over the raw text so the
+# identifier keeps its capitals — the only shape an issue key ever has.
+CANCEL = re.compile(r"\b(stop|cancel|forget)\b.*\b([A-Z][A-Z0-9]*-\d+)\b")
+MENTION_TOKEN = re.compile(r"<@[^>]+>")
+# Below this a mention is a greeting, not a request. "@pm-agent thanks" deserves no task.
+MIN_REQUEST_WORDS = 4
+
+
+def intent_of(text: str, project_id: str) -> dict[str, Any] | None:
+    """What a mention is asking for, as a task to enqueue — or None when it is asking for
+    nothing. Pure, because the routing rule is the part worth reading in a test rather than
+    inferring from a Slack fixture."""
+    raw = str(text or "")
+    request = MENTION_TOKEN.sub("", raw).strip()
+
+    if "report" in raw.lower():
+        return {"kind": "report", "params": {"project": project_id, "window": "sprint"},
+                "reason": "report requested in Slack"}
+
+    cancelling = CANCEL.search(raw)
+    if cancelling is not None:
+        identifier = cancelling.group(2)
+        return {"kind": "intake", "params": {"cancel": identifier},
+                "reason": f"asked in Slack to stop watching {identifier}"}
+
+    if len(request.split()) >= MIN_REQUEST_WORDS:
+        return {"kind": "intake", "params": {"text": request},
+                "reason": "a teammate asked for something in Slack"}
+    return None
 
 
 async def _authorised(request: Request, deps: Deps) -> bytes:
@@ -147,20 +178,23 @@ async def events(request: Request) -> dict[str, Any]:
             payload=event,
             project_id=project["id"],
         )
-        if event_id is not None and "report" in str(event.get("text") or "").lower():
-            # Answer where it was asked: the stage posts into this channel and thread rather
-            # than the project channel, so a question in one room is not answered in another.
+        intent = intent_of(str(event.get("text") or ""), str(project["id"]))
+        if event_id is not None and intent is not None:
+            # Answer where it was asked: every stage this queues posts into this channel and
+            # thread rather than the project channel, so a question in one room is never
+            # answered in another. The requester travels with the work.
             task_id = await deps.queue.enqueue(
-                kind="report",
+                kind=intent["kind"],
                 project_id=project["id"],
-                params={"project": project["id"], "window": "sprint"},
-                payload={"channel": event.get("channel"), "thread_ts": event.get("ts")},
-                reason="report requested in Slack",
+                params=intent["params"],
+                payload={"channel": event.get("channel"), "thread_ts": event.get("ts"),
+                         "requester": event.get("user")},
+                reason=intent["reason"],
                 root_event_id=event_id,
             )
             if task_id is not None:
                 # 👀 on the mention: the asker sees the request landed, in the three seconds
-                # Slack gives this route, without a message anyone has to read. The report
-                # stage adds ✅ to the same message when the answer is in the thread.
+                # Slack gives this route, without a message anyone has to read. The stage that
+                # runs it adds ✅ or 🤝 to the same message when it has an answer.
                 await react_quietly(deps.slack, event.get("channel"), event.get("ts"), "eyes")
     return {"ok": True}

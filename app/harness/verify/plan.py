@@ -37,6 +37,12 @@ def _parse_due(raw: Any) -> datetime | None:
         return None
 
 
+async def nothing_exists(token: str) -> bool:
+    """The `id_exists` to pass when no identifier gate is configured: with nothing able to be
+    confirmed, nothing that names anything may be scheduled."""
+    return False
+
+
 async def check_plan(
     plan: dict[str, Any],
     *,

@@ -12,6 +12,8 @@ _PATTERNS = [
         r"ntn_[A-Za-z0-9]+",                 # Notion
         r"whsec_[A-Za-z0-9+/=]+",            # webhook secrets
         r"AIza[0-9A-Za-z_-]{20,}",           # Google API keys
+        r"gh[pousr]_[A-Za-z0-9]+",           # GitHub personal, OAuth, user, server, refresh
+        r"github_pat_[A-Za-z0-9_]+",         # GitHub fine-grained tokens
         r"Bearer\s+[A-Za-z0-9._-]+",         # bearer tokens
     )
 ]

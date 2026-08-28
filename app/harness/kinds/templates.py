@@ -31,6 +31,11 @@ TEMPLATES: dict[str, str] = {
     "escalate_stalled": (
         "{issue} ({title}) has not moved and is now past its date. Owner: {person}. {link}"
     ),
+    # The one template addressed to whoever asked for the check rather than to the owner. It
+    # names their own request back to them, because a ping out of context reads as noise.
+    "requester_unmet": (
+        "{person}, you asked me to watch {issue} — {finding}. {link}"
+    ),
     "escalate_no_owner": (
         "{issue} ({title}) has no owner and has not moved. {link}"
     ),

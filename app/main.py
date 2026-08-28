@@ -21,6 +21,8 @@ from app.agents.extractor import GeminiExtractor
 from app.agents.planner import GeminiPlanner
 from app.agents.reconciler import GeminiReconciler
 from app.agents.reporter import GeminiReporter
+from app.agents.reviewer import GeminiReviewer
+from app.agents.steward import GeminiSteward
 from app.agents.triage import PassthroughTriage
 from app.config import Settings
 from app.harness.connectors.code import CodeSearch
@@ -36,6 +38,7 @@ from app.harness.store.corrections import CorrectionStore
 from app.harness.store.decisions import DecisionStore
 from app.harness.store.events import EventStore
 from app.harness.store.firestore import FirestoreDb
+from app.harness.store.lessons import LessonStore
 from app.harness.store.projects import ProjectStore
 from app.harness.store.tasks import TaskQueue
 from app.harness.verify.ids import IdGate
@@ -78,6 +81,9 @@ async def finish_wiring(deps: Deps) -> None:
     deps.reconciler = GeminiReconciler(deps.settings.model_strong, tools)
     deps.planner = GeminiPlanner(deps.settings.model_strong, tools)
     deps.reporter = GeminiReporter(deps.settings.model_strong, tools)
+    deps.steward = GeminiSteward(deps.settings.model_strong, tools)
+    # No tools and nothing to look up: the reviewer reads only the agent's own record.
+    deps.reviewer = GeminiReviewer(deps.settings.model_fast)
     log.info("wired for project %r: %d roster member(s), %d tool(s)",
              project.get("slug"), len(roster), len(tools))
 
@@ -122,6 +128,7 @@ def build_deps(settings: Settings | None = None) -> Deps:
         triage=PassthroughTriage(),
         actions=ActionStore(db, clock),
         corrections=CorrectionStore(db, clock),
+        lessons=LessonStore(db, clock),
         linear=LinearClient(s.linear_api_key) if s.linear_api_key else None,
         notion=NotionClient(s.notion_token) if s.notion_token else None,
         slack=SlackClient(s.slack_bot_token) if s.slack_bot_token else None,

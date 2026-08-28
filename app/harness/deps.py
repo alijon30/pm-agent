@@ -6,7 +6,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.agents.base.protocols import Extractor, Planner, Reconciler, Reporter, Triage
+from app.agents.base.protocols import (
+    Extractor,
+    Planner,
+    Reconciler,
+    Reporter,
+    Reviewer,
+    Triage,
+)
 from app.config import Settings
 from app.harness.core.clock import Clock
 from app.harness.store.actions import ActionStore
@@ -14,6 +21,7 @@ from app.harness.store.corrections import CorrectionStore
 from app.harness.store.db import Db
 from app.harness.store.decisions import DecisionStore
 from app.harness.store.events import EventStore
+from app.harness.store.lessons import LessonStore
 from app.harness.store.projects import ProjectStore
 from app.harness.store.tasks import TaskQueue
 from app.harness.verify.ids import IdGate
@@ -32,9 +40,13 @@ class Deps:
     triage: Triage
     actions: ActionStore | None = None
     corrections: CorrectionStore | None = None
+    lessons: LessonStore | None = None
     ids: IdGate | None = None
     reconciler: Reconciler | None = None
     planner: Planner | None = None
+    # The steward answers a person; the planner answers an event. Same shape.
+    steward: Planner | None = None
+    reviewer: Reviewer | None = None
     reporter: Reporter | None = None
     linear: Any = None
     notion: Any = None

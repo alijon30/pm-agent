@@ -29,6 +29,8 @@ async def test_startup_wires_the_gate_and_agents_from_the_project_document(
 
     assert deps.ids is not None and deps.code is not None
     assert deps.reconciler is not None and deps.planner is not None
+    assert deps.reporter is not None and deps.steward is not None
+    assert deps.reviewer is not None
     assert deps.ids.person_exists("Maya Chen") is True
     assert deps.ids.person_exists("Sam") is False
     assert deps.code.exists("acme/config.py") is True
@@ -53,6 +55,7 @@ async def test_an_unseeded_project_boots_degraded_instead_of_crashing(
     )
     await finish_wiring(empty)  # must not raise
     assert empty.reconciler is None and empty.ids is None
+    assert empty.steward is None and empty.reviewer is None
 
 
 async def test_the_meeting_lookup_matches_recorded_fathom_events(deps: Deps) -> None:

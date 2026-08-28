@@ -34,7 +34,7 @@ PROJECT = {
 async def wire(
     deps: Deps, *, kind: str, params: dict[str, Any], on_unmet: str = "none",
     issues: list[dict[str, Any]] | None = None, prs: list[dict[str, Any]] | None = None,
-    project: dict[str, Any] | None = None,
+    project: dict[str, Any] | None = None, context: dict[str, Any] | None = None,
 ) -> Doc:
     await deps.projects.upsert("acme", project or PROJECT)
     deps.actions = ActionStore(deps.db, deps.clock)
@@ -42,7 +42,8 @@ async def wire(
     deps.linear = FakeLinear(issues=issues if issues is not None else [ISSUE])
     deps.github = FakeGitHub(prs if prs is not None else [])
     tid = await deps.queue.enqueue(kind=kind, project_id="acme", payload={}, params=params,
-                                   reason="scheduled check", on_unmet=on_unmet)
+                                   reason="scheduled check", on_unmet=on_unmet,
+                                   context=context or {})
     assert tid is not None
     task = await deps.queue.claim(tid)
     assert task is not None
@@ -52,7 +53,7 @@ async def wire(
 # --- the catalog is fully executable ----------------------------------------------------------
 
 def test_every_kind_the_planner_may_schedule_has_something_that_runs_it() -> None:
-    schedulable = set(KINDS) - {"daily_review", "reconcile_item", "escalate"}
+    schedulable = set(KINDS) - {"daily_review", "reconcile_item", "escalate", "intake"}
     assert schedulable <= set(STAGES), f"unrunnable kinds: {schedulable - set(STAGES)}"
 
 
@@ -203,7 +204,8 @@ async def test_an_unowned_issue_escalates_without_blaming_anyone(deps: Deps) -> 
 
 def test_every_template_renders_with_the_values_a_check_can_supply() -> None:
     values = {"person": "<@U1>", "issue": "INV-143", "title": "t", "state": "Todo",
-              "due": "2026-09-04", "pr_url": "https://x", "link": "<u|open it>"}
+              "due": "Sep 4", "pr_url": "https://x", "link": "<u|open it>",
+              "finding": "it hasn't started"}
     for name in TEMPLATES:
         assert render(name, **values)
 
@@ -240,3 +242,76 @@ async def test_a_nudge_says_a_date_the_way_a_person_would(deps: Deps) -> None:
     text = deps.slack.posts[0]["text"]
     assert "was due Fri Sep 4" in text or "was due Sep 4" in text
     assert "2026-09-04" not in text
+
+
+# --- answering the person who asked --------------------------------------------------------------
+
+COMMISSIONED = {"requester_slack_id": "U-maya", "request_channel": "C-random",
+                "request_ts": "1787821201.000100"}
+
+
+async def test_a_check_somebody_asked_for_answers_them_in_their_own_thread(
+    deps: Deps,
+) -> None:
+    task = await wire(deps, kind="check_pr_exists", on_unmet="ping_requester",
+                      params={"issue": "INV-143"}, context=COMMISSIONED)
+    out = await run_check(task, deps)
+
+    assert out.result["met"] is False and len(out.result["acted"]) == 1
+    ping = deps.slack.posts[0]
+    assert ping["channel"] == "C-random" and ping["thread_ts"] == "1787821201.000100"
+    assert ping["text"] == "<@U-maya>, you asked me to watch INV-143 — no pull request yet."
+
+
+async def test_the_ping_reports_the_state_it_actually_saw_not_a_guess(deps: Deps) -> None:
+    """"it hasn't started" would be false for an issue in review, and a false sentence in a
+    ping is how an agent loses the person it is talking to."""
+    in_review = [{**ISSUE, "state": "In Review"}]
+    task = await wire(deps, kind="check_issue_state", on_unmet="ping_requester",
+                      params={"issue": "INV-143", "expect": ["Done"]}, issues=in_review,
+                      context=COMMISSIONED)
+    await run_check(task, deps)
+
+    assert "it's still In Review" in deps.slack.posts[0]["text"]
+
+
+async def test_a_check_the_agent_scheduled_for_itself_still_answers_the_assignee(
+    deps: Deps,
+) -> None:
+    task = await wire(deps, kind="check_issue_state", on_unmet="nudge_assignee",
+                      params={"issue": "INV-143", "expect": ["Done"]})
+    await run_check(task, deps)
+
+    assert deps.slack.posts[0]["channel"] == "C-product"
+    assert deps.slack.posts[0]["thread_ts"] is None
+    assert "<@U-nodir>" in deps.slack.posts[0]["text"]
+    assert "you asked me to watch" not in deps.slack.posts[0]["text"]
+
+
+async def test_a_requester_ping_with_nobody_to_ping_stays_quiet(deps: Deps) -> None:
+    task = await wire(deps, kind="check_pr_exists", on_unmet="ping_requester",
+                      params={"issue": "INV-143"})
+    out = await run_check(task, deps)
+
+    assert out.result["acted"] == [] and deps.slack.posts == []
+
+
+async def test_a_requester_ping_obeys_quiet_hours_like_every_other_interruption(
+    deps: Deps,
+) -> None:
+    deps.clock.advance(hours=12)  # 21:00, inside the project's quiet hours
+    task = await wire(deps, kind="check_pr_exists", on_unmet="ping_requester",
+                      params={"issue": "INV-143"}, context=COMMISSIONED)
+    out = await run_check(task, deps)
+
+    assert out.result["acted"] == [] and deps.slack.posts == []
+    assert (await deps.db.get("tasks", task["id"]) or {})["status"] == "deferred"
+
+
+async def test_a_requester_is_pinged_once_however_often_the_check_reruns(deps: Deps) -> None:
+    task = await wire(deps, kind="check_pr_exists", on_unmet="ping_requester",
+                      params={"issue": "INV-143"}, context=COMMISSIONED)
+    await run_check(task, deps)
+    await run_check(task, deps)
+
+    assert len(deps.slack.posts) == 1

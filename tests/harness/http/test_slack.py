@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from app.harness.deps import Deps
+from app.harness.http.slack import intent_of
 from app.harness.store.actions import ActionStore
 from app.harness.store.corrections import CorrectionStore, matcher_for
 from fastapi.testclient import TestClient
@@ -283,7 +284,8 @@ async def test_a_mention_asking_for_a_report_queues_one_aimed_at_that_thread(
     queued = await deps.db.query("tasks", [("kind", "==", "report")])
     assert len(queued) == 1
     assert queued[0]["params"] == {"project": "acme", "window": "sprint"}
-    assert queued[0]["payload"] == {"channel": "C-random", "thread_ts": "1787821201.000100"}
+    assert queued[0]["payload"] == {"channel": "C-random", "thread_ts": "1787821201.000100",
+                                    "requester": "U-maya"}
     assert queued[0]["root_event_id"] == "slack:Ev200"
     assert queued[0]["status"] == "queued" and queued[0]["due_at"] == "2026-08-27T09:00:00+00:00"
 
@@ -351,3 +353,70 @@ async def test_a_slack_outage_while_acknowledging_still_leaves_the_report_queued
 
     assert response.json() == {"ok": True}
     assert await deps.db.count("tasks", [("kind", "==", "report")]) == 1
+
+
+# --- what a mention is asking for ---------------------------------------------------------------
+
+def test_a_mention_asking_for_a_report_routes_to_the_report_stage() -> None:
+    assert intent_of("<@U0> can we get a Report on the sprint?", "acme") == {
+        "kind": "report", "params": {"project": "acme", "window": "sprint"},
+        "reason": "report requested in Slack"}
+
+
+def test_a_mention_asking_the_agent_to_stop_routes_to_a_cancellation() -> None:
+    for text in ("<@U0> stop watching INV-26", "<@U0> please cancel INV-26",
+                 "<@U0> forget about INV-26 for now"):
+        intent = intent_of(text, "acme")
+        assert intent is not None
+        assert intent["kind"] == "intake" and intent["params"] == {"cancel": "INV-26"}
+        assert "INV-26" in intent["reason"]
+
+
+def test_anything_else_of_substance_is_a_request(deps: Deps) -> None:
+    intent = intent_of("<@U0> keep an eye on INV-26 until Friday please", "acme")
+    assert intent is not None
+    assert intent["kind"] == "intake"
+    assert intent["params"] == {"text": "keep an eye on INV-26 until Friday please"}
+
+
+def test_a_greeting_is_not_a_request() -> None:
+    assert intent_of("<@U0> thanks!", "acme") is None
+    assert intent_of("<@U0>", "acme") is None
+    assert intent_of("<@U0> nice one", "acme") is None
+
+
+def test_a_lowercase_identifier_is_not_an_identifier() -> None:
+    """Issue keys are capitals. "stop the inv-26 thing" is a request, not a cancellation."""
+    intent = intent_of("<@U0> stop the inv-26 thing please", "acme")
+    assert intent is not None and intent["kind"] == "intake"
+    assert "cancel" not in intent["params"]
+
+
+async def test_a_request_is_queued_as_an_intake_carrying_who_asked_and_where(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    body = mention("<@U0> keep an eye on INV-26 until Friday")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    queued = await deps.db.query("tasks", [("kind", "==", "intake")])
+    assert len(queued) == 1
+    assert queued[0]["params"] == {"text": "keep an eye on INV-26 until Friday"}
+    assert queued[0]["payload"] == {"channel": "C-random", "thread_ts": "1787821201.000100",
+                                    "requester": "U-maya"}
+    assert queued[0]["root_event_id"] == "slack:Ev200"
+    assert deps.slack.reactions[0]["name"] == "eyes"
+
+
+async def test_a_cancellation_is_queued_as_an_intake_naming_the_issue(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    body = mention("<@U0> stop watching INV-26")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    queued = await deps.db.query("tasks", [("kind", "==", "intake")])
+    assert len(queued) == 1 and queued[0]["params"] == {"cancel": "INV-26"}
+    assert deps.slack.reactions[0]["name"] == "eyes"

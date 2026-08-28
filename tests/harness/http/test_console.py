@@ -273,3 +273,39 @@ async def test_the_console_never_renders_event_payloads_or_secret_shaped_strings
     assert "the unredacted words of a call" not in page
     assert "xoxb-4444-secret-value" not in page
     assert "[redacted]" in page
+
+
+async def test_the_console_shows_what_the_agent_learned_and_what_from(
+    client: TestClient, deps: Deps
+) -> None:
+    from app.harness.store.lessons import LessonStore
+
+    await deps.projects.upsert("acme", ACME)
+    deps.lessons = LessonStore(deps.db, deps.clock)
+    await deps.lessons.add(
+        project_id="acme", text="Give a pull request a full working day before asking about it.",
+        evidence=["task:t-abc", "action:a-def"], source_task_id="review-1")
+
+    page = client.get("/console").text
+
+    assert "Lessons" in page
+    assert "Give a pull request a full working day before asking about it." in page
+    assert "task:t-abc" in page and "action:a-def" in page
+
+
+def test_a_console_with_no_lesson_store_still_renders(client: TestClient, deps: Deps) -> None:
+    page = client.get("/console").text
+    assert "has not drawn any lessons" in page
+
+
+async def test_a_lesson_containing_markup_is_escaped_like_everything_else(
+    client: TestClient, deps: Deps
+) -> None:
+    from app.harness.store.lessons import LessonStore
+
+    await deps.projects.upsert("acme", ACME)
+    deps.lessons = LessonStore(deps.db, deps.clock)
+    await deps.lessons.add(project_id="acme", text="<img onerror=alert(1)>", evidence=["task:1"])
+
+    page = client.get("/console").text
+    assert "<img onerror" not in page and "&lt;img onerror" in page

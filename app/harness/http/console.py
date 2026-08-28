@@ -419,6 +419,23 @@ def _conflicts_html(conflicts: list[dict[str, Any]]) -> str:
     return _table(["about", "kind", "what each source says"], rows, "none")
 
 
+def _lessons_html(lessons: list[Doc]) -> str:
+    """What the agent worked out about its own behaviour, with what it worked it out from. The
+    evidence is shown because a lesson nobody can trace back is a lesson nobody should trust."""
+    if not lessons:
+        return "<p class='empty'>The agent has not drawn any lessons from its own runs yet.</p>"
+    items = "".join(
+        f"<li><time>{esc(str(row.get('created_at') or '')[5:10])}</time>"
+        f"<span>{esc(row.get('text'))}</span>"
+        + "".join(
+            f"<span class='tag'>{esc(ref)}</span>" for ref in (row.get("evidence") or [])[:4]
+        )
+        + "</li>"
+        for row in lessons
+    )
+    return f"<ul class='j'>{items}</ul>"
+
+
 def _corrections_html(corrections: list[Doc]) -> str:
     rows = [
         [esc(c.get("wrong", "")), esc(c.get("right", "")), esc(c.get("scope", "")),
@@ -446,6 +463,7 @@ def render(
     tasks: list[Doc],
     actions: list[Doc],
     corrections: list[Doc],
+    lessons: list[Doc],
     evals: Doc | None,
     today: str,
 ) -> str:
@@ -495,6 +513,8 @@ def render(
         + _audit_html(newest_first[:AUDIT_LIMIT])
         + "<h2>Open conflicts</h2>"
         + _conflicts_html(conflicts)
+        + "<h2>Lessons</h2>"
+        + _lessons_html(lessons)
         + "<h2>Corrections</h2>"
         + _corrections_html(corrections)
         + "<h2>Evals</h2>"
@@ -519,14 +539,17 @@ async def console(request: Request) -> HTMLResponse:
     slug = deps.settings.default_project_slug
     project = await deps.projects.get(slug)
     if project is None:
-        return HTMLResponse(render(None, [], [], [], None, ""))
+        return HTMLResponse(render(None, [], [], [], [], None, ""))
 
     filters = [("project_id", "==", project["id"])]
     tasks = await deps.db.query("tasks", filters, order_by="created_at", limit=SCAN_LIMIT)
     actions = await deps.db.query("actions", filters, order_by="created_at", limit=SCAN_LIMIT)
     corrections = await deps.db.query("corrections", [], order_by="created_at", limit=50)
+    lessons = (
+        await deps.lessons.for_project(project["id"]) if deps.lessons is not None else []
+    )
     runs = await deps.db.query("evals", [], order_by="created_at", limit=50)
     today = deps.clock.now().date().isoformat()
     return HTMLResponse(
-        render(project, tasks, actions, corrections, runs[-1] if runs else None, today)
+        render(project, tasks, actions, corrections, lessons, runs[-1] if runs else None, today)
     )

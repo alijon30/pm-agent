@@ -19,10 +19,10 @@ from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
 from app.harness.deps import Deps
-from app.harness.kinds.registry import KINDS
+from app.harness.kinds.registry import KINDS, catalog_for_prompt
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
-from app.harness.verify.plan import check_plan
+from app.harness.verify.plan import check_plan, nothing_exists
 
 OFFSET_UNITS = {"d": "days", "h": "hours"}
 
@@ -79,15 +79,6 @@ def default_followups(context: dict[str, Any], policy: dict[str, Any], now: date
     return Plan.model_validate({"tasks": tasks, "supersedes": [], "notes": "default follow-ups"})
 
 
-def _catalog() -> list[dict[str, str]]:
-    return [
-        {"kind": spec.name, "params": ", ".join(spec.params_schema.model_fields),
-         "unmet_actions": ", ".join(spec.unmet_actions) or "none",
-         "description": spec.description}
-        for spec in KINDS.values()
-    ]
-
-
 async def _context_for(task: Doc, deps: Deps) -> dict[str, Any]:
     """Whatever produced this plan task hands over its own context; a daily review builds it."""
     if task.get("context"):
@@ -123,10 +114,11 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         "context": context,
         "open_tasks": open_tasks,
         "recent_results": task["payload"].get("recent_results") or [],
-        "catalog": _catalog(),
+        "catalog": catalog_for_prompt(),
         "policy": {k: policy.get(k) for k in
                    ("plan_horizon_days", "max_plan_size", "default_followup_offsets")},
         "now": iso(now),
+        "lessons": await lessons_for(deps, task["project_id"]),
         "feedback": None,
     }
 
@@ -135,7 +127,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         proposal, now=now, policy=policy,
         open_tasks=await deps.queue.open_count(task["project_id"]),
         existing_ids=lambda tid: tid in open_ids,
-        id_exists=deps.ids.exists if deps.ids is not None else _nothing_exists,
+        id_exists=deps.ids.exists if deps.ids is not None else nothing_exists,
     )
 
     bounced = False
@@ -152,7 +144,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
             retry, now=now, policy=policy,
             open_tasks=await deps.queue.open_count(task["project_id"]),
             existing_ids=lambda tid: tid in open_ids,
-            id_exists=deps.ids.exists if deps.ids is not None else _nothing_exists,
+            id_exists=deps.ids.exists if deps.ids is not None else nothing_exists,
         )
         proposal = retry
 
@@ -162,7 +154,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
             fallback, now=now, policy=policy,
             open_tasks=await deps.queue.open_count(task["project_id"]),
             existing_ids=lambda tid: tid in open_ids,
-            id_exists=deps.ids.exists if deps.ids is not None else _nothing_exists,
+            id_exists=deps.ids.exists if deps.ids is not None else nothing_exists,
         )
         notes = "no plan from the planner; using the default follow-up chain"
 
@@ -190,9 +182,12 @@ async def run(task: Doc, deps: Deps) -> StageResult:
     return StageResult(result=result, children=children, supersedes=supersedes)
 
 
-async def _nothing_exists(token: str) -> bool:
-    """With no id gate configured nothing can be confirmed, so nothing is scheduled about it."""
-    return False
+async def lessons_for(deps: Deps, project_id: str) -> list[str]:
+    """What the agent worked out about its own planning, newest first. Advisory: the plan gate
+    does not know about lessons and will not soften for one."""
+    if deps.lessons is None:
+        return []
+    return [str(row.get("text") or "") for row in await deps.lessons.for_project(project_id)]
 
 
 async def _propose(payload: dict[str, Any], deps: Deps) -> tuple[dict[str, Any], str]:

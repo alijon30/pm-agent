@@ -209,3 +209,27 @@ async def test_with_no_planner_configured_the_default_chain_still_runs(deps: Dep
     out = await run(task, deps)
     assert [c["kind"] for c in out.children] == [
         "check_issue_state", "check_pr_exists", "check_issue_state"]
+
+
+async def test_what_the_agent_learned_about_itself_reaches_the_planner(deps: Deps) -> None:
+    from app.harness.store.lessons import LessonStore
+
+    task = await wire(deps, planner_results=[GOOD_PLAN])
+    deps.lessons = LessonStore(deps.db, deps.clock)
+    await deps.lessons.add(project_id="acme", text="Wait a working day before asking for a PR.",
+                           evidence=["task:t-1"])
+    await deps.lessons.add(project_id="acme", text="Escalate rather than nudge nobody.",
+                           evidence=["task:t-2"])
+    await run(task, deps)
+
+    assert deps.planner.calls[0]["lessons"] == [
+        "Escalate rather than nudge nobody.", "Wait a working day before asking for a PR."]
+
+
+async def test_a_project_that_has_learned_nothing_sends_the_planner_an_empty_list(
+    deps: Deps,
+) -> None:
+    task = await wire(deps, planner_results=[GOOD_PLAN])
+    await run(task, deps)
+
+    assert deps.planner.calls[0]["lessons"] == []

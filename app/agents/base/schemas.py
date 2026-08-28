@@ -150,3 +150,25 @@ class Report(BaseModel):
         description="Sections in this order: shipped, moved, blocked, at_risk, conflicts, "
                     "open_questions, decisions. Skip any that has nothing to say.",
     )
+
+
+# --- review -----------------------------------------------------------------------------------
+
+
+class Lesson(BaseModel):
+    text: str = Field(
+        description="One sentence about how this agent should plan or interrupt people, in the "
+                    "imperative. About the agent's own behaviour — never about the product."
+    )
+    evidence: list[str] = Field(
+        description="The task: and action: references from the input that this lesson was drawn "
+                    "from. At least one, all of them copied exactly from what you were given."
+    )
+
+
+class Lessons(BaseModel):
+    lessons: list[Lesson] = Field(
+        default_factory=list,
+        description="At most three. Fewer is better; none is a valid answer to a quiet day.",
+    )
+    notes: str = Field(default="", description="What you observed, in one or two sentences.")

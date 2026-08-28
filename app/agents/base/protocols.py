@@ -39,3 +39,11 @@ class Reporter(Protocol):
         "actions_summary", "today", "feedback"}.
         Returns a dict shaped like agents.base.schemas.Report."""
         ...
+
+
+class Reviewer(Protocol):
+    async def run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """payload: {"window", "checks", "nudges", "movements", "superseded", "failures",
+        "lessons_so_far", "feedback"}.
+        Returns a dict shaped like agents.base.schemas.Lessons."""
+        ...

@@ -34,6 +34,7 @@ UNMET_CONSEQUENCES = {
     "nudge_assignee": "if not, I'll nudge the assignee",
     "nudge_reviewer": "if not, I'll ask for a reviewer",
     "escalate_channel": "if not, I'll raise it here",
+    "ping_requester": "if not, I'll ping you",
 }
 
 SECTION_TITLES = {
@@ -242,13 +243,8 @@ def what_happened(
     return " · ".join(parts) or "nothing needed filing"
 
 
-def plan_summary_blocks(tasks: list[dict[str, Any]], trimmed: list[str]) -> list[dict[str, Any]]:
-    """The agent saying what it will check, and when — the visible half of the planner.
-
-    Each line is a promise with a date and a consequence, because "check_pr_exists on
-    2026-09-04" tells a reader nothing they can act on."""
-    if not tasks:
-        return [_section("_Nothing needs watching right now._")]
+def _promises(tasks: list[dict[str, Any]]) -> str:
+    """One line per scheduled check: when, what, and what happens if the answer is no."""
     lines: list[str] = []
     for task in tasks:
         when = human_due(str(task.get("due_at") or ""))
@@ -257,7 +253,29 @@ def plan_summary_blocks(tasks: list[dict[str, Any]], trimmed: list[str]) -> list
             f"• {f'{when} — ' if when else ''}{human_check(task)}"
             f"{f' _({consequence})_' if consequence else ''}"
         )
-    blocks = [_section("*I'll follow up on this:*\n" + "\n".join(lines))]
+    return "\n".join(lines)
+
+
+def commitment_blocks(tasks: list[dict[str, Any]], notes: str) -> list[dict[str, Any]]:
+    """The reply to a teammate who asked for something: the same promises as a plan
+    announcement, but addressed to one person in their own thread — or, when there is nothing
+    the agent can do, the sentence saying so instead of a shrug."""
+    if not tasks:
+        return [_section(notes or "I couldn't turn that into anything I know how to watch.")]
+    blocks = [_section("*🤝 Committed:*\n" + _promises(tasks))]
+    if notes:
+        blocks.append(_context(notes))
+    return _truncate(blocks)
+
+
+def plan_summary_blocks(tasks: list[dict[str, Any]], trimmed: list[str]) -> list[dict[str, Any]]:
+    """The agent saying what it will check, and when — the visible half of the planner.
+
+    Each line is a promise with a date and a consequence, because "check_pr_exists on
+    2026-09-04" tells a reader nothing they can act on."""
+    if not tasks:
+        return [_section("_Nothing needs watching right now._")]
+    blocks = [_section("*I'll follow up on this:*\n" + _promises(tasks))]
     if trimmed:
         blocks.append(_context(
             f"_I dropped {count_of(len(trimmed), 'idea')} I could not verify: "

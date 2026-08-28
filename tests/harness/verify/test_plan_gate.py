@@ -37,8 +37,22 @@ async def check(p: dict[str, Any], open_tasks: int = 0) -> Any:
 def test_the_catalog_lists_every_kind_the_agent_may_schedule() -> None:
     assert set(KINDS) == {
         "check_issue_state", "check_pr_exists", "check_pr_reviewed", "check_pr_merged",
-        "nudge", "escalate", "reconcile_item", "daily_review", "report",
+        "nudge", "escalate", "reconcile_item", "daily_review", "report", "intake",
     }
+
+
+def test_the_prompt_catalog_hides_the_kinds_no_model_may_schedule() -> None:
+    from app.harness.kinds.registry import NOT_SCHEDULABLE, catalog_for_prompt
+
+    offered = {row["kind"] for row in catalog_for_prompt()}
+    assert offered == set(KINDS) - set(NOT_SCHEDULABLE)
+    assert "intake" not in offered, "an agent that can schedule intakes can talk to itself"
+
+
+def test_a_check_the_requester_commissioned_may_answer_the_requester() -> None:
+    for kind in ("check_issue_state", "check_pr_exists", "check_pr_reviewed", "check_pr_merged"):
+        assert "ping_requester" in KINDS[kind].unmet_actions
+    assert "ping_requester" not in KINDS["nudge"].unmet_actions
 
 
 def test_params_are_validated_against_the_kinds_schema() -> None:
