@@ -29,10 +29,11 @@ async def test_tick_runs_due_tasks_and_reports_outcomes(client: TestClient, deps
                              reason="t", root_event_id=event_id)
     r = client.post("/tick", headers={"X-Tick-Token": "tick-secret"})
     assert r.status_code == 200
-    assert r.json() == {"processed": 1, "outcomes": ["done"]}
-    # The extract stage enqueued reconcile, so the next tick picks that up. With no reconciler
-    # configured it fails honestly and is requeued for a retry rather than skipped.
-    r = client.post("/tick", headers={"X-Tick-Token": "tick-secret"})
-    assert r.json() == {"processed": 1, "outcomes": ["queued"]}
+    # One tick drains the chain: extract succeeds, and the reconcile it enqueued runs in the
+    # same request — failing honestly (no reconciler configured) into a backoff retry.
+    assert r.json() == {"processed": 2, "outcomes": ["done", "queued"]}
     reconcile = (await deps.db.query("tasks", [("kind", "==", "reconcile")]))[0]
     assert "reconciler" in reconcile["error"]
+    # The retry is on backoff, so an immediate second tick finds nothing due.
+    r = client.post("/tick", headers={"X-Tick-Token": "tick-secret"})
+    assert r.json() == {"processed": 0, "outcomes": []}

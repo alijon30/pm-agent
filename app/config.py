@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     notion_token: str = ""
     github_token: str = ""
     github_repo: str = ""
+    linear_webhook_secret: str = ""
 
     default_project_slug: str = "acme"
 
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
     model_strong: str = "gemini-3.5-flash"
 
     stage_timeout_seconds: int = 600
+    tick_budget_seconds: int = 480
     lease_minutes: int = 15
     tick_batch: int = 10
 

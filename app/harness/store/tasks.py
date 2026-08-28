@@ -320,6 +320,17 @@ class TaskQueue:
 
     # --- failure ------------------------------------------------------------------------------
 
+    async def complete_early(self, task: Doc, result: dict[str, Any]) -> bool:
+        """Reality satisfied a scheduled check before its due time: complete it from any open
+        status, without a lease — there is no work to protect, only a fact to record. False when
+        the task was already terminal or running."""
+        return await self._db.cas(
+            "tasks", task["id"],
+            lambda t: t["status"] in ("queued", "blocked", "deferred"),
+            lambda t: {"status": "done", "result": result,
+                       "finished_at": iso(self._clock.now()), "lease_until": None},
+        )
+
     async def fail(self, task: Doc, reason: str, *, max_attempts: int = 3) -> str:
         """Retry with backoff while attempts remain; otherwise mark failed. Dependents are
         resolved by promote_ready() on the next tick. Returns the new status."""

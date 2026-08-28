@@ -1,7 +1,9 @@
-"""Inbound webhooks. Verify, store, enqueue, return — no model work happens on this path."""
+"""Inbound webhooks. Verify, store, act on the change, return — no model runs on this path."""
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from typing import Any
 
@@ -9,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.harness.connectors.fathom import parse_meeting, verify_signature
 from app.harness.deps import Deps
+from app.harness.stages.early import issue_identifier_of, resolve_early
 
 router = APIRouter()
 
@@ -47,3 +50,44 @@ async def fathom_webhook(request: Request) -> dict[str, Any]:
         policy=project.get("policy"),
     )
     return {"status": "queued", "task_id": task_id}
+
+
+def verify_linear_signature(secret: str, raw_body: bytes, given: str) -> bool:
+    """Linear signs the raw body with HMAC-SHA256, hex-encoded, in the linear-signature header.
+    Fails closed on a missing secret or header."""
+    if not secret or not given:
+        return False
+    expected = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, given)
+
+
+@router.post("/webhooks/linear")
+async def linear_webhook(request: Request) -> dict[str, Any]:
+    """An issue changed. Record it, then let reality overtake the schedule: any open check this
+    change already satisfies completes now instead of at its due time."""
+    deps: Deps = request.app.state.deps
+    raw = await request.body()
+    if not verify_linear_signature(
+        deps.settings.linear_webhook_secret, raw, request.headers.get("linear-signature", "")
+    ):
+        raise HTTPException(status_code=401, detail="bad linear signature")
+
+    payload = json.loads(raw)
+    if payload.get("type") != "Issue":
+        return {"status": "ignored"}
+    project = await deps.projects.default()
+    delivery = request.headers.get("linear-delivery") or (
+        f"{(payload.get('data') or {}).get('id', '')}:{payload.get('webhookTimestamp', '')}"
+    )
+    event_id = await deps.events.record(
+        provider="linear", provider_event_id=delivery, payload=payload,
+        project_id=project["id"],
+    )
+    if event_id is None:
+        return {"status": "duplicate"}
+
+    identifier = issue_identifier_of(payload)
+    if not identifier:
+        return {"status": "no_identifier"}
+    resolved = await resolve_early(identifier, deps)
+    return {"status": "ok", "issue": identifier, "resolved_early": len(resolved)}
