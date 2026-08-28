@@ -36,5 +36,10 @@ class Deps:
     reconciler: Reconciler | None = None
     planner: Planner | None = None
     linear: Any = None
+    notion: Any = None
+    code: Any = None
     slack: Any = None
     github: Any = None
+    # True only for deps built by build_deps(): the app's startup hook finishes the wiring that
+    # needs an async read (roster, project ids) — test deps wire themselves and skip this.
+    wire_on_startup: bool = False
