@@ -19,9 +19,11 @@ UNMET_ACTIONS = (
     "none", "nudge_assignee", "nudge_reviewer", "escalate_channel", "ping_requester",
 )
 
-# Kinds the model may never schedule. `intake` is how a request enters the system; an agent that
-# could schedule its own intakes could talk to itself.
-NOT_SCHEDULABLE = ("intake",)
+# Kinds the model may never schedule, and why — a value rather than a comment because GATES.md
+# is generated from this file and a reason nobody can import is a reason that drifts.
+NOT_SCHEDULABLE = {
+    "intake": "an agent that could schedule its own intakes could talk to itself",
+}
 
 
 class IssueStateParams(StrictParams):
