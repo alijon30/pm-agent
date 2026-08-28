@@ -1,16 +1,16 @@
 {
-  "created_at": "2026-08-28T05:54:11+00:00",
+  "created_at": "2026-08-28T13:56:16+00:00",
   "eval_now": "2026-08-28T16:00:00+00:00",
   "total": 26,
-  "passed": 24,
+  "passed": 23,
   "headline": {
-    "accuracy_pct": 92.3,
+    "accuracy_pct": 88.5,
     "fabricated_identifiers": 0,
     "citation_coverage_pct": 100.0,
     "invalid_plans_materialised": 0,
     "corrections_recurred": "n/a"
   },
-  "report_claims": 6,
+  "report_claims": 7,
   "report_claims_removed": 0,
   "stage_errors": [],
   "questions": [
@@ -28,7 +28,7 @@
       "check": "rejected_option_recorded",
       "question": "Was SMS kept as an option the call considered and turned down?",
       "passed": true,
-      "detail": "SMS reminders are rejected for now, keeping it ema — rejected: SMS reminders"
+      "detail": "SMS reminders are rejected for now, keeping remind — rejected: SMS reminders"
     },
     {
       "id": "q03",
@@ -36,7 +36,7 @@
       "check": "action_item_extracted",
       "question": "Was the invoice CSV export for Northwind extracted as an action item?",
       "passed": true,
-      "detail": "Get invoice CSV export behind a flag"
+      "detail": "Put the invoice CSV export behind a flag"
     },
     {
       "id": "q04",
@@ -44,7 +44,7 @@
       "check": "action_item_extracted",
       "question": "Was the reminder change extracted as an action item?",
       "passed": true,
-      "detail": "Move payment reminders to three days after the due date"
+      "detail": "Move payment reminders to three days after due date"
     },
     {
       "id": "q05",
@@ -60,15 +60,15 @@
       "check": "due_hint_captured",
       "question": "Was the spoken deadline 'next Friday' captured as the timing hint on the reminder work?",
       "passed": true,
-      "detail": "Move payment reminders to three days after the due — due_hint 'next Friday'"
+      "detail": "Move payment reminders to three days after due dat — due_hint 'next Friday'"
     },
     {
       "id": "q07",
       "kind": "recall",
       "check": "escalation_quote_captured",
       "question": "Was the escalation language on the blocked export captured verbatim, as the priority gate requires?",
-      "passed": true,
-      "detail": "quoted: This is urgent, a customer is blocked. Priya, can you take the invoice CSV expor"
+      "passed": false,
+      "detail": "0 quote(s), none containing ['urgent', 'blocked']"
     },
     {
       "id": "q08",
@@ -99,8 +99,8 @@
       "kind": "recall",
       "check": "conflict_detected",
       "question": "Did the agent notice that the code sends reminders at 7 days while the spec says 5?",
-      "passed": false,
-      "detail": "2 conflict(s), none matching"
+      "passed": true,
+      "detail": "code_vs_spec: payment reminder window days"
     },
     {
       "id": "q12",
@@ -108,7 +108,7 @@
       "check": "conflict_detected",
       "question": "Did the agent notice that the export spec includes payments while the code writes invoice columns only?",
       "passed": true,
-      "detail": "spec_vs_call: Invoice CSV export content (payments inclusion)"
+      "detail": "code_vs_spec: payment reminder window days"
     },
     {
       "id": "q13",
@@ -116,7 +116,7 @@
       "check": "evidence_verbatim",
       "question": "Does every quote that survived the evidence gate appear verbatim in the transcript?",
       "passed": true,
-      "detail": "5 quote(s) verbatim"
+      "detail": "4 quote(s) verbatim"
     },
     {
       "id": "q14",
@@ -124,7 +124,7 @@
       "check": "decision_ledger_cited",
       "question": "Does every decision in the ledger carry the moment in the call that produced it?",
       "passed": true,
-      "detail": "2 entries, all sourced"
+      "detail": "3 entries, all sourced"
     },
     {
       "id": "q15",
@@ -148,15 +148,15 @@
       "check": "due_only_when_stated",
       "question": "Does every due date the agent set correspond to words somebody actually spoke?",
       "passed": true,
-      "detail": "2 dated issue(s), each spoken aloud"
+      "detail": "0 dated issue(s), each spoken aloud"
     },
     {
       "id": "q18",
       "kind": "guarantee",
       "check": "issue_cites_the_call",
       "question": "Can every filed issue be audited from the tracker alone, without opening this system?",
-      "passed": true,
-      "detail": "2 issue(s) quote the call"
+      "passed": false,
+      "detail": "no call reference in: ['INV-117']"
     },
     {
       "id": "q19",
@@ -164,7 +164,7 @@
       "check": "conflict_not_resolved",
       "question": "Where two sources disagree, did the agent report both sides with citations instead of picking a winner?",
       "passed": true,
-      "detail": "2 conflict(s), both sides cited"
+      "detail": "8 conflict(s), both sides cited"
     },
     {
       "id": "q20",
@@ -172,7 +172,7 @@
       "check": "plan_dependency_order",
       "question": "Is every scheduled check due after whatever it depends on?",
       "passed": true,
-      "detail": "2 edge(s), each due in order"
+      "detail": "1 edge(s), each due in order"
     },
     {
       "id": "q21",
@@ -180,7 +180,7 @@
       "check": "plan_within_horizon",
       "question": "Is every scheduled check in the future and inside the project's planning horizon?",
       "passed": true,
-      "detail": "4 check(s) inside 30 days"
+      "detail": "2 check(s) inside 30 days"
     },
     {
       "id": "q22",
@@ -204,7 +204,7 @@
       "check": "report_citation_coverage",
       "question": "Does every claim in the delivered status report carry at least one reference?",
       "passed": true,
-      "detail": "6/6 claims cited (0 removed by the gate)"
+      "detail": "7/7 claims cited (0 removed by the gate)"
     },
     {
       "id": "q25",
@@ -212,7 +212,7 @@
       "check": "report_refs_exist",
       "question": "Does every tracker and ledger reference in the report point at something that exists?",
       "passed": true,
-      "detail": "6 reference(s) resolve"
+      "detail": "5 reference(s) resolve"
     },
     {
       "id": "q26",
@@ -220,7 +220,7 @@
       "check": "no_fabricated_identifiers",
       "question": "Across every issue body, citation, plan parameter and report reference: did the agent ever invent an identifier?",
       "passed": true,
-      "detail": "8 identifier(s) written, all real"
+      "detail": "4 identifier(s) written, all real"
     }
   ]
 }

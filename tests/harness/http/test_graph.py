@@ -228,10 +228,43 @@ def test_the_page_asks_the_network_for_nothing(client: TestClient) -> None:
 def test_the_page_carries_the_replay_controls_the_demo_depends_on(client: TestClient) -> None:
     page = client.get("/console/graph").text
 
-    for element_id in ("canvas", "edges", "nodes", "scrubber", "play", "clock", "count"):
+    for element_id in ("canvas", "defs", "edges", "nodes", "scrubber", "play", "clock",
+                       "count", "mode", "tooltip"):
         assert f"id='{element_id}'" in page or f'id="{element_id}"' in page
-    assert "▶ Replay" in page
+    assert "▶ Replay" in page and ">LIVE<" in page
     assert "/console/graph.json" in page
+
+
+def test_the_page_draws_its_own_glow_arrowhead_and_glyphs(client: TestClient) -> None:
+    """None of this comes from a library, so the page has to define all of it — and it has to
+    define one filter per colour rather than one per node."""
+    page = client.get("/console/graph").text
+
+    for piece in ("feGaussianBlur", "feFlood", "feComposite", "feMerge"):
+        assert piece in page, f"the glow needs {piece}"
+    assert 'marker.setAttribute("id", "arrow")' in page
+    assert "for (const hue of hues) defineGlow(hue)" in page, "one filter per colour, not per node"
+
+
+def test_a_label_reaches_the_page_as_text_and_never_as_markup(client: TestClient) -> None:
+    """Labels are issue titles and model output. The server escapes them; this page must not
+    undo that by building nodes out of concatenated strings."""
+    page = client.get("/console/graph").text
+
+    import re
+
+    assert re.search(r"innerHTML\s*=", page) is None, "nothing is built by concatenating markup"
+    assert "innerHTML" in page, "the rule is written down where the next person will read it"
+    assert page.count("textContent") >= 3
+
+
+def test_the_tuning_block_still_holds_every_constant_the_look_depends_on(
+    client: TestClient,
+) -> None:
+    page = client.get("/console/graph").text
+
+    for knob in ("collisionPad", "curve", "rippleMs", "drawMs", "enterBurst"):
+        assert f"{knob}:" in page
 
 
 def test_the_console_and_the_graph_link_to_each_other(client: TestClient) -> None:
@@ -248,6 +281,21 @@ def test_every_node_type_the_builder_emits_has_a_colour_and_a_legend_entry() -> 
         assert f"{kind}:" in GRAPH_SCRIPT, f"no colour for {kind}"
     for label in ("call", "decision", "issue", "person", "check", "lesson"):
         assert f">{label}</span>" in page
+
+
+def test_the_legend_shows_the_glyph_that_is_actually_drawn_in_the_node() -> None:
+    """A key that does not match the thing it is a key to is worse than no key."""
+    from app.harness.http.console import GRAPH_LEGEND, graph_page
+    from app.harness.http.graph_assets import GRAPH_SCRIPT
+
+    page = graph_page("x")
+    for _name, colour, glyph in GRAPH_LEGEND:
+        assert f"background:{colour}" in page
+        assert f">{glyph}</i>" in page
+    # The glyphs the script draws are escaped as \uXXXX; the legend spells them out. Check the
+    # two that a reader identifies the graph by.
+    assert "\\u260E" in GRAPH_SCRIPT and "☎" in page       # the call
+    assert "\\u2726" in GRAPH_SCRIPT and "✦" in page       # a lesson
 
 
 def test_the_tuning_constants_are_declared_once_and_marked_as_taste() -> None:

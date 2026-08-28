@@ -454,31 +454,45 @@ def iso_now(deps: Deps) -> str:
     return deps.clock.now().isoformat()
 
 
+# The legend is the key to the glyphs, so it has to carry them. Kept beside the page rather
+# than in the script because it is markup, and the script's copy of these colours is the one the
+# nodes are drawn with — a mismatch here would be visible immediately.
+GRAPH_LEGEND = (
+    ("call", "#b48ead", "☎"),
+    ("decision", "#ebcb8b", "◆"),
+    ("issue", "#5e81ac", "▣"),
+    ("person", "#a3be8c", "MC"),
+    ("check", "#4c566a", "○"),
+    ("lesson", "#d08770", "✦"),
+)
+
+
 def graph_page(project_name: str) -> str:
     """One self-contained document: no script src, no stylesheet link, no font, no CDN. It
-    fetches its own data from /console/graph.json and draws everything itself."""
+    fetches its own data from /console/graph.json and draws everything itself — the glows, the
+    arrowheads and the glyphs are all defined by the page at load."""
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>{esc(project_name)} — the agent's world</title>"
         f"<style>{GRAPH_STYLE}</style></head><body>"
-        "<div id='stage'><svg id='canvas'><g id='edges'></g><g id='nodes'></g></svg></div>"
+        "<div id='stage'><svg id='canvas'><defs id='defs'></defs>"
+        "<g id='edges'></g><g id='nodes'></g></svg></div>"
         f"<header><h1>{esc(project_name)}</h1>"
         "<p>the agent's world, as it learned it · <a href='/console'>← console</a></p></header>"
         "<div id='legend'>"
         + "".join(
-            f"<span><i style='background:{colour}'></i>{esc(name)}</span>"
-            for name, colour in (
-                ("call", "#b48ead"), ("decision", "#ebcb8b"), ("issue", "#5e81ac"),
-                ("person", "#a3be8c"), ("check", "#4c566a"), ("lesson", "#d08770"),
-            )
+            f"<span><i style='background:{colour}'>{esc(glyph)}</i>{esc(name)}</span>"
+            for name, colour, glyph in GRAPH_LEGEND
         )
         + "</div>"
+        "<div id='tooltip'></div>"
         "<div id='empty' style='display:none'>Nothing has happened yet.</div>"
         "<div id='controls'>"
         "<button id='play'>▶ Replay</button>"
         "<input type='range' id='scrubber' min='0' max='1' value='1'>"
-        "<span id='clock'>—</span><span id='count'>0 / 0</span>"
+        "<span id='clock'>—</span><span id='mode'>LIVE</span>"
+        "<span id='count'>0 / 0</span>"
         "</div>"
         f"<script>{GRAPH_SCRIPT}</script></body></html>"
     )
