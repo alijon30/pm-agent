@@ -1,10 +1,10 @@
 {
   "slug": "acme",
   "name": "Q3 Billing",
-  "linear_team_id": "",
-  "linear_project_id": "",
+  "linear_team_id": "1da250b0-0262-4438-847b-980e9249f989",
+  "linear_project_id": "5d09ebb7-0e9b-45ff-848e-d704778478ea",
   "notion_root_page_id": "",
-  "slack_channel_id": "",
+  "slack_channel_id": "C0BSVCR8HPH",
   "code_repo": "fixtures/acme-invoicing",
   "timezone": "America/Los_Angeles",
   "policy": {
@@ -15,10 +15,26 @@
     "plan_horizon_days": 30,
     "daily_write_cap": 40,
     "daily_ping_cap": 10,
-    "quiet_hours": ["20:00", "08:00"],
-    "priority_band": [2, 4],
-    "escalation_phrases": ["urgent", "blocker", "blocked", "p0", "asap"],
-    "default_followup_offsets": ["-1d", "0d", "+3d"],
+    "quiet_hours": [
+      "20:00",
+      "08:00"
+    ],
+    "priority_band": [
+      2,
+      4
+    ],
+    "escalation_phrases": [
+      "urgent",
+      "blocker",
+      "blocked",
+      "p0",
+      "asap"
+    ],
+    "default_followup_offsets": [
+      "-1d",
+      "0d",
+      "+3d"
+    ],
     "daily_review_at": "09:00",
     "daily_model_budget_usd": 5.0
   }

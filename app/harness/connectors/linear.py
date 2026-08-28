@@ -22,19 +22,25 @@ state { name } assignee { id name }
 _GET_ISSUE = f"query($id: String!) {{ issue(id: $id) {{ {_ISSUE_FIELDS} }} }}"
 
 _SEARCH = f"""
-query($teamId: ID, $text: String!, $first: Int!) {{
-  issues(
-    first: $first
-    filter: {{
-      team: {{ id: {{ eq: $teamId }} }}
-      or: [
-        {{ title: {{ containsIgnoreCase: $text }} }}
-        {{ description: {{ containsIgnoreCase: $text }} }}
-      ]
-    }}
-  ) {{ nodes {{ {_ISSUE_FIELDS} }} }}
+query($filter: IssueFilter, $first: Int!) {{
+  issues(first: $first, filter: $filter) {{ nodes {{ {_ISSUE_FIELDS} }} }}
 }}
 """
+
+
+def search_filter(team_id: str, text: str) -> dict[str, Any]:
+    """Every word must appear somewhere in the title or description. containsIgnoreCase wants a
+    contiguous substring, so "overdue dashboard" as one phrase misses "Overdue invoices
+    dashboard" — per-word AND is what a human means by that search."""
+    words = [w for w in text.split() if w]
+    return {
+        "team": {"id": {"eq": team_id}},
+        "and": [
+            {"or": [{"title": {"containsIgnoreCase": w}},
+                    {"description": {"containsIgnoreCase": w}}]}
+            for w in words
+        ],
+    }
 
 _STATES = """
 query($teamId: String!) {
@@ -132,7 +138,7 @@ class LinearClient:
     async def search_issues(
         self, team_id: str, text: str, *, limit: int = 8
     ) -> list[dict[str, Any]]:
-        data = await self._gql(_SEARCH, {"teamId": team_id, "text": text, "first": limit})
+        data = await self._gql(_SEARCH, {"filter": search_filter(team_id, text), "first": limit})
         nodes = (data.get("issues") or {}).get("nodes") or []
         return [_norm_issue(n) for n in nodes]
 

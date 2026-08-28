@@ -41,13 +41,13 @@ class FakeLinear:
         self, team_id: str, text: str, *, limit: int = 8
     ) -> list[dict[str, Any]]:
         # The fixture company has one team, so team_id is accepted but not filtered on.
-        needle = text.lower()
-        hits = [
-            copy.deepcopy(i)
-            for i in self._issues.values()
-            if needle in (i.get("title") or "").lower()
-            or needle in (i.get("description") or "").lower()
-        ]
+        # Word-AND, mirroring the real connector: every word must appear in title or description.
+        words = [w for w in text.lower().split() if w]
+        hits = []
+        for issue in self._issues.values():
+            haystack = f"{issue.get('title') or ''} {issue.get('description') or ''}".lower()
+            if words and all(w in haystack for w in words):
+                hits.append(copy.deepcopy(issue))
         return hits[:limit]
 
     async def list_states(self, team_id: str) -> list[dict[str, Any]]:

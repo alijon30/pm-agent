@@ -1,15 +1,31 @@
 #!/usr/bin/env bash
-# Build from source and deploy. Secrets come from Secret Manager; nothing sensitive is passed here.
-# Usage: ./deploy/deploy.sh            (first deploy, before the Fathom webhook exists)
-#        PM_WITH_FATHOM=1 ./deploy/deploy.sh   (once pm-fathom-webhook-secret exists)
+# Build from source and deploy. Secrets come from Secret Manager; nothing sensitive is passed
+# here. Every optional secret that exists in Secret Manager is mounted; absent ones simply
+# leave their feature disabled, mirroring how config.py treats an empty value.
 set -euo pipefail
-PROJECT="${PM_GCP_PROJECT:-pm-agent-hack-2026}"
+PROJECT="${PM_GCP_PROJECT:-pm-agent-hackathon-26}"
 REGION="${PM_REGION:-us-central1}"
 SERVICE="pm-agent"
 
 SECRETS="PM_TICK_TOKEN=pm-tick-token:latest,GOOGLE_API_KEY=pm-google-api-key:latest"
-if [ -n "${PM_WITH_FATHOM:-}" ]; then
-  SECRETS="$SECRETS,PM_FATHOM_WEBHOOK_SECRET=pm-fathom-webhook-secret:latest"
+declare -a OPTIONAL=(
+  "PM_FATHOM_WEBHOOK_SECRET=pm-fathom-webhook-secret"
+  "PM_SLACK_BOT_TOKEN=pm-slack-bot-token"
+  "PM_SLACK_SIGNING_SECRET=pm-slack-signing-secret"
+  "PM_LINEAR_API_KEY=pm-linear-api-key"
+  "PM_NOTION_TOKEN=pm-notion-token"
+  "PM_GITHUB_TOKEN=pm-github-token"
+)
+for pair in "${OPTIONAL[@]}"; do
+  secret="${pair#*=}"
+  if gcloud secrets describe "$secret" --project "$PROJECT" >/dev/null 2>&1; then
+    SECRETS="$SECRETS,${pair}:latest"
+  fi
+done
+
+ENV_VARS="PM_GCP_PROJECT=$PROJECT,PM_DEFAULT_PROJECT_SLUG=acme,GOOGLE_GENAI_USE_VERTEXAI=FALSE"
+if [ -n "${PM_GITHUB_REPO:-}" ]; then
+  ENV_VARS="$ENV_VARS,PM_GITHUB_REPO=$PM_GITHUB_REPO"
 fi
 
 gcloud run deploy "$SERVICE" \
@@ -17,7 +33,7 @@ gcloud run deploy "$SERVICE" \
   --source . \
   --allow-unauthenticated \
   --timeout 900 --concurrency 4 --min-instances 0 --max-instances 2 \
-  --set-env-vars "PM_GCP_PROJECT=$PROJECT,PM_DEFAULT_PROJECT_SLUG=acme,GOOGLE_GENAI_USE_VERTEXAI=FALSE" \
+  --set-env-vars "$ENV_VARS" \
   --set-secrets "$SECRETS"
 
 gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" \

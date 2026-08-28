@@ -158,3 +158,25 @@ async def test_optional_create_fields_are_omitted_when_absent() -> None:
         team_id="team-1", project_id=None, title="T", description="D",
         assignee_id=None, priority=None, due_date=None)
     assert set(seen) == {"teamId", "title", "description"}
+
+
+async def test_search_words_may_span_the_title_and_description() -> None:
+    fake = make_fake()
+    # "overdue" is in INV-104's title, "quarter" in its description — a phrase search that a
+    # contiguous-substring match would miss.
+    hits = await fake.search_issues("team-1", "overdue quarter")
+    assert [h["identifier"] for h in hits] == ["INV-104"]
+    assert await fake.search_issues("team-1", "overdue reminders") == []
+
+
+async def test_the_real_search_sends_a_word_and_filter() -> None:
+    seen: dict[str, Any] = {}
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content)["variables"]["filter"])
+        return httpx.Response(200, json={"data": {"issues": {"nodes": []}}})
+
+    await client_with(httpx.MockTransport(respond)).search_issues("team-1", "overdue dashboard")
+    assert seen["team"] == {"id": {"eq": "team-1"}}
+    assert len(seen["and"]) == 2
+    assert seen["and"][0]["or"][0] == {"title": {"containsIgnoreCase": "overdue"}}
