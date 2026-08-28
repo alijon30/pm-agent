@@ -72,3 +72,17 @@ done
 
 `_contract` exists only for the live Db contract test, which uses the same query shapes as the
 real queue.
+
+## If a deploy hangs
+
+`deploy.sh` builds through the us-central1 Cloud Build pool, which can jam
+(builds sit QUEUED indefinitely — seen 2026-08-28, three builds stuck 45+ min).
+If a deploy stalls after "Uploading sources... done":
+
+    gcloud builds list --project pm-agent-hackathon-26 --region us-central1 --limit 3
+    # QUEUED and not moving? Cancel them, then build through us-east1 and
+    # deploy the image directly (preserves env and secrets):
+    gcloud builds submit --project pm-agent-hackathon-26 --region us-east1 \
+      --tag us-central1-docker.pkg.dev/pm-agent-hackathon-26/cloud-run-source-deploy/pm-agent/redesign:<tag> .
+    gcloud run deploy pm-agent --region us-central1 --project pm-agent-hackathon-26 \
+      --image us-central1-docker.pkg.dev/pm-agent-hackathon-26/cloud-run-source-deploy/pm-agent/redesign:<tag> --quiet
