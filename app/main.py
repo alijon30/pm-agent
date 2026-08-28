@@ -92,8 +92,10 @@ def create_app(deps: Deps) -> FastAPI:
     app.include_router(tick.router)
     app.include_router(slack.router)
 
-    @app.get("/healthz")
-    async def healthz() -> dict[str, Any]:
+    # Not /healthz: Google's front end reserves that exact path at the edge and answers 404
+    # before the request ever reaches Cloud Run.
+    @app.get("/health")
+    async def health() -> dict[str, Any]:
         return {"ok": True, "wired": deps.reconciler is not None}
 
     return app
