@@ -11,23 +11,16 @@ than losing the whole post."""
 
 from __future__ import annotations
 
-import re
-from datetime import datetime
 from typing import Any
 
-from app.harness.kinds.phrasing import human_check
+from app.harness.core.clock import human_date, human_due, readable
+from app.harness.core.refs import ref_chip, ref_chips
+from app.harness.core.words import count_of
+from app.harness.kinds.phrasing import UNMET_CONSEQUENCES, human_check
 
 MAX_BLOCKS = 50
 REVERT_ACTION = "revert"
 WRONG_ACTION = "wrong"
-
-# What happens if a check comes back unmet — the half of a promise that makes it worth reading.
-UNMET_CONSEQUENCES = {
-    "nudge_assignee": "if not, I'll nudge the assignee",
-    "nudge_reviewer": "if not, I'll ask for a reviewer",
-    "escalate_channel": "if not, I'll raise it here",
-    "ping_requester": "if not, I'll ping you",
-}
 
 SECTION_TITLES = {
     "shipped": "Shipped",
@@ -38,72 +31,6 @@ SECTION_TITLES = {
     "open_questions": "Open questions",
     "decisions": "Decided",
 }
-
-REF = re.compile(r"^([a-z]+):(.+)$", re.IGNORECASE)
-
-
-def count_of(number: int, singular: str) -> str:
-    """"1 ticket", "2 tickets". One pluralisation rule, so no message ever says "check(s)"."""
-    return f"{number} {singular}" if number == 1 else f"{number} {singular}s"
-
-
-def _parsed(value: str) -> datetime | None:
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
-
-
-def human_date(value: str) -> str:
-    """"Sep 1". Empty for anything unparseable, so a caller can leave the date out entirely."""
-    when = _parsed(value)
-    return f"{when:%b} {when.day}" if when else ""
-
-
-def human_due(value: str) -> str:
-    """"Mon Sep 1" — the weekday is what tells someone whether a date is soon."""
-    when = _parsed(value)
-    return f"{when:%a %b} {when.day}" if when else ""
-
-
-def ref_chip(ref: str) -> str:
-    """A citation as something a person can read: `linear:INV-26` → "INV-26", a Fathom moment →
-    "call @ 1:58", a decision id → "ledger". The typed form is how the gate checks a claim; it
-    is not how anyone should have to read one."""
-    match = REF.match((ref or "").strip())
-    if not match:
-        return (ref or "").strip()
-    kind, target = match.group(1).lower(), match.group(2).strip()
-    if kind == "linear":
-        return target
-    if kind == "decision":
-        return "ledger"
-    if kind == "notion":
-        return "spec"
-    if kind == "wiki":
-        return "brain"
-    if kind == "fathom":
-        _meeting, _, timestamp = target.partition("@")
-        stamp = timestamp.removeprefix("00:") if timestamp.startswith("00:") else timestamp
-        return f"call @ {stamp}" if stamp else "call"
-    if kind == "code":
-        path, _, line = target.rpartition(":")
-        if path and line.isdigit():
-            return f"{path.rsplit('/', 1)[-1]}:{line}"
-        return target.rsplit("/", 1)[-1]
-    return ref.strip()
-
-
-def ref_chips(refs: list[str] | tuple[str, ...]) -> list[str]:
-    """Readable citations, in order, without repeats — three decisions cited on one claim are
-    one "ledger", not three."""
-    chips: list[str] = []
-    for ref in refs or []:
-        chip = ref_chip(str(ref))
-        if chip and chip not in chips:
-            chips.append(chip)
-    return chips
-
 
 def _section(text: str) -> dict[str, Any]:
     return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
@@ -291,7 +218,7 @@ def sprint_day(sprint: dict[str, Any], today: str) -> str:
     """"day 3 of Sprint 1", or nothing at all. A sprint is a shared sense of where in the week
     everyone is, and it is the one number that makes a standup feel situated."""
     start, name = str(sprint.get("start") or ""), str(sprint.get("name") or "")
-    first, now = _parsed(start), _parsed(today)
+    first, now = readable(start), readable(today)
     if not name or first is None or now is None:
         return ""
     day = (now.date() - first.date()).days + 1

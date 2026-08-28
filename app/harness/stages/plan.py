@@ -13,11 +13,12 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from app.agents.base.schemas import Plan
-from app.harness.connectors.slack_blocks import count_of, plan_summary_blocks
+from app.harness.connectors.slack_blocks import plan_summary_blocks
 from app.harness.core.clock import iso, parse_iso
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
+from app.harness.core.words import count_of
 from app.harness.deps import Deps
 from app.harness.kinds.registry import KINDS, catalog_for_prompt
 from app.harness.stages.base import StageResult

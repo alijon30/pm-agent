@@ -20,16 +20,22 @@ Three rules hold for this module:
 from __future__ import annotations
 
 import html
+import json
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from app.harness.core.clock import human_date, human_delta, human_due, iso, readable
 from app.harness.core.redact import redact
+from app.harness.core.refs import ref_chip
+from app.harness.core.words import count_of
 from app.harness.deps import Deps
 from app.harness.http.graph_assets import GRAPH_SCRIPT, GRAPH_STYLE
-from app.harness.kinds.phrasing import human_check
+from app.harness.kinds.phrasing import UNMET_CONSEQUENCES, human_check, human_working
 from app.harness.store.db import Doc
+from app.harness.store.tasks import OPEN_STATUSES
 
 router = APIRouter()
 
@@ -45,6 +51,13 @@ ISSUE_ACTIONS = ("linear.create_issue", "linear.comment")
 # The order a story is told in when several things share a timestamp — which they do constantly,
 # because one call produces a decision, an issue and a check inside the same second.
 GRAPH_ORDER = {"meeting": 0, "decision": 1, "issue": 2, "person": 3, "check": 4, "lesson": 5}
+STORY_LINES = 12
+NOW_LINES = 5
+# Firestore documents and one HTTP response: the page fetches this once, so it has to stay
+# something a browser downloads without thinking about it.
+GRAPH_BYTES = 300_000
+STORY_TRIMS = (12, 6, 3, 1, 0)
+DONE_ISH = ("done", "completed", "merged", "closed")
 HEADLINE_FIELDS = (
     ("accuracy_pct", "factual accuracy"),
     ("fabricated_identifiers", "fabricated identifiers"),
@@ -67,8 +80,13 @@ def _ts_of(doc: Doc) -> str:
     return str(doc.get("finished_at") or doc.get("created_at") or "")
 
 
-def _entry(ts: str, category: str, text: str) -> dict[str, str]:
-    return {"ts": ts, "category": category, "text": text}
+def _entry(ts: str, category: str, text: str, refs: list[str] | None = None) -> dict[str, Any]:
+    """One line of the journal, plus the documents it was derived from.
+
+    `refs` exists so another view can attribute an entry without re-deriving its phrasing: the
+    graph asks "which of these lines are about this node?" and the answer is a set membership
+    test rather than a second copy of every sentence in this file."""
+    return {"ts": ts, "category": category, "text": text, "refs": refs or []}
 
 
 def _short(text: str, limit: int = 90) -> str:
@@ -149,6 +167,29 @@ def _done_line(task: Doc, children: list[Doc]) -> tuple[str, str]:
             f"wrote the status report — {claims} cited claim(s): "
             f"\"{_short(str(report.get('headline') or ''), 70)}\"{tail}"
         )
+    if kind == "intake":
+        if result.get("identifier"):
+            return "cancelled", (
+                f"stopped {count_of(len(result.get('cancelled') or []), 'check')} on "
+                f"{result['identifier']} — the person who asked for them said so"
+            )
+        accepted = result.get("accepted") or []
+        if accepted:
+            return "planned", (
+                f"a teammate asked for something and I committed to "
+                f"{count_of(len(accepted), 'check')}"
+            )
+        return "checked", (
+            f"a teammate asked for something I could not do — "
+            f"{_short(str(result.get('notes') or 'and I said so'), 70)}"
+        )
+    if kind == "daily_review":
+        learned = result.get("learned") or []
+        tail = f"; learned {count_of(len(learned), 'thing')}" if learned else ""
+        return "extracted", (
+            f"read yesterday — {result.get('checked', 0)} check(s) ran, "
+            f"{result.get('nudged', 0)} message(s) sent{tail}"
+        )
     if kind.startswith("check_"):
         return _check_line(task, result)
     if kind == "nudge":
@@ -158,31 +199,65 @@ def _done_line(task: Doc, children: list[Doc]) -> tuple[str, str]:
     return "done", f"finished {kind}"
 
 
-def _task_entries(task: Doc, children: list[Doc]) -> list[dict[str, str]]:
+def task_refs(task: Doc, children: list[Doc]) -> list[str]:
+    """The nodes a task's line is about: itself, the issue in its params, and — for a plan —
+    the issues of everything it scheduled."""
+    refs = [f"task:{task['id']}"]
+    issue = str((task.get("params") or {}).get("issue") or "")
+    if issue:
+        refs.append(f"issue:{issue}")
+    for child in children:
+        child_issue = str((child.get("params") or {}).get("issue") or "")
+        if child_issue and f"issue:{child_issue}" not in refs:
+            refs.append(f"issue:{child_issue}")
+    return refs
+
+
+def action_refs(action: Doc) -> list[str]:
+    """The nodes an action's line is about: the task that performed it, the issue it touched,
+    and the person it was assigned to."""
+    inputs: dict[str, Any] = action.get("inputs") or {}
+    targets: dict[str, Any] = action.get("target_ids") or {}
+    refs = [f"action:{action['id']}"]
+    if action.get("task_id"):
+        refs.append(f"task:{action['task_id']}")
+    identifier = str(targets.get("identifier") or inputs.get("target_issue") or "")
+    if identifier:
+        refs.append(f"issue:{identifier}")
+    if inputs.get("owner"):
+        refs.append(f"person:{inputs['owner']}")
+    return refs
+
+
+def _task_entries(task: Doc, children: list[Doc]) -> list[dict[str, Any]]:
     ts, kind, status = _ts_of(task), str(task["kind"]), str(task["status"])
-    entries: list[dict[str, str]] = []
+    refs = task_refs(task, children)
+    entries: list[dict[str, Any]] = []
 
     if status == "done":
         category, text = _done_line(task, children)
-        entries.append(_entry(ts, category, text))
+        entries.append(_entry(ts, category, text, refs))
     elif status == "deferred":
         entries.append(_entry(ts, "deferred", (
             f"held {kind} until {str(task.get('due_at') or '')[11:16]} — "
             f"{task.get('defer_reason') or 'not now'}"
-        )))
+        ), refs))
     elif status == "failed":
-        entries.append(_entry(ts, "failed", f"{kind} failed — {_short(str(task.get('error')))}"))
+        entries.append(
+            _entry(ts, "failed", f"{kind} failed — {_short(str(task.get('error')))}", refs))
     elif status == "cancelled":
-        entries.append(_entry(ts, "cancelled", f"{kind} — {_short(str(task.get('error')))}"))
+        entries.append(
+            _entry(ts, "cancelled", f"{kind} — {_short(str(task.get('error')))}", refs))
     elif status == "skipped":
-        entries.append(_entry(ts, "cancelled", f"skipped {kind} — a dependency did not hold"))
+        entries.append(
+            _entry(ts, "cancelled", f"skipped {kind} — a dependency did not hold", refs))
 
     # A refused enqueue is the lineage gate saying no. It is the agent declining to give itself
     # more work, which is exactly the kind of decision this journal exists to show.
     for refusal in task.get("refused_enqueues") or []:
         entries.append(_entry(ts, "refused", (
             f"refused to schedule {refusal.get('kind', '?')} — {refusal.get('reason', '')}"
-        )))
+        ), refs))
     return entries
 
 
@@ -202,8 +277,9 @@ def _slack_line(action: Doc) -> tuple[str, str]:
     return "posted", f"{verb}{subject} with a revert button on every action"
 
 
-def _action_entries(action: Doc) -> list[dict[str, str]]:
+def _action_entries(action: Doc) -> list[dict[str, Any]]:
     kind, status = str(action.get("kind")), str(action.get("status"))
+    refs = action_refs(action)
     targets: dict[str, Any] = action.get("target_ids") or {}
     identifier = str(targets.get("identifier") or "")
     inputs: dict[str, Any] = action.get("inputs") or {}
@@ -211,13 +287,13 @@ def _action_entries(action: Doc) -> list[dict[str, str]]:
     if status == "reverted":
         who = str(action.get("reverted_by") or "someone")
         return [_entry(str(action.get("reverted_at") or _ts_of(action)), "reverted",
-                       f"{who} reverted {identifier or kind}")]
+                       f"{who} reverted {identifier or kind}", refs)]
     if status == "failed":
         return [_entry(_ts_of(action), "failed",
-                       f"could not {kind} — {_short(str(action.get('error')))}")]
+                       f"could not {kind} — {_short(str(action.get('error')))}", refs)]
     if status == "pending":
         return [_entry(_ts_of(action), "pending",
-                       f"started {kind} — recorded before doing it, not yet confirmed")]
+                       f"started {kind} — recorded before doing it, not yet confirmed", refs)]
 
     ts = _ts_of(action)
     if kind == "linear.create_issue":
@@ -226,19 +302,20 @@ def _action_entries(action: Doc) -> list[dict[str, str]]:
         tail = f" · cited {' · '.join(cited[:2])}" if cited else " · no citation on record"
         gates = f" · checks: {', '.join(checks)}" if checks else ""
         title = _short(str(inputs.get("title") or ""), 60)
-        return [_entry(ts, "filed", f"filed {identifier or 'an issue'} — {title}{tail}{gates}")]
+        return [_entry(ts, "filed",
+                       f"filed {identifier or 'an issue'} — {title}{tail}{gates}", refs)]
     if kind == "linear.comment":
         return [_entry(ts, "filed", (
             f"commented on {identifier or 'an issue'} — "
             f"{_short(str(inputs.get('title') or 'raised again in a call'), 60)}"
-        ))]
+        ), refs)]
     if kind.startswith("slack."):
         category, text = _slack_line(action)
-        return [_entry(ts, category, text)]
-    return [_entry(ts, "done", f"{kind} completed")]
+        return [_entry(ts, category, text, refs)]
+    return [_entry(ts, "done", f"{kind} completed", refs)]
 
 
-def journal_entries(tasks: list[Doc], actions: list[Doc]) -> list[dict[str, str]]:
+def journal_entries(tasks: list[Doc], actions: list[Doc]) -> list[dict[str, Any]]:
     """The agent's decisions, newest first, as plain sentences.
 
     Pure: two lists of documents in, a list of {ts, category, text} out. `category` is both the
@@ -249,7 +326,7 @@ def journal_entries(tasks: list[Doc], actions: list[Doc]) -> list[dict[str, str]
         if parent:
             children.setdefault(parent, []).append(task)
 
-    entries: list[dict[str, str]] = []
+    entries: list[dict[str, Any]] = []
     for task in tasks:
         entries.extend(_task_entries(task, children.get(str(task["id"]), [])))
     for action in actions:
@@ -342,6 +419,220 @@ def _cap(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [*people, *rest[-room:]]
 
 
+def attribute(
+    entries: list[dict[str, Any]], node_ids: set[str], expand: dict[str, list[str]]
+) -> dict[str, list[dict[str, Any]]]:
+    """Which lines of the journal belong to which node.
+
+    Attribution is set membership on the refs each line already carries, plus `expand` for the
+    two relationships a ref cannot state on its own: a task belongs to the call it came from,
+    and a decision owns the issues it led to. Nothing here re-derives a sentence."""
+    story: dict[str, list[dict[str, Any]]] = {}
+    for entry in entries:
+        owners: set[str] = set()
+        for ref in entry.get("refs") or []:
+            if ref in node_ids:
+                owners.add(ref)
+            owners.update(target for target in expand.get(ref, []) if target in node_ids)
+        # The page redacts as it renders; JSON has no render step, so a line is cleaned here or
+        # it ships as it is. A stored error can quote a token, and this is the one road out.
+        line = {"ts": entry["ts"], "category": entry["category"],
+                "text": redact(str(entry["text"]))}
+        for owner in owners:
+            story.setdefault(owner, []).append(dict(line))
+    return {node_id: lines[:STORY_LINES] for node_id, lines in story.items()}
+
+
+def _observations(tasks: list[Doc]) -> dict[str, dict[str, Any]]:
+    """The newest thing each check saw about each issue. This page never calls the tracker — it
+    shows what the agent recorded, which is also what lets it render with the network down."""
+    seen: dict[str, dict[str, Any]] = {}
+    for task in sorted(tasks, key=lambda t: str(t.get("finished_at") or "")):
+        observed = (task.get("result") or {}).get("observed") or {}
+        identifier = str(observed.get("issue") or "")
+        if identifier and observed.get("status") == "ok":
+            seen[identifier] = observed
+    return seen
+
+
+def issue_facts(node: dict[str, Any], created: Doc | None, observed: dict[str, Any],
+                from_call: bool) -> dict[str, Any]:
+    inputs: dict[str, Any] = (created or {}).get("inputs") or {}
+    return {
+        "state": redact(str(observed.get("state") or "")) or "unknown",
+        "assignee": redact(str(observed.get("assignee") or inputs.get("owner") or "")) or "nobody",
+        "priority": inputs.get("priority"),
+        "due": human_date(str(observed.get("due") or inputs.get("due") or "")),
+        "filed_from_call": from_call,
+    }
+
+
+def check_facts(task: Doc) -> dict[str, Any]:
+    result: dict[str, Any] = task.get("result") or {}
+    observed: dict[str, Any] = result.get("observed") or {}
+    summary = observed.get("state") or observed.get("reason") or (
+        "a pull request" if observed.get("prs") else "")
+    return {
+        "reason": redact(str(task.get("reason") or "")),
+        "due": human_due(str(task.get("due_at") or "")),
+        "status": str(task.get("status") or ""),
+        "on_unmet": UNMET_CONSEQUENCES.get(str(task.get("on_unmet") or ""), ""),
+        "observed": redact(str(summary)) if summary else "nothing yet",
+        "early": bool(result.get("early")),
+    }
+
+
+def _capped(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """A short list plus how much it is hiding. Five lines is what a glance holds; the count is
+    what stops five from reading like all of it."""
+    return {"items": items[:NOW_LINES], "more": max(0, len(items) - NOW_LINES)}
+
+
+def _waiting_on(task: Doc, by_id: dict[str, Doc]) -> str:
+    """What a blocked task is waiting for, named rather than pointed at. This is the plan made
+    visible: the graph shows the dependency, this says it out loud."""
+    named: list[str] = []
+    for dependency in task.get("depends_on") or []:
+        found = by_id.get(str(dependency))
+        named.append(
+            redact(human_check(found)) if found else "something that has not finished"
+        )
+    return " and ".join(named[:2]) or "an earlier step"
+
+
+def now_view(
+    tasks: list[Doc], events: list[Doc], now: datetime, lease_minutes: int
+) -> dict[str, Any]:
+    """What the agent is doing this second, what it will do next, and what it is waiting for.
+
+    Assembled from the same task documents the graph is drawn from — the present and the past
+    are one read, so the two halves of the page can never disagree about the state of the queue.
+    """
+    by_id = {str(t["id"]): t for t in tasks}
+
+    working: list[dict[str, Any]] = []
+    for task in tasks:
+        if task.get("status") != "leased":
+            continue
+        # A lease is stamped as "now + the lease window", so the moment work started is the only
+        # thing the document does not say outright — and is exactly one subtraction away.
+        until = readable(str(task.get("lease_until") or ""))
+        working.append({
+            "id": str(task["id"]), "kind": str(task["kind"]),
+            "phrase": redact(human_working(task)),
+            "issue": str((task.get("params") or {}).get("issue") or ""),
+            "since": iso(until - timedelta(minutes=lease_minutes)) if until
+                     else str(task.get("created_at") or ""),
+        })
+
+    upcoming = sorted(
+        (t for t in tasks if t.get("status") in ("queued", "deferred") and t.get("due_at")),
+        key=lambda t: str(t["due_at"]),
+    )
+    up_next = [{
+        "kind": str(t["kind"]), "phrase": redact(human_check(t)),
+        "issue": str((t.get("params") or {}).get("issue") or ""),
+        "due_at": str(t["due_at"]), "due_human": human_delta(str(t["due_at"]), now),
+    } for t in upcoming]
+
+    waiting = [
+        {"phrase": redact(human_check(t)), "on": _waiting_on(t, by_id)}
+        for t in tasks if t.get("status") == "blocked"
+    ]
+
+    moved = [str(t.get("finished_at") or "") for t in tasks]
+    moved += [str(e.get("received_at") or "") for e in events]
+    open_tasks = [t for t in tasks if str(t.get("status")) in OPEN_STATUSES]
+
+    return {
+        "working": _capped(working),
+        "up_next": _capped(up_next),
+        "waiting": _capped(waiting),
+        "last_tick": max((m for m in moved if m), default=""),
+        "open": len(open_tasks),
+        "watching": sum(1 for t in open_tasks if str(t["kind"]).startswith("check_")),
+    }
+
+
+def _facts_for(
+    node: dict[str, Any],
+    project: Doc,
+    decisions: list[Doc],
+    observed: dict[str, dict[str, Any]],
+    created_by_issue: dict[str, Doc],
+    issue_event: dict[str, str],
+    tasks_by_id: dict[str, Doc],
+    owners: dict[str, str],
+    nudged: dict[str, int],
+) -> dict[str, Any]:
+    """What this thing is, in the terms its own kind is described in. Every value comes from a
+    document this project already wrote — the panel is a reading of the record, not a lookup."""
+    kind, node_id = str(node["type"]), str(node["id"])
+    identifier = node_id.partition(":")[2]
+
+    if kind == "issue":
+        return issue_facts(node, created_by_issue.get(node_id),
+                           observed.get(identifier, {}), bool(issue_event.get(node_id)))
+    if kind == "check":
+        task = tasks_by_id.get(identifier)
+        return check_facts(task) if task else {}
+    if kind == "decision":
+        found = next((d for d in decisions if str(d["id"]) == identifier), {})
+        return {
+            "statement": redact(str(found.get("statement") or "")),
+            "quote": redact(str(found.get("quote") or "")),
+            "source": ref_chip(str(found.get("source") or "")),
+        }
+    if kind == "person":
+        member: dict[str, Any] = next(
+            (m for m in project.get("roster") or [] if str(m.get("name")) == identifier), {}
+        )
+        return {
+            "role": redact(str(member.get("role") or "")) or "on the team",
+            "owns": sorted(
+                issue_id.partition(":")[2] for issue_id, who in owners.items()
+                if who == identifier
+            ),
+            "pings_received": nudged.get(identifier, 0),
+        }
+    if kind == "meeting":
+        event_id = identifier
+        return {
+            "title": node["label"],
+            "when": human_due(str(node.get("ts") or "")),
+            "produced": {
+                "decisions": sum(
+                    1 for d in decisions if str(d.get("event_id") or "") == event_id
+                ),
+                "issues": sum(1 for root in issue_event.values() if root == event_id),
+            },
+        }
+    return {}
+
+
+def lesson_chips(node: dict[str, Any], evidence: list[str], labels: dict[str, str]) -> list[str]:
+    """A lesson's evidence, said in the words of what it points at. "task:8da1…" tells a reader
+    nothing; "check that INV-26 is underway" tells them why the agent believes this."""
+    chips: list[str] = []
+    for ref in evidence:
+        chip = labels.get(str(ref)) or ref_chip(str(ref))
+        if chip and chip not in chips:
+            chips.append(_short(chip, 48))
+    return chips
+
+
+def _within_budget(graph: dict[str, Any]) -> dict[str, Any]:
+    """One response has to stay downloadable. Stories are trimmed before anything else — the
+    shape of the graph is the point of the page, and a shorter story is still a true one."""
+    for limit in STORY_TRIMS:
+        for node in graph["nodes"]:
+            node["story"] = node.get("story", [])[:limit]
+        graph["truncated"] = limit < STORY_LINES
+        if len(json.dumps(graph, ensure_ascii=False)) <= GRAPH_BYTES:
+            return graph
+    return graph
+
+
 async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     """The agent's world as a graph: what it was told, what it decided, what it filed, who owns
     it, what it is watching, and what it learned. Assembled from the same documents the rest of
@@ -391,6 +682,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     # Which call each issue came from, routed through the task that filed it. A decision and an
     # issue that share a root event came out of the same conversation.
     task_root = {str(t["id"]): str(t.get("root_event_id") or "") for t in tasks}
+    tasks_by_id = {str(t["id"]): t for t in tasks}
     issue_event: dict[str, str] = {}
     for action in actions:
         if action.get("kind") not in ISSUE_ACTIONS or action.get("status") != "done":
@@ -442,12 +734,53 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
             if str(ref).startswith("task:"):
                 link(node_id, str(ref), "learned from", str(lesson.get("created_at") or ""))
 
+    # What each node is, and what the agent did about it. The journal is generated once and
+    # attributed, so the panel and the console's feed can never tell different stories.
+    expand = {f"task:{tid}": [f"meeting:{root}"] for tid, root in task_root.items() if root}
+    for decision in decisions:
+        linked = [f"issue:{i}" for i in decision.get("linked_issue_ids") or []] or [
+            issue_id for issue_id, root in issue_event.items()
+            if root and root == str(decision.get("event_id") or "")
+        ]
+        for issue_id in linked:
+            expand.setdefault(issue_id, []).append(f"decision:{decision['id']}")
+    story = attribute(journal_entries(tasks, actions), known, expand)
+
+    observed = _observations(tasks)
+    created_by_issue = {
+        f"issue:{(a.get('target_ids') or {}).get('identifier')}": a
+        for a in actions if a.get("kind") == "linear.create_issue"
+    }
+    nudged: dict[str, int] = {}
+    for action in actions:
+        if not (action.get("inputs") or {}).get("template"):
+            continue
+        who = str((((tasks_by_id.get(str(action.get("task_id") or "")) or {}).get("result") or {})
+                   .get("observed") or {}).get("assignee") or "")
+        if who:
+            nudged[who] = nudged.get(who, 0) + 1
+
+    labels = {str(n["id"]): str(n["label"]) for n in kept}
+    evidence = {f"lesson:{row['id']}": [str(r) for r in row.get("evidence") or []]
+                for row in lessons}
+    for node in kept:
+        node["story"] = story.get(str(node["id"]), [])
+        if node["type"] == "lesson":
+            node["facts"] = {
+                "evidence": lesson_chips(node, evidence.get(str(node["id"]), []), labels)
+            }
+            continue
+        node["facts"] = _facts_for(node, project, decisions, observed, created_by_issue,
+                                   issue_event, tasks_by_id, owners, nudged)
+
     # Emitted in the order the replay should reveal them. The client walks the array rather than
     # the clock: a burst of activity inside one second is the normal case, and a cursor moving
     # over milliseconds would show all of it in a single frame and then sit still all night.
     kept.sort(key=lambda n: (str(n["ts"]), GRAPH_ORDER.get(str(n["type"]), 9), str(n["id"])))
-    return {"nodes": kept, "edges": edges,
-            "generated_at": iso_now(deps), "project": str(project.get("name") or project_id)}
+    graph = {"nodes": kept, "edges": edges, "truncated": False,
+             "now": now_view(tasks, events, deps.clock.now(), deps.settings.lease_minutes),
+             "generated_at": iso_now(deps), "project": str(project.get("name") or project_id)}
+    return _within_budget(graph)
 
 
 def iso_now(deps: Deps) -> str:
@@ -461,7 +794,9 @@ GRAPH_LEGEND = (
     ("call", "#b48ead", "☎"),
     ("decision", "#ebcb8b", "◆"),
     ("issue", "#5e81ac", "▣"),
-    ("person", "#a3be8c", "MC"),
+    # Drawn by the page from the same silhouette the node uses, so the key cannot drift from
+    # the thing it is a key to.
+    ("person", "#a3be8c", ""),
     ("check", "#4c566a", "○"),
     ("lesson", "#d08770", "✦"),
 )
@@ -480,13 +815,22 @@ def graph_page(project_name: str) -> str:
         "<g id='edges'></g><g id='nodes'></g></svg></div>"
         f"<header><h1>{esc(project_name)}</h1>"
         "<p>the agent's world, as it learned it · <a href='/console'>← console</a></p></header>"
+        "<div id='rail'>"
+        "<div id='now'><div id='now-head'><span id='pulse'></span>"
+        "<span id='now-line'>waking up…</span><span class='caret'>▾</span></div>"
+        "<div id='now-body'></div>"
+        "<div id='now-hint' class='now-past-hint' style='display:none'>"
+        "viewing the past — scrub to the end for now</div></div>"
         "<div id='legend'>"
         + "".join(
-            f"<span><i style='background:{colour}'>{esc(glyph)}</i>{esc(name)}</span>"
+            f"<span><i id='legend-{esc(name)}' style='background:{colour}'>{esc(glyph)}</i>"
+            f"{esc(name)}</span>"
             for name, colour, glyph in GRAPH_LEGEND
         )
-        + "</div>"
+        + "</div></div>"
         "<div id='tooltip'></div>"
+        "<aside id='panel'><button id='panel-close' title='Close'>✕</button>"
+        "<div id='panel-body'></div></aside>"
         "<div id='empty' style='display:none'>Nothing has happened yet.</div>"
         "<div id='controls'>"
         "<button id='play'>▶ Replay</button>"
@@ -772,7 +1116,9 @@ async def graph_json(request: Request) -> dict[str, Any]:
     deps: Deps = request.app.state.deps
     project = await deps.projects.get(deps.settings.default_project_slug)
     if project is None:
-        return {"nodes": [], "edges": [], "generated_at": iso_now(deps), "project": ""}
+        return {"nodes": [], "edges": [], "truncated": False, "project": "",
+                "now": now_view([], [], deps.clock.now(), deps.settings.lease_minutes),
+                "generated_at": iso_now(deps)}
     return await graph_data(project, deps)
 
 

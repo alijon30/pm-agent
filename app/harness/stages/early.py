@@ -14,9 +14,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.harness.connectors.slack_blocks import count_of
 from app.harness.core.errors import SourceUnavailable
 from app.harness.core.redact import redact
+from app.harness.core.words import count_of
 from app.harness.deps import Deps
 from app.harness.stages.checks import CHECKS
 

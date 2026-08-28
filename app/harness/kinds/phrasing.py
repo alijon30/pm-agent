@@ -9,6 +9,14 @@ from __future__ import annotations
 
 from typing import Any
 
+# What happens if a check comes back unmet — the half of a promise that makes it worth reading.
+UNMET_CONSEQUENCES = {
+    "nudge_assignee": "if not, I'll nudge the assignee",
+    "nudge_reviewer": "if not, I'll ask for a reviewer",
+    "escalate_channel": "if not, I'll raise it here",
+    "ping_requester": "if not, I'll ping you",
+}
+
 CHECK_SENTENCES = {
     "check_issue_state": "check that {issue} is underway",
     "check_pr_exists": "look for a pull request on {issue}",
@@ -17,6 +25,40 @@ CHECK_SENTENCES = {
     "nudge": "remind {person} about {about}",
     "escalate": "raise {about} in the channel",
 }
+
+
+# The same catalog said in the present tense, for the one surface that shows what is happening
+# right now rather than what is scheduled. Two tables rather than one clever transformation:
+# "look for" → "looking for" is a rule with exceptions, and a table has none.
+WORKING_SENTENCES = {
+    "check_issue_state": "checking whether {issue} is underway",
+    "check_pr_exists": "looking for a pull request on {issue}",
+    "check_pr_reviewed": "checking whether {issue}'s PR has a review",
+    "check_pr_merged": "checking whether {issue} landed",
+    "nudge": "reminding {person} about {about}",
+    "escalate": "raising {about} in the channel",
+    "extract": "reading the call",
+    "reconcile": "checking what was said against the tracker, the spec and the code",
+    "act": "filing what the call agreed",
+    "plan": "planning the follow-through",
+    "report": "writing the status report",
+    "intake": "answering a teammate",
+    "daily_review": "reading yesterday",
+}
+
+
+def human_working(task: dict[str, Any]) -> str:
+    """What this task is doing, right now. Falls back to the scheduled phrasing for a kind with
+    no present tense of its own, which still beats printing the kind."""
+    params = task.get("params") or {}
+    sentence = WORKING_SENTENCES.get(str(task.get("kind") or ""))
+    if sentence is None:
+        return human_check(task)
+    return sentence.format(
+        issue=params.get("issue") or "it",
+        person=params.get("person") or "them",
+        about=params.get("about") or "it",
+    )
 
 
 def human_check(task: dict[str, Any]) -> str:

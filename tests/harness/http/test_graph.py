@@ -1,6 +1,9 @@
 """The graph is what a judge looks at, so it has to be both true and self-contained: every node
 comes from a document the agent really wrote, and the page asks the network for nothing."""
 
+import json
+from datetime import timedelta
+
 from app.harness.deps import Deps
 from app.harness.http.console import graph_data
 from app.harness.store.actions import ActionStore
@@ -289,13 +292,27 @@ def test_the_legend_shows_the_glyph_that_is_actually_drawn_in_the_node() -> None
     from app.harness.http.graph_assets import GRAPH_SCRIPT
 
     page = graph_page("x")
-    for _name, colour, glyph in GRAPH_LEGEND:
+    for name, colour, glyph in GRAPH_LEGEND:
         assert f"background:{colour}" in page
-        assert f">{glyph}</i>" in page
+        assert f"id='legend-{name}'" in page
+        if glyph:
+            assert f">{glyph}</i>" in page
     # The glyphs the script draws are escaped as \uXXXX; the legend spells them out. Check the
     # two that a reader identifies the graph by.
     assert "\\u260E" in GRAPH_SCRIPT and "☎" in page       # the call
     assert "\\u2726" in GRAPH_SCRIPT and "✦" in page       # a lesson
+
+
+def test_the_person_swatch_is_drawn_from_the_same_shape_the_node_uses() -> None:
+    """A person is a silhouette in the graph, so the legend and the panel must not be a
+    monogram. All three call personMark, which calls the node's own personGlyph."""
+    from app.harness.http.console import graph_page
+    from app.harness.http.graph_assets import GRAPH_SCRIPT
+
+    assert "id='legend-person'" in graph_page("x")
+    assert GRAPH_SCRIPT.count("function personGlyph(") == 1
+    assert 'personMark(11)' in GRAPH_SCRIPT
+    assert 'document.getElementById("legend-person")' in GRAPH_SCRIPT
 
 
 def test_the_tuning_constants_are_declared_once_and_marked_as_taste() -> None:
@@ -325,3 +342,270 @@ async def test_the_nodes_arrive_in_the_order_the_story_happened(deps: Deps) -> N
     assert first_of["issue"] < first_of["check"] < first_of["lesson"]
     # The cast is on stage before the play starts: people have no timestamp of their own.
     assert first_of["person"] < first_of["meeting"]
+
+
+# --- the story panel's data ------------------------------------------------------------------------
+
+async def test_every_node_carries_what_it_is_and_what_the_agent_did_about_it(
+    deps: Deps,
+) -> None:
+    ids = await a_whole_story(deps)
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    by_id = {n["id"]: n for n in (await graph_data(project, deps))["nodes"]}
+
+    issue = by_id["issue:INV-26"]
+    assert issue["facts"]["assignee"] == "Nodir Rahimov"
+    assert issue["facts"]["filed_from_call"] is True
+    assert any("filed INV-26" in e["text"] for e in issue["story"])
+
+    check = by_id[f"task:{ids['check']}"]
+    assert check["facts"]["reason"] == "is it underway?"
+    assert check["facts"]["status"] == "done" and check["facts"]["early"] is True
+
+    person = by_id["person:Nodir Rahimov"]
+    assert person["facts"]["role"] == "backend" and person["facts"]["owns"] == ["INV-26"]
+
+    meeting = by_id[f"meeting:{ids['event']}"]
+    assert meeting["facts"]["produced"] == {"decisions": 1, "issues": 1}
+    # The call owns what the tasks it started went on to do, routed through root_event_id.
+    assert any("filed INV-26" in e["text"] for e in meeting["story"])
+
+    decision = by_id[f"decision:{ids['decision']}"]
+    assert decision["facts"]["statement"].startswith("Payment reminders move")
+    assert decision["facts"]["source"].startswith("call @")
+
+    lesson = by_id[f"lesson:{ids['lesson']}"]
+    assert lesson["facts"]["evidence"] == ["check that INV-26 is underway"]
+
+
+async def test_a_line_lands_on_the_thing_it_is_about_and_nowhere_else(deps: Deps) -> None:
+    ids = await a_whole_story(deps)
+    assert deps.actions is not None
+    other = await deps.actions.begin(
+        task_id="t-other", project_id="acme", kind="linear.create_issue",
+        idempotency_key="k-other", inputs={"title": "Something unrelated"})
+    await deps.actions.finish(other, target_ids={"identifier": "INV-104"}, revert={})
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    by_id = {n["id"]: n for n in (await graph_data(project, deps))["nodes"]}
+    here = " ".join(e["text"] for e in by_id["issue:INV-26"]["story"])
+    there = " ".join(e["text"] for e in by_id["issue:INV-104"]["story"])
+
+    assert "INV-26" in here and "INV-104" not in here
+    assert "INV-104" in there and "INV-26" not in there
+    assert f"task:{ids['check']}" not in here, "refs are how it attributes, not what it shows"
+
+
+async def test_a_story_never_carries_a_secret_shaped_string(deps: Deps) -> None:
+    await a_whole_story(deps)
+    tid = await deps.queue.enqueue(
+        kind="check_pr_exists", project_id="acme", payload={}, params={"issue": "INV-26"},
+        reason="watch it")
+    assert tid is not None
+    await deps.db.update("tasks", tid, {
+        "status": "failed", "error": "linear rejected the token lin_api_TOPSECRET"})
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    dumped = str(await graph_data(project, deps))
+
+    assert "lin_api_TOPSECRET" not in dumped and "[redacted]" in dumped
+
+
+async def test_a_story_is_capped_so_one_busy_node_cannot_fill_the_panel(deps: Deps) -> None:
+    from app.harness.http.console import STORY_LINES
+
+    await a_whole_story(deps)
+    assert deps.actions is not None
+    for n in range(STORY_LINES + 8):
+        action_id = await deps.actions.begin(
+            task_id="t-many", project_id="acme", kind="linear.comment",
+            idempotency_key=f"k-many-{n}", inputs={"title": f"comment {n}"})
+        await deps.actions.finish(action_id, target_ids={"identifier": "INV-26"}, revert={})
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    by_id = {n["id"]: n for n in (await graph_data(project, deps))["nodes"]}
+    assert len(by_id["issue:INV-26"]["story"]) == STORY_LINES
+
+
+async def test_a_graph_too_big_to_download_loses_story_before_it_loses_shape(
+    deps: Deps,
+) -> None:
+    """The shape is the point of the page; a shorter story is still a true one."""
+    from app.harness.http.console import GRAPH_BYTES, _within_budget
+
+    fat = {
+        "nodes": [
+            {"id": f"task:{n}", "type": "check", "label": "x" * 60, "ts": "",
+             "story": [{"ts": "", "category": "filed", "text": "y" * 400} for _ in range(12)]}
+            for n in range(250)
+        ],
+        "edges": [], "truncated": False,
+    }
+    trimmed = _within_budget(fat)
+
+    assert trimmed["truncated"] is True
+    assert len(trimmed["nodes"]) == 250, "every node survives; only its story is shortened"
+    assert len(json.dumps(trimmed)) <= GRAPH_BYTES
+
+
+async def test_a_graph_that_fits_says_it_was_not_truncated(deps: Deps) -> None:
+    await a_whole_story(deps)
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    graph = await graph_data(project, deps)
+
+    assert graph["truncated"] is False
+    assert len(json.dumps(graph)) < 300_000
+
+
+def test_the_page_carries_the_panel_skeleton(client: TestClient) -> None:
+    page = client.get("/console/graph").text
+
+    for element_id in ("panel", "panel-body", "panel-close"):
+        assert f"id='{element_id}'" in page
+    assert "Open in Linear" in page and "What I did" in page
+    assert "Nothing yet" in page
+
+
+# --- what the agent is doing right now ------------------------------------------------------------
+
+async def a_working_queue(deps: Deps) -> dict[str, str]:
+    """One task running, two waiting their turn, one blocked behind another."""
+    await deps.projects.upsert("acme", PROJECT)
+    running = await deps.queue.enqueue(
+        kind="check_pr_exists", project_id="acme", payload={}, params={"issue": "INV-27"},
+        reason="is there a PR?")
+    assert running is not None
+    claimed = await deps.queue.claim(running)
+    assert claimed is not None and claimed["status"] == "leased"
+
+    soon = await deps.queue.enqueue(
+        kind="check_issue_state", project_id="acme", payload={},
+        params={"issue": "INV-26", "expect": ["In Progress"]}, reason="underway?",
+        due_at=deps.clock.now() + timedelta(minutes=12))
+    later = await deps.queue.enqueue(
+        kind="check_pr_merged", project_id="acme", payload={}, params={"issue": "INV-26"},
+        reason="did it land?", due_at=deps.clock.now() + timedelta(days=3))
+    assert soon is not None and later is not None
+    blocked = await deps.queue.enqueue(
+        kind="check_pr_reviewed", project_id="acme", payload={}, params={"issue": "INV-26"},
+        reason="reviewed?", depends_on=[soon])
+    assert blocked is not None
+    return {"running": running, "soon": soon, "later": later, "blocked": blocked}
+
+
+async def test_the_graph_says_what_the_agent_is_doing_this_second(deps: Deps) -> None:
+    ids = await a_working_queue(deps)
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    now = (await graph_data(project, deps))["now"]
+
+    assert now["working"]["items"] == [{
+        "id": ids["running"], "kind": "check_pr_exists",
+        "phrase": "looking for a pull request on INV-27", "issue": "INV-27",
+        "since": "2026-08-27T09:00:00+00:00"}]
+    assert now["open"] == 4 and now["watching"] == 4
+    assert now["last_tick"] == ""  # nothing has finished yet
+
+
+async def test_up_next_is_ordered_by_when_and_said_as_a_delta(deps: Deps) -> None:
+    await a_working_queue(deps)
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    up_next = (await graph_data(project, deps))["now"]["up_next"]["items"]
+
+    assert [u["issue"] for u in up_next] == ["INV-26", "INV-26"]
+    assert up_next[0]["phrase"] == "check that INV-26 is underway"
+    assert up_next[0]["due_human"] == "in 12 min"
+    assert up_next[1]["due_human"] == "Sun Aug 30"
+
+
+async def test_waiting_names_what_it_is_waiting_for_in_words(deps: Deps) -> None:
+    await a_working_queue(deps)
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    waiting = (await graph_data(project, deps))["now"]["waiting"]["items"]
+
+    assert waiting == [{"phrase": "make sure INV-26's PR gets a review",
+                        "on": "check that INV-26 is underway"}]
+
+
+async def test_a_phrase_never_carries_a_secret_shaped_string(deps: Deps) -> None:
+    await deps.projects.upsert("acme", PROJECT)
+    tid = await deps.queue.enqueue(
+        kind="daily_review", project_id="acme", payload={}, params={"project": "acme"},
+        reason="woken by lin_api_TOPSECRET during the tick")
+    assert tid is not None
+    await deps.queue.claim(tid)
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    now = (await graph_data(project, deps))["now"]
+
+    assert "lin_api_TOPSECRET" not in json.dumps(now)
+
+
+async def test_each_list_shows_five_and_says_how_many_it_is_hiding(deps: Deps) -> None:
+    from app.harness.http.console import NOW_LINES
+
+    await deps.projects.upsert("acme", PROJECT)
+    for n in range(NOW_LINES + 3):
+        await deps.queue.enqueue(
+            kind="check_pr_exists", project_id="acme", payload={}, params={"issue": f"INV-{n}"},
+            reason="watch", due_at=deps.clock.now() + timedelta(hours=n + 1))
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    up_next = (await graph_data(project, deps))["now"]["up_next"]
+
+    assert len(up_next["items"]) == NOW_LINES and up_next["more"] == 3
+
+
+async def test_an_empty_project_still_reports_an_honest_now(
+    client: TestClient, deps: Deps
+) -> None:
+    async def nothing(slug: str) -> None:
+        return None
+
+    deps.projects.get = nothing  # type: ignore[method-assign]
+    now = client.get("/console/graph.json").json()["now"]
+
+    assert now["working"]["items"] == [] and now["up_next"]["items"] == []
+    assert now["open"] == 0 and now["last_tick"] == ""
+
+
+def test_every_kind_the_agent_runs_can_say_what_it_is_doing() -> None:
+    """The dock shows this while it happens, so a kind with no present tense would surface as a
+    raw slug on the one screen that is always open."""
+    from app.harness.kinds.phrasing import WORKING_SENTENCES
+    from app.harness.kinds.registry import KINDS
+    from app.harness.stages.runner import STAGES
+
+    unsayable = (set(KINDS) | set(STAGES)) - set(WORKING_SENTENCES) - {"reconcile_item"}
+    assert unsayable == set(), f"no present tense for: {unsayable}"
+
+
+def test_the_page_carries_the_now_dock_and_its_pulse(client: TestClient) -> None:
+    page = client.get("/console/graph").text
+
+    for element_id in ("rail", "now", "now-head", "now-body", "pulse", "now-line", "now-hint"):
+        assert f"id='{element_id}'" in page
+    assert "@keyframes beat" in page and "@keyframes live" in page
+    assert "livering" in page
+    assert "viewing the past" in page
+
+
+def test_the_dock_never_polls_while_the_reader_is_in_the_past(client: TestClient) -> None:
+    page = client.get("/console/graph").text
+
+    assert "if (!atLive() || playing) return;" in page
+    assert "window.setInterval(poll, 60000)" in page

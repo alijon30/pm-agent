@@ -9,17 +9,15 @@ from app.harness.connectors.slack import SlackClient, react_quietly, verify_slac
 from app.harness.connectors.slack_blocks import (
     MAX_BLOCKS,
     call_summary_blocks,
-    count_of,
-    human_date,
-    human_due,
     plan_summary_blocks,
-    ref_chip,
-    ref_chips,
     revert_button,
     wrong_button,
     wrong_modal,
 )
+from app.harness.core.clock import human_date, human_due
 from app.harness.core.errors import SourceUnavailable
+from app.harness.core.refs import ref_chip, ref_chips
+from app.harness.core.words import count_of
 from app.harness.kinds.phrasing import CHECK_SENTENCES, human_check
 
 from tests.fakes.fake_slack import FakeSlack

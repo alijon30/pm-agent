@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.harness.connectors.slack_blocks import human_date
+from app.harness.core.clock import human_date
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact

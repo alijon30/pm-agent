@@ -120,8 +120,10 @@ def test_a_revert_names_who_undid_what() -> None:
         status="reverted", reverted_by="U-maya", reverted_at="2026-08-27T10:00:00+00:00",
         target_ids={"identifier": "INV-143"})])
 
-    assert entries[0] == {"ts": "2026-08-27T10:00:00+00:00", "category": "reverted",
-                          "text": "U-maya reverted INV-143"}
+    assert entries[0]["ts"] == "2026-08-27T10:00:00+00:00"
+    assert entries[0]["category"] == "reverted"
+    assert entries[0]["text"] == "U-maya reverted INV-143"
+    assert "issue:INV-143" in entries[0]["refs"], "the graph attributes this line by its refs"
 
 
 def test_the_journal_runs_newest_first_across_tasks_and_actions() -> None:
@@ -309,3 +311,30 @@ async def test_a_lesson_containing_markup_is_escaped_like_everything_else(
 
     page = client.get("/console").text
     assert "<img onerror" not in page and "&lt;img onerror" in page
+
+
+def test_every_journal_line_says_which_documents_it_came_from() -> None:
+    """The graph attributes a line to a node by set membership rather than by re-deriving the
+    sentence, so a line with no refs would be a line no node could ever claim."""
+    entries = journal_entries(
+        [task(id="t-1", kind="check_pr_exists", params={"issue": "INV-143"},
+              result={"met": False, "observed": {"issue": "INV-143"}})],
+        [action(target_ids={"identifier": "INV-143"}, task_id="t-1",
+                inputs={"title": "Move reminders", "owner": "Nodir Rahimov"})],
+    )
+
+    assert all(e["refs"] for e in entries)
+    filed = next(e for e in entries if e["category"] == "filed")
+    assert set(filed["refs"]) >= {"issue:INV-143", "person:Nodir Rahimov", "task:t-1"}
+    checked = next(e for e in entries if e["category"] == "checked")
+    assert set(checked["refs"]) == {"task:t-1", "issue:INV-143"}
+
+
+def test_a_plan_line_belongs_to_the_issues_it_scheduled_work_about() -> None:
+    plan = task(id="t-plan", kind="plan")
+    child = task(id="c-1", kind="check_issue_state", status="queued", parent_task_id="t-plan",
+                 params={"issue": "INV-143"}, due_at="2026-09-03T16:00:00+00:00")
+    entries = journal_entries([plan, child], [])
+
+    planned = next(e for e in entries if e["category"] == "planned")
+    assert "issue:INV-143" in planned["refs"]

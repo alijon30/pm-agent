@@ -37,7 +37,34 @@ header a { pointer-events:auto; color:var(--muted); text-decoration:none;
   border-bottom:1px solid var(--line); }
 header a:hover { color:var(--fg); }
 
-#legend { position:fixed; top:86px; left:20px; z-index:3; display:flex; flex-direction:column;
+#rail { position:fixed; top:82px; left:20px; z-index:3; display:flex; flex-direction:column;
+  gap:14px; width:250px; }
+#now { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+  padding:10px 12px; font-size:12px; transition:opacity 180ms ease; }
+#now.past { opacity:.4; pointer-events:none; }
+#now-head { display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--fg);
+  line-height:1.4; }
+#now-head .caret { color:var(--muted); font-size:9px; margin-left:auto; }
+#pulse { width:7px; height:7px; border-radius:50%; background:var(--muted); flex:none;
+  margin-top:1px; }
+#pulse.busy { background:var(--accent); animation:beat 1.6s ease-in-out infinite; }
+@keyframes beat {
+  0%,100% { box-shadow:0 0 0 0 rgba(136,192,208,.55); }
+  60% { box-shadow:0 0 0 6px rgba(136,192,208,0); }
+}
+#now-body { margin-top:2px; }
+#now.shut #now-body { display:none; }
+.now-group { margin-top:10px; border-top:1px solid var(--line); padding-top:8px; }
+.now-group h4 { margin:0 0 5px; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--muted); font-weight:600; }
+.now-row { display:flex; gap:8px; align-items:baseline; padding:2px 0; color:var(--fg);
+  line-height:1.35; }
+.now-row em { font-style:normal; color:var(--muted); font-size:11px; margin-left:auto;
+  white-space:nowrap; padding-left:6px; }
+.now-more { color:var(--muted); font-size:11px; padding-top:3px; }
+.now-past-hint { color:var(--muted); font-size:11px; margin-top:6px; font-style:italic; }
+
+#legend { z-index:3; display:flex; flex-direction:column;
   gap:6px; font-size:12px; color:var(--muted); }
 #legend span { display:flex; align-items:center; gap:8px; }
 #legend i { width:15px; height:15px; border-radius:50%; display:flex; align-items:center;
@@ -98,6 +125,39 @@ input[type=range] { width:min(44vw,420px); accent-color:var(--accent); cursor:po
 #tooltip .t-label { color:var(--fg); font-size:13px; margin:4px 0 5px; line-height:1.4; }
 #tooltip .t-meta { color:var(--muted); font-size:11.5px; }
 
+#panel { position:fixed; top:0; right:0; bottom:0; width:360px; z-index:4;
+  background:var(--panel); border-left:1px solid var(--line); overflow-y:auto;
+  transform:translateX(100%); transition:transform 180ms ease;
+  box-shadow:-14px 0 44px rgba(0,0,0,.45); padding:20px 20px 28px; }
+#panel.open { transform:translateX(0); }
+#panel-close { position:absolute; top:14px; right:14px; min-width:0; padding:2px 8px;
+  font-size:14px; line-height:1.2; }
+.p-chip { display:inline-flex; align-items:center; gap:7px; font-size:10px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--muted); }
+.p-chip i { width:15px; height:15px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; font-size:8px; font-style:normal; color:#0b0d12; font-weight:700; }
+.p-title { font-size:15px; line-height:1.45; margin:10px 0 3px; color:var(--fg); }
+.p-when { font-size:11.5px; color:var(--muted); margin-bottom:16px; }
+.p-head { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);
+  margin:18px 0 8px; border-top:1px solid var(--line); padding-top:14px; }
+.p-fact { display:flex; gap:10px; font-size:12.5px; padding:3px 0; }
+.p-fact b { color:var(--muted); font-weight:400; min-width:96px; flex:none; }
+.p-fact span { color:var(--fg); }
+.p-line { display:flex; gap:9px; align-items:baseline; padding:6px 0;
+  border-bottom:1px solid var(--line); font-size:12.5px; }
+.p-line em { font-style:normal; color:var(--muted); font-size:11px; white-space:nowrap;
+  margin-left:auto; padding-left:8px; }
+.p-dot { width:6px; height:6px; border-radius:50%; flex:none; margin-top:5px; }
+.p-none { color:var(--muted); font-size:12.5px; font-style:italic; }
+.p-open { display:inline-block; margin-top:18px; font-size:12.5px; color:var(--accent);
+  text-decoration:none; border-bottom:1px solid var(--accent); }
+.node.selected circle.body { stroke:#e6e8ec; stroke-width:2.5; }
+.livering { fill:none; stroke:#88c0d0; stroke-width:1.5; animation:live 2s ease-in-out infinite; }
+@keyframes live {
+  0%,100% { opacity:.15; transform:scale(1); }
+  50% { opacity:.85; transform:scale(1.14); }
+}
+
 #empty { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
   color:var(--muted); font-size:14px; }
 """
@@ -135,6 +195,21 @@ const MASS = { meeting: 3, issue: 1.6, person: 1.4 };
 const GLYPHS = { meeting: "\\u260E", decision: "\\u25C6", issue: "\\u25A3", lesson: "\\u2726" };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const NS = "http://www.w3.org/2000/svg";
+// The journal's categories, tinted the way the console tints them: green for work that landed,
+// warm for anything the agent declined or could not do.
+const CATEGORY_TINT = {
+  filed: "#a3be8c", reported: "#a3be8c", early: "#a3be8c", planned: "#88c0d0",
+  posted: "#88c0d0", nudged: "#ebcb8b", checked: "#8892a4", extracted: "#b48ead",
+  reconciled: "#b48ead", deferred: "#d08770", refused: "#bf616a", failed: "#bf616a",
+  cancelled: "#bf616a", reverted: "#d08770", pending: "#8892a4", done: "#8892a4",
+};
+const FACT_LABELS = {
+  state: "state", assignee: "assignee", priority: "priority", due: "due",
+  filed_from_call: "from a call", reason: "why", status: "status", on_unmet: "if unmet",
+  observed: "last seen", early: "resolved early", statement: "decided", quote: "said",
+  source: "source", role: "role", owns: "owns", pings_received: "pings sent",
+  title: "call", when: "when", produced: "produced", evidence: "learned from",
+};
 
 const gDefs = document.getElementById("defs");
 const gEdges = document.getElementById("edges");
@@ -145,12 +220,22 @@ const counter = document.getElementById("count");
 const playButton = document.getElementById("play");
 const modeChip = document.getElementById("mode");
 const tooltip = document.getElementById("tooltip");
+const dock = document.getElementById("now");
+const dockHead = document.getElementById("now-head");
+const dockBody = document.getElementById("now-body");
+const dockPulse = document.getElementById("pulse");
+const dockLine = document.getElementById("now-line");
+const panel = document.getElementById("panel");
+const panelBody = document.getElementById("panel-body");
+const panelClose = document.getElementById("panel-close");
+const canvas = document.getElementById("canvas");
 
 // The replay advances over nodes, not over milliseconds. Everything a single call produces
 // shares a timestamp to the second, so a clock-driven cursor would reveal the whole story in one
 // frame and then crawl through the empty night that follows. One node per step always reads.
 let nodes = [], edges = [], byId = new Map();
-let cursor = 0, playing = false, lastFrame = 0, stepMs = 1200, focused = null;
+let cursor = 0, playing = false, lastFrame = 0, stepMs = 1200, selected = null;
+let payload = null, live = new Set(), polling = null;
 let width = window.innerWidth, height = window.innerHeight;
 
 function svgEl(tag) { return document.createElementNS(NS, tag); }
@@ -188,6 +273,19 @@ function personGlyph(r) {
   body.setAttribute("d", `M ${-w} ${bottom} Q 0 ${top - r * 0.35} ${w} ${bottom} Z`);
   g.appendChild(head); g.appendChild(body);
   return g;
+}
+
+function personMark(size) {
+  // The same silhouette the node draws, sized for a swatch. Reused rather than redrawn so the
+  // legend and the panel can never disagree with the graph about what a person looks like.
+  const svg = svgEl("svg");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("viewBox", `${-size / 2} ${-size / 2} ${size} ${size}`);
+  const mark = personGlyph(size * 0.42);
+  mark.setAttribute("fill", "#0b0d12");
+  svg.appendChild(mark);
+  return svg;
 }
 
 function identifierOf(node) {
@@ -243,29 +341,37 @@ function defineArrow() {
   gDefs.appendChild(marker);
 }
 
+function fillPersonSwatches() {
+  for (const slot of [document.getElementById("legend-person"), null]) {
+    if (slot) { slot.textContent = ""; slot.appendChild(personMark(11)); }
+  }
+}
+
 function defineAll() {
   // One filter per colour, not one per node: at 250 nodes that is the difference between six
   // filters and two hundred and fifty.
   const hues = new Set([...Object.values(COLORS), CHECK_DONE, CHECK_FAILED]);
   for (const hue of hues) defineGlow(hue);
   defineArrow();
+  fillPersonSwatches();
 }
 
 // --- building -----------------------------------------------------------------------------------
 
-function build(data) {
+function build(data, placed) {
   // Nodes start on a ring rather than at random: the first frames of a replay look composed
   // instead of like an explosion, and the simulation still finds its own shape within a second.
   nodes = (data.nodes || []).map((n, i) => {
     const angle = (i / Math.max(1, data.nodes.length)) * Math.PI * 2;
     const spread = 140 + (i % 7) * 26;
+    const before = placed && placed.get(n.id);
     return {
       ...n,
       index: i,
-      x: width / 2 + Math.cos(angle) * spread,
-      y: height / 2 + Math.sin(angle) * spread,
+      x: before ? before.x : width / 2 + Math.cos(angle) * spread,
+      y: before ? before.y : height / 2 + Math.sin(angle) * spread,
       vx: 0, vy: 0,
-      shown: false, enteredAt: 0,
+      shown: false, enteredAt: 0, ring: null,
       r: RADIUS[n.type] || 7,
       m: MASS[n.type] || 1,
     };
@@ -284,6 +390,8 @@ function build(data) {
 
   if (!nodes.length) document.getElementById("empty").style.display = "flex";
   defineAll();
+  renderNow(data.now || {working:{items:[],more:0}, up_next:{items:[],more:0},
+                        waiting:{items:[],more:0}, open:0, watching:0});
   draw();
 }
 
@@ -433,10 +541,15 @@ function element(node) {
     g.appendChild(label);
   }
 
-  g.addEventListener("mouseenter", (event) => { focus(node); showTip(node, event); });
-  g.addEventListener("mousemove", (event) => moveTip(event));
-  g.addEventListener("mouseleave", () => { unfocus(); hideTip(); });
-  if (node.url) g.addEventListener("click", () => window.open(node.url, "_blank"));
+  // While a node is pinned its neighbourhood stays lit: hovering elsewhere must not re-dim the
+  // thing the reader is currently looking at.
+  g.addEventListener("mouseenter", (event) => {
+    if (!selected) focus(node);
+    if (!selected) showTip(node, event);
+  });
+  g.addEventListener("mousemove", (event) => { if (!selected) moveTip(event); });
+  g.addEventListener("mouseleave", () => { if (!selected) { unfocus(); hideTip(); } });
+  g.addEventListener("click", (event) => { event.stopPropagation(); select(node); });
   gNodes.appendChild(g);
   node.el = g;
   return g;
@@ -473,7 +586,6 @@ function edgePath(edge) {
 // --- focus -------------------------------------------------------------------------------------------
 
 function focus(node) {
-  focused = node;
   const near = new Set([node.id]);
   for (const e of edges) {
     if (e.source === node.id) near.add(e.target);
@@ -491,7 +603,6 @@ function focus(node) {
 }
 
 function unfocus() {
-  focused = null;
   for (const n of nodes) if (n.el) n.el.classList.remove("dimmed");
   for (const e of edges) {
     if (!e.el) continue;
@@ -537,6 +648,256 @@ function moveTip(event) {
 
 function hideTip() { tooltip.classList.remove("on"); }
 
+// --- what the agent is doing right now ---------------------------------------------------------
+
+function nowRow(text, meta) {
+  const row = document.createElement("div");
+  row.className = "now-row";
+  const label = document.createElement("span");
+  label.textContent = text;
+  row.appendChild(label);
+  if (meta) {
+    const right = document.createElement("em");
+    right.textContent = meta;
+    row.appendChild(right);
+  }
+  return row;
+}
+
+function nowGroup(title, list, render) {
+  const group = document.createElement("div");
+  group.className = "now-group";
+  const head = document.createElement("h4");
+  head.textContent = title;
+  group.appendChild(head);
+  for (const item of list.items) group.appendChild(render(item));
+  if (list.more) {
+    const more = document.createElement("div");
+    more.className = "now-more";
+    more.textContent = `+${list.more} more`;
+    group.appendChild(more);
+  }
+  return group;
+}
+
+function renderNow(now) {
+  const busy = now.working.items.length > 0;
+  dockPulse.classList.toggle("busy", busy);
+  if (busy) {
+    dockLine.textContent = "working: " + now.working.items[0].phrase;
+  } else if (now.up_next.items.length) {
+    const next = now.up_next.items[0];
+    dockLine.textContent = `idle — next wake ${next.due_human}: ${next.phrase}`;
+  } else {
+    dockLine.textContent = "idle — nothing scheduled";
+  }
+
+  dockBody.textContent = "";
+  if (now.working.items.length > 1) {
+    dockBody.appendChild(nowGroup("also running", {
+      items: now.working.items.slice(1), more: now.working.more,
+    }, (w) => nowRow(w.phrase, "")));
+  }
+  if (now.up_next.items.length) {
+    dockBody.appendChild(nowGroup("up next", now.up_next,
+      (u) => nowRow(u.phrase, u.due_human)));
+  }
+  if (now.waiting.items.length) {
+    dockBody.appendChild(nowGroup("waiting", now.waiting,
+      (w) => nowRow(w.phrase, "")));
+  }
+  dockBody.appendChild(nowGroup(
+    "queue",
+    { items: [`${now.open} open \u00B7 ${now.watching} being watched`], more: 0 },
+    (line) => nowRow(line, ""),
+  ));
+
+  // Any node this second's work is about wears a ring, so "working: filing INV-28" and the
+  // graph point at the same thing without the reader having to match names.
+  live = new Set();
+  for (const item of now.working.items) {
+    live.add("task:" + item.id);
+    if (item.issue) live.add("issue:" + item.issue);
+  }
+  // The ring is applied in draw(), not here: nodes get their elements lazily on the first
+  // frame, so a set built now would have nothing to mark yet.
+}
+
+function markLive(node) {
+  const on = live.has(node.id);
+  if (on && !node.ring) {
+    node.ring = svgEl("circle");
+    node.ring.setAttribute("class", "livering");
+    node.ring.setAttribute("r", String(node.r + 5));
+    node.el.appendChild(node.ring);
+  } else if (!on && node.ring) {
+    node.ring.remove();
+    node.ring = null;
+  }
+}
+
+function atLive() { return nodes.length === 0 || cursor >= nodes.length; }
+
+function showsThePast() {
+  const past = !atLive();
+  dock.classList.toggle("past", past);
+  const hint = document.getElementById("now-hint");
+  if (hint) hint.style.display = past ? "" : "none";
+}
+
+function fingerprint(data) {
+  return `${(data.nodes || []).length}|${(data.now || {}).last_tick || ""}`
+    + `|${((data.now || {}).working || {}).items?.length || 0}`;
+}
+
+function adopt(fresh) {
+  // Keep every node that survived exactly where it was: a poll that rearranged the graph would
+  // undo the reader's mental map every minute for no reason.
+  const placed = new Map(nodes.map((n) => [n.id, n]));
+  gNodes.textContent = "";
+  gEdges.textContent = "";
+  const wasSelected = selected ? selected.id : null;
+  selected = null;
+  panel.classList.remove("open");
+  build(fresh, placed);
+  payload = fresh;
+  if (wasSelected && byId.has(wasSelected)) select(byId.get(wasSelected));
+}
+
+async function poll() {
+  // Never while the reader is somewhere in the past: replacing the data under a scrubbed
+  // timeline would jump them back to the present without being asked.
+  if (!atLive() || playing) return;
+  try {
+    const fresh = await fetch("/console/graph.json").then((r) => r.json());
+    if (fingerprint(fresh) !== fingerprint(payload)) adopt(fresh);
+    else renderNow(fresh.now || {});
+  } catch (err) {
+    // A poll that fails changes nothing; the page keeps showing the last state it trusted.
+  }
+}
+
+// --- the story panel -----------------------------------------------------------------------------
+
+function factValue(key, value) {
+  if (Array.isArray(value)) return value.length ? value.join(", ") : "nothing yet";
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  if (value === null || value === undefined || value === "") return "\u2014";
+  if (key === "produced" && typeof value === "object") {
+    return `${value.decisions} decision(s), ${value.issues} issue(s)`;
+  }
+  return String(value);
+}
+
+function factRow(key, value) {
+  const row = document.createElement("div");
+  row.className = "p-fact";
+  const label = document.createElement("b");
+  label.textContent = FACT_LABELS[key] || key;
+  const text = document.createElement("span");
+  text.textContent = factValue(key, value);
+  row.appendChild(label); row.appendChild(text);
+  return row;
+}
+
+function storyRow(entry) {
+  const row = document.createElement("div");
+  row.className = "p-line";
+  const dot = document.createElement("span");
+  dot.className = "p-dot";
+  dot.style.background = CATEGORY_TINT[entry.category] || "#8892a4";
+  const text = document.createElement("span");
+  text.textContent = entry.text;
+  const when = document.createElement("em");
+  when.textContent = entry.ts ? stamp(Date.parse(entry.ts)) : "";
+  row.appendChild(dot); row.appendChild(text); row.appendChild(when);
+  return row;
+}
+
+function heading(text) {
+  const head = document.createElement("div");
+  head.className = "p-head";
+  head.textContent = text;
+  return head;
+}
+
+function openPanel(node) {
+  // Clicking during a replay pauses it. A paused graph with one node's story open is the shot
+  // this page exists for: the narrator stops on a node and reads what the agent did about it.
+  if (playing) stopPlaying();
+
+  panelBody.textContent = "";
+  const chip = document.createElement("div");
+  chip.className = "p-chip";
+  const swatch = document.createElement("i");
+  swatch.style.background = colorOf(node);
+  if (node.type === "person") swatch.appendChild(personMark(11));
+  else swatch.textContent = glyphOf(node);
+  chip.appendChild(swatch);
+  const kind = document.createElement("span");
+  kind.textContent = node.type === "meeting" ? "call" : node.type;
+  chip.appendChild(kind);
+  panelBody.appendChild(chip);
+
+  const title = document.createElement("div");
+  title.className = "p-title";
+  title.textContent = node.label;
+  panelBody.appendChild(title);
+
+  const when = document.createElement("div");
+  when.className = "p-when";
+  when.textContent = node.ts ? stamp(Date.parse(node.ts)) : "\u2014";
+  panelBody.appendChild(when);
+
+  const facts = node.facts || {};
+  const keys = Object.keys(facts);
+  if (keys.length) {
+    panelBody.appendChild(heading("Facts"));
+    for (const key of keys) panelBody.appendChild(factRow(key, facts[key]));
+  }
+
+  panelBody.appendChild(heading("What I did"));
+  const story = node.story || [];
+  if (story.length) {
+    for (const entry of story) panelBody.appendChild(storyRow(entry));
+  } else {
+    const none = document.createElement("div");
+    none.className = "p-none";
+    none.textContent = (node.type === "check" || node.type === "issue")
+      ? "Nothing yet \u2014 I'm watching."
+      : "\u2014";
+    panelBody.appendChild(none);
+  }
+
+  if (node.url) {
+    const open = document.createElement("a");
+    open.className = "p-open";
+    open.href = node.url;
+    open.target = "_blank";
+    open.rel = "noreferrer";
+    open.textContent = "Open in Linear \u2197";
+    panelBody.appendChild(open);
+  }
+  panel.classList.add("open");
+}
+
+function select(node) {
+  if (selected && selected.el) selected.el.classList.remove("selected");
+  selected = node;
+  node.el.classList.add("selected");
+  focus(node);
+  hideTip();
+  openPanel(node);
+}
+
+function deselect() {
+  if (selected && selected.el) selected.el.classList.remove("selected");
+  selected = null;
+  panel.classList.remove("open");
+  unfocus();
+}
+
 // --- drawing -----------------------------------------------------------------------------------------
 
 function draw() {
@@ -544,6 +905,7 @@ function draw() {
   let visibleCount = 0;
   for (const node of nodes) {
     const g = element(node);
+    markLive(node);
     if (!node.shown) { g.style.display = "none"; continue; }
     visibleCount++;
     g.style.display = "";
@@ -574,6 +936,7 @@ function draw() {
   }
   counter.textContent = visibleCount + " / " + nodes.length;
   clock.textContent = cursorStamp();
+  showsThePast();
 }
 
 function frame(now) {
@@ -606,6 +969,7 @@ function stopPlaying() {
 
 playButton.addEventListener("click", () => {
   if (playing) { stopPlaying(); return; }
+  deselect();
   cursor = 0;
   scrubber.value = "0";
   for (const n of nodes) { n.shown = false; n.enteredAt = 0; }
@@ -626,12 +990,25 @@ scrubber.addEventListener("input", () => {
   setMode(cursor < nodes.length);
 });
 
+panelClose.addEventListener("click", deselect);
+canvas.addEventListener("click", deselect);
+window.addEventListener("keydown", (event) => { if (event.key === "Escape") deselect(); });
+
+dockHead.addEventListener("click", () => dock.classList.toggle("shut"));
+
 window.addEventListener("resize", () => {
   width = window.innerWidth; height = window.innerHeight;
 });
 
 fetch("/console/graph.json")
   .then((r) => r.json())
-  .then((data) => { build(data); requestAnimationFrame(frame); })
+  .then((data) => {
+    payload = data;
+    build(data, null);
+    requestAnimationFrame(frame);
+    // A minute is slow enough to be free and fast enough that a page left open on a wall is
+    // never more than a tick behind the agent.
+    polling = window.setInterval(poll, 60000);
+  })
   .catch(() => { document.getElementById("empty").style.display = "flex"; });
 """
