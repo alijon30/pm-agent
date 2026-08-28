@@ -8,15 +8,15 @@ URL="$(gcloud run services describe pm-agent --project "$PROJECT" --region "$REG
 TOKEN="$(gcloud secrets versions access latest --secret pm-tick-token --project "$PROJECT")"
 
 if gcloud scheduler jobs describe pm-tick --project "$PROJECT" --location "$REGION" >/dev/null 2>&1; then
-  VERB=update
+  VERB=update; HDR="--update-headers"
 else
-  VERB=create
+  VERB=create; HDR="--headers"
 fi
 gcloud scheduler jobs "$VERB" http pm-tick \
   --project "$PROJECT" --location "$REGION" \
   --schedule "* * * * *" --time-zone "Etc/UTC" \
   --uri "$URL/tick" --http-method POST \
-  --headers "X-Tick-Token=$TOKEN" \
+  "$HDR" "X-Tick-Token=$TOKEN" \
   --attempt-deadline 600s
 echo "tick → $URL/tick every minute"
 
@@ -24,14 +24,14 @@ echo "tick → $URL/tick every minute"
 # system rather than two. 16:00 UTC is 09:00 Pacific. The endpoint is idempotent per day, so a
 # Scheduler retry costs nothing.
 if gcloud scheduler jobs describe pm-daily-review --project "$PROJECT" --location "$REGION" >/dev/null 2>&1; then
-  VERB=update
+  VERB=update; HDR="--update-headers"
 else
-  VERB=create
+  VERB=create; HDR="--headers"
 fi
 gcloud scheduler jobs "$VERB" http pm-daily-review \
   --project "$PROJECT" --location "$REGION" \
   --schedule "0 16 * * *" --time-zone "Etc/UTC" \
   --uri "$URL/tick" --http-method POST \
-  --headers "^|^X-Tick-Token=$TOKEN|X-Tick-Kind=daily_review" \
+  "$HDR" "^|^X-Tick-Token=$TOKEN|X-Tick-Kind=daily_review" \
   --attempt-deadline 600s
 echo "daily review → $URL/tick at 16:00 UTC (09:00 PT)"
