@@ -269,3 +269,158 @@ async def test_a_review_of_a_project_that_does_not_exist_fails_closed(deps: Deps
 
     with pytest.raises(PmError):
         await run(task, deps)
+
+
+# --- the morning standup ---------------------------------------------------------------------------
+
+async def a_due_check(deps: Deps, *, due_at: str, issue: str = "INV-26") -> str:
+    tid = await deps.queue.enqueue(
+        kind="check_issue_state", project_id="acme", payload={},
+        params={"issue": issue, "expect": ["In Progress"]}, reason="is it underway?")
+    assert tid is not None
+    await deps.db.update("tasks", tid, {"due_at": due_at})
+    return tid
+
+
+def said(deps: Deps) -> str:
+    return str(deps.slack.posts[0]["blocks"])
+
+
+async def test_the_agent_speaks_first_with_what_today_holds(deps: Deps) -> None:
+    task = await wire(deps, reviewer_results=[{"lessons": [], "notes": ""}])
+    await deps.projects.upsert("acme", {
+        **PROJECT, "sprint": {"name": "Sprint 1", "start": "2026-08-25", "end": "2026-09-08"}})
+    await a_due_check(deps, due_at="2026-08-27T16:00:00+00:00")
+    check_id = await a_check(deps, met=True)
+    await a_nudge(deps, task_id=check_id)
+
+    out = await run(task, deps)
+
+    assert out.result["standup"] is True
+    assert len(deps.slack.posts) == 1
+    assert deps.slack.posts[0]["channel"] == "C-product"
+    rendered = said(deps)
+    assert "Morning — day 3 of Sprint 1." in rendered
+    assert "Today I'm watching:" in rendered
+    assert "Thu Aug 27 — check that INV-26 is underway" in rendered
+    assert "Since yesterday:" in rendered and "1 check came back clear" in rendered
+    assert "1 nudge sent" in rendered
+
+
+async def test_a_quiet_day_says_so_in_two_lines(deps: Deps) -> None:
+    task = await wire(deps, reviewer_results=[])
+    await a_due_check(deps, due_at="2026-09-04T16:00:00+00:00")  # beyond the 48h horizon
+
+    out = await run(task, deps)
+
+    assert out.result["standup"] is True
+    blocks = deps.slack.posts[0]["blocks"]
+    assert len(blocks) == 1
+    assert "Quiet day ahead — nothing due before Fri Sep 4." in said(deps)
+
+
+async def test_what_is_slipping_gets_a_line_each(deps: Deps) -> None:
+    task = await wire(deps, reviewer_results=[{"lessons": [], "notes": ""}])
+    overdue = await a_check(deps, met=False, state="Todo")
+    await deps.db.update("tasks", overdue, {"result": {
+        "met": False, "early": False,
+        "observed": {"status": "ok", "issue": "INV-26", "state": "Todo", "due": "2026-08-20"}}})
+
+    await run(task, deps)
+
+    rendered = said(deps)
+    assert "At risk:" in rendered
+    assert "look for a pull request on INV-26 — nothing yet" in rendered
+    assert "INV-26 was due Aug 20 and is still Todo" in rendered
+
+
+async def test_a_lesson_learned_this_morning_is_shared_with_the_team(deps: Deps) -> None:
+    task = await wire(deps, reviewer_results=[])
+    check_id = await a_check(deps, met=False)
+    deps.reviewer = FakeReviewer([{
+        "lessons": [{"text": "Give a pull request a full working day.",
+                     "evidence": [f"task:{check_id}"]}], "notes": ""}])
+
+    await run(task, deps)
+
+    assert "One thing I learned: Give a pull request a full working day." in said(deps)
+
+
+async def test_the_standup_is_sent_once_a_day_however_often_the_review_runs(
+    deps: Deps,
+) -> None:
+    task = await wire(deps, reviewer_results=[{"lessons": [], "notes": ""},
+                                              {"lessons": [], "notes": ""}])
+    await a_check(deps, met=True)
+
+    first = await run(task, deps)
+    second = await run(task, deps)
+
+    assert first.result["standup"] is True and second.result["standup"] is False
+    assert len(deps.slack.posts) == 1
+
+
+async def test_tomorrows_review_gets_its_own_standup(deps: Deps) -> None:
+    task = await wire(deps, reviewer_results=[{"lessons": [], "notes": ""},
+                                              {"lessons": [], "notes": ""}])
+    await a_check(deps, met=True)
+    await run(task, deps)
+    deps.clock.advance(days=1)
+    await run(task, deps)
+
+    assert len(deps.slack.posts) == 2
+
+
+async def test_the_standup_is_deliberately_exempt_from_quiet_hours(deps: Deps) -> None:
+    """It is scheduled for the start of the working day. Deferring the morning message until
+    the morning is over would be a bug wearing a policy's clothes."""
+    task = await wire(deps, reviewer_results=[{"lessons": [], "notes": ""}])
+    await deps.projects.upsert("acme", {
+        **PROJECT, "policy": {**ACME["policy"], "quiet_hours": ["00:00", "23:59"]}})
+    await a_check(deps, met=True)
+
+    out = await run(task, deps)
+
+    assert out.result["standup"] is True and len(deps.slack.posts) == 1
+
+
+async def test_the_daily_ping_budget_still_applies(deps: Deps) -> None:
+    """Exempt from the clock is not exempt from the cap."""
+    task = await wire(deps, reviewer_results=[{"lessons": [], "notes": ""}])
+    await deps.projects.upsert("acme", {
+        **PROJECT, "policy": {**ACME["policy"], "daily_ping_cap": 1}})
+    check_id = await a_check(deps, met=False)
+    await a_nudge(deps, task_id=check_id, created_at="2026-08-27T08:00:00+00:00")
+
+    out = await run(task, deps)
+
+    assert out.result["standup"] is False
+    assert deps.slack.posts == []
+
+
+async def test_a_standup_nobody_received_never_fails_the_review(deps: Deps) -> None:
+    from app.harness.core.errors import SourceUnavailable
+
+    task = await wire(deps, reviewer_results=[{"lessons": [], "notes": ""}])
+    await a_check(deps, met=True)
+
+    async def down(*args: Any, **kwargs: Any) -> str:
+        raise SourceUnavailable("slack", "ratelimited")
+
+    deps.slack.post = down  # type: ignore[method-assign]
+    out = await run(task, deps)
+
+    assert out.result["standup"] is False
+    assert out.result["checked"] == 1                    # the review still happened
+    assert [c["kind"] for c in out.children] == ["plan"]  # and still re-planned
+    failed = await deps.db.query("actions", [("kind", "==", "slack.post")])
+    assert failed[-1]["status"] == "failed"
+
+
+async def test_a_project_with_no_channel_simply_does_not_speak(deps: Deps) -> None:
+    task = await wire(deps, reviewer_results=[{"lessons": [], "notes": ""}])
+    await deps.projects.upsert("acme", {**PROJECT, "slack_channel_id": ""})
+    await a_check(deps, met=True)
+
+    out = await run(task, deps)
+    assert out.result["standup"] is False

@@ -287,6 +287,76 @@ def report_blocks(report: dict[str, Any], sprint: dict[str, Any]) -> list[dict[s
     return _truncate(blocks, keep_last=0)
 
 
+def sprint_day(sprint: dict[str, Any], today: str) -> str:
+    """"day 3 of Sprint 1", or nothing at all. A sprint is a shared sense of where in the week
+    everyone is, and it is the one number that makes a standup feel situated."""
+    start, name = str(sprint.get("start") or ""), str(sprint.get("name") or "")
+    first, now = _parsed(start), _parsed(today)
+    if not name or first is None or now is None:
+        return ""
+    day = (now.date() - first.date()).days + 1
+    return f"day {day} of {name}" if day >= 1 else f"{name} starts {human_date(start)}"
+
+
+def _since_yesterday(since: dict[str, int]) -> str:
+    """Only what actually happened. A standup that reports three zeroes has said nothing."""
+    parts: list[str] = []
+    if since.get("met"):
+        parts.append(f"{count_of(since['met'], 'check')} came back clear")
+    if since.get("early"):
+        parts.append(f"{since['early']} landed early")
+    if since.get("moved"):
+        parts.append(f"{count_of(since['moved'], 'issue')} moved")
+    if since.get("nudged"):
+        parts.append(f"{count_of(since['nudged'], 'nudge')} sent")
+    return " · ".join(parts)
+
+
+def standup_blocks(
+    *,
+    sprint: dict[str, Any],
+    today: str,
+    watching: list[dict[str, Any]],
+    since: dict[str, int],
+    unmet: list[dict[str, Any]],
+    overdue: list[dict[str, Any]],
+    lesson: str = "",
+    next_due: str = "",
+) -> list[dict[str, Any]]:
+    """The message the agent sends before anybody asks it anything.
+
+    A standup earns its place by being short and by being about today. So: what is due in the
+    next two days, what changed since yesterday, what is slipping — and nothing else. A quiet
+    day says so in two lines rather than padding itself out to look busy."""
+    day = sprint_day(sprint, today)
+    greeting = f"Morning — {day}." if day else "Morning."
+    happened = _since_yesterday(since)
+
+    if not watching and not happened and not unmet and not overdue:
+        when = f" before {human_due(next_due)}" if next_due else ""
+        return [_section(f"*{greeting}*\nQuiet day ahead — nothing due{when}.")]
+
+    blocks = [_section(f"*{greeting}*")]
+    if watching:
+        lines = "\n".join(
+            f"• {human_due(str(t.get('due_at') or ''))} — {human_check(t)}" for t in watching
+        )
+        blocks.append(_section(f"*Today I'm watching:*\n{lines}"))
+    if happened:
+        blocks.append(_section(f"*Since yesterday:* {happened}"))
+    if unmet or overdue:
+        risks = [f"• {human_check(t)} — nothing yet" for t in unmet]
+        risks += [
+            f"• {i.get('issue', 'an issue')} was due {human_date(str(i.get('due') or ''))} "
+            f"and is still {i.get('state', 'open')}"
+            for i in overdue
+        ]
+        blocks.append(_section("*At risk:*\n" + "\n".join(risks)))
+    if lesson:
+        blocks.append(_context(f"One thing I learned: {lesson}"))
+    return _truncate(blocks, keep_last=0)
+
+
 def wrong_modal(post_ref: str) -> dict[str, Any]:
     """The correction form. Its callback_id carries the post it is about."""
     return {

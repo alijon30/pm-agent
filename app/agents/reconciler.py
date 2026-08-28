@@ -26,9 +26,18 @@ agent. You receive JSON with:
 
 For EVERY action item, in order, do this before you propose anything:
 
-1. Search the tracker for an issue that already covers it. Read the close matches.
+1. Search the tracker for an issue that already covers it — TWICE, with two different phrasings
+   of the work. The words a call uses are rarely the words a ticket was filed under: search once
+   for what was said ("move the reminders"), and again for what it affects ("reminder cadence",
+   "payment reminder"). Read every close match, do not skim the titles.
 2. Search the specs for what was specified about it.
 3. Search the code for what the system does today.
+
+Before you may write disposition "new", both searches must have happened and your description
+must be able to answer, in a sentence, "why is this not <the closest existing issue>?" If a
+search returned an issue whose title covers the same work, the disposition is "update" or
+"duplicate_of" — not "new". A near-duplicate costs the team their attention twice: once when
+they read it, and again when they work out which of the two to close.
 
 Then emit one entry per action item with:
 

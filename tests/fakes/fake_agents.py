@@ -85,3 +85,22 @@ class FakeReviewer:
         if not self.results:
             raise AssertionError("FakeReviewer has no more canned results")
         return self.results.pop(0)
+
+
+class FakeTriage:
+    """Answers with a canned intent and keeps every segment. `intent=""` abstains, which is what
+    the Slack route reads as "nobody classified this"."""
+
+    def __init__(self, intent: str = "", *, raises: bool = False) -> None:
+        self.intent = intent
+        self.raises = raises
+        self.classified: list[str] = []
+
+    async def decision_bearing(self, segments: list[dict[str, Any]]) -> list[bool]:
+        return [True] * len(segments)
+
+    async def classify_intent(self, text: str) -> str:
+        self.classified.append(text)
+        if self.raises:
+            raise RuntimeError("gemma is having a moment")
+        return self.intent

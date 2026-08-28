@@ -14,8 +14,15 @@ class Extractor(Protocol):
 
 
 class Triage(Protocol):
-    def decision_bearing(self, segments: list[dict[str, Any]]) -> list[bool]:
-        """One flag per transcript segment: worth showing the extractor?"""
+    async def decision_bearing(self, segments: list[dict[str, Any]]) -> list[bool]:
+        """One flag per transcript segment: worth showing the extractor? Never returns fewer
+        flags than segments, and answers True for anything it could not classify."""
+        ...
+
+    async def classify_intent(self, text: str) -> str:
+        """What a Slack mention is asking for: "report", "request", "cancel", "noise" — or ""
+        for an implementation that does not classify, which the caller reads as an abstention
+        rather than as an answer."""
         ...
 
 

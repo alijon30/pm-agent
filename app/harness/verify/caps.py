@@ -54,11 +54,17 @@ def check_caps(
     counts_today: dict[str, int],
     now_local: datetime,
     policy: dict[str, Any],
+    *,
+    respect_quiet_hours: bool = True,
 ) -> CapsVerdict:
-    """Whether one more write or ping is allowed right now."""
+    """Whether one more write or ping is allowed right now.
+
+    `respect_quiet_hours=False` is for the one message whose whole point is its hour: the morning
+    standup is scheduled for the start of the working day and must not be deferred to it. The
+    daily budget still applies — an exemption from the clock is not an exemption from the cap."""
     if kind == "ping":
         quiet = policy.get("quiet_hours") or DEFAULT_QUIET
-        if in_quiet_hours(now_local, quiet):
+        if respect_quiet_hours and in_quiet_hours(now_local, quiet):
             until = next_window(now_local, quiet)
             return CapsVerdict(False, until, f"quiet hours until {until:%H:%M}")
         cap = int(policy.get("daily_ping_cap", 10))

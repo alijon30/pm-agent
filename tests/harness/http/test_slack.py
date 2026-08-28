@@ -13,6 +13,7 @@ from app.harness.store.actions import ActionStore
 from app.harness.store.corrections import CorrectionStore, matcher_for
 from fastapi.testclient import TestClient
 
+from tests.fakes.fake_agents import FakeTriage
 from tests.fakes.fake_linear import FakeLinear
 from tests.fakes.fake_slack import FakeSlack
 
@@ -420,3 +421,110 @@ async def test_a_cancellation_is_queued_as_an_intake_naming_the_issue(
     queued = await deps.db.query("tasks", [("kind", "==", "intake")])
     assert len(queued) == 1 and queued[0]["params"] == {"cancel": "INV-26"}
     assert deps.slack.reactions[0]["name"] == "eyes"
+
+
+# --- the classifier decides, the keywords catch it -----------------------------------------------
+
+async def test_the_classifier_routes_a_request_the_keywords_would_have_missed(
+    client: TestClient, deps: Deps
+) -> None:
+    """"any word on the dashboard" has no keyword in it; Gemma reads it as a request."""
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    deps.triage = FakeTriage("request")
+    body = mention("<@U0> any word on the dashboard")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    queued = await deps.db.query("tasks", [("kind", "==", "intake")])
+    assert len(queued) == 1 and queued[0]["params"] == {"text": "any word on the dashboard"}
+    assert deps.triage.classified == ["<@U0> any word on the dashboard"]
+
+
+async def test_the_classifier_can_call_a_report_without_the_word_report(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    deps.triage = FakeTriage("report")
+    body = mention("<@U0> how are we doing this sprint?")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    assert await deps.db.count("tasks", [("kind", "==", "report")]) == 1
+
+
+async def test_a_cancellation_still_needs_the_regex_to_find_the_identifier(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    deps.triage = FakeTriage("cancel")
+    body = mention("<@U0> you can drop INV-26 now")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    queued = await deps.db.query("tasks", [("kind", "==", "intake")])
+    assert len(queued) == 1 and queued[0]["params"] == {"cancel": "INV-26"}
+
+
+async def test_a_cancellation_naming_nothing_is_re_read_as_a_request(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    deps.triage = FakeTriage("cancel")
+    body = mention("<@U0> stop doing that thing please")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    queued = await deps.db.query("tasks", [("kind", "==", "intake")])
+    assert len(queued) == 1 and "text" in queued[0]["params"]
+
+
+async def test_noise_is_seen_and_left_alone(client: TestClient, deps: Deps) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    deps.triage = FakeTriage("noise")
+    body = mention("<@U0> haha nice one, thanks for that")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    assert await deps.db.count("tasks", []) == 0
+    assert deps.slack.reactions[0]["name"] == "eyes"  # seen, and deliberately not acted on
+    assert deps.slack.posts == []
+
+
+async def test_a_classifier_that_falls_over_never_costs_a_colleague_their_answer(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    deps.triage = FakeTriage(raises=True)
+    body = mention("<@U0> can I get a report please")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    assert await deps.db.count("tasks", [("kind", "==", "report")]) == 1
+
+
+async def test_a_classifier_that_hangs_is_not_waited_for(
+    client: TestClient, deps: Deps
+) -> None:
+    """Slack wants a 200 in three seconds; the keyword router answered fine before Gemma."""
+    import asyncio
+
+    class Hangs(FakeTriage):
+        async def classify_intent(self, text: str) -> str:
+            await asyncio.sleep(30)
+            return "noise"
+
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    deps.triage = Hangs()
+    from app.harness.http import slack as route
+
+    route.CLASSIFY_SECONDS = 0.01
+    try:
+        body = mention("<@U0> stop watching INV-26")
+        response = client.post("/slack/events", content=body, headers=signed(body))
+    finally:
+        route.CLASSIFY_SECONDS = 2.0
+
+    assert response.json() == {"ok": True}
+    queued = await deps.db.query("tasks", [("kind", "==", "intake")])
+    assert len(queued) == 1 and queued[0]["params"] == {"cancel": "INV-26"}

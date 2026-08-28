@@ -7,6 +7,7 @@ message so the record in the channel matches the record in the tracker."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
@@ -22,35 +23,78 @@ from app.harness.deps import Deps
 
 router = APIRouter()
 
-# "stop watching INV-26", "cancel INV-26", "forget about INV-26". Read over the raw text so the
-# identifier keeps its capitals — the only shape an issue key ever has.
-CANCEL = re.compile(r"\b(stop|cancel|forget)\b.*\b([A-Z][A-Z0-9]*-\d+)\b")
+# Two different jobs, deliberately two different patterns. CANCEL *detects* a cancellation from
+# words alone, for when no classifier answered. ISSUE_KEY only *extracts* the identifier, and is
+# what a classified cancellation uses — once Gemma has said "cancel", requiring the word "stop"
+# as well would be the keyword router quietly overruling it.
+CANCEL = re.compile(r"\b(stop|cancel|forget|drop)\b.*\b[A-Z][A-Z0-9]*-\d+\b")
+ISSUE_KEY = re.compile(r"\b([A-Z][A-Z0-9]*-\d+)\b")
 MENTION_TOKEN = re.compile(r"<@[^>]+>")
 # Below this a mention is a greeting, not a request. "@pm-agent thanks" deserves no task.
 MIN_REQUEST_WORDS = 4
+KNOWN_INTENTS = ("report", "request", "cancel", "noise")
+# Slack wants a 200 in three seconds. A classifier that has not answered in two is one we do not
+# wait for — the keyword router below was good enough before Gemma existed.
+CLASSIFY_SECONDS = 2.0
 
 
-def intent_of(text: str, project_id: str) -> dict[str, Any] | None:
-    """What a mention is asking for, as a task to enqueue — or None when it is asking for
-    nothing. Pure, because the routing rule is the part worth reading in a test rather than
-    inferring from a Slack fixture."""
-    raw = str(text or "")
-    request = MENTION_TOKEN.sub("", raw).strip()
+def issue_key(text: str) -> str | None:
+    """The first issue key in a message. Read over the raw text so the identifier keeps its
+    capitals, which is the only shape an issue key ever has."""
+    found = ISSUE_KEY.search(text or "")
+    return found.group(1) if found is not None else None
 
-    if "report" in raw.lower():
+
+def request_text(text: str) -> str:
+    return MENTION_TOKEN.sub("", str(text or "")).strip()
+
+
+def task_for(intent: str, text: str, project_id: str) -> dict[str, Any] | None:
+    """The task one classified intent becomes, or None when this intent cannot be actioned from
+    this text — a cancellation with no identifier in it, for instance, which the caller then
+    re-reads as an ordinary request."""
+    if intent == "report":
         return {"kind": "report", "params": {"project": project_id, "window": "sprint"},
                 "reason": "report requested in Slack"}
-
-    cancelling = CANCEL.search(raw)
-    if cancelling is not None:
-        identifier = cancelling.group(2)
+    if intent == "cancel":
+        identifier = issue_key(text)
+        if identifier is None:
+            return None
         return {"kind": "intake", "params": {"cancel": identifier},
                 "reason": f"asked in Slack to stop watching {identifier}"}
-
-    if len(request.split()) >= MIN_REQUEST_WORDS:
+    if intent == "request":
+        request = request_text(text)
+        if not request:
+            return None
         return {"kind": "intake", "params": {"text": request},
                 "reason": "a teammate asked for something in Slack"}
     return None
+
+
+def intent_of(text: str, project_id: str) -> dict[str, Any] | None:
+    """What a mention is asking for, decided by keywords alone — the fallback for when the
+    classifier is unavailable, unsure, or too slow, and the rule the tests pin down.
+
+    Pure, because the routing rule is the part worth reading in a test rather than inferring
+    from a Slack fixture."""
+    raw = str(text or "")
+    if "report" in raw.lower():
+        return task_for("report", raw, project_id)
+    if CANCEL.search(raw) is not None:
+        return task_for("cancel", raw, project_id)
+    if len(request_text(raw).split()) >= MIN_REQUEST_WORDS:
+        return task_for("request", raw, project_id)
+    return None
+
+
+async def classify(deps: Deps, text: str) -> str:
+    """Ask the triage model what this is. Anything other than a word we recognise — an
+    abstention, a failure, a timeout — comes back as "" and the keyword router takes over."""
+    try:
+        intent = await asyncio.wait_for(deps.triage.classify_intent(text), CLASSIFY_SECONDS)
+    except Exception:  # noqa: BLE001 — no classifier failure may cost a colleague their answer
+        return ""
+    return intent if intent in KNOWN_INTENTS else ""
 
 
 async def _authorised(request: Request, deps: Deps) -> bytes:
@@ -178,8 +222,18 @@ async def events(request: Request) -> dict[str, Any]:
             payload=event,
             project_id=project["id"],
         )
-        intent = intent_of(str(event.get("text") or ""), str(project["id"]))
-        if event_id is not None and intent is not None:
+        said = str(event.get("text") or "")
+        classified = await classify(deps, said)
+        # A classified intent wins; anything it could not action falls back to the keywords.
+        # "noise" is the one answer that stops here: the agent saw it and has nothing to do.
+        intent = task_for(classified, said, str(project["id"])) if classified else None
+        if intent is None and classified != "noise":
+            intent = intent_of(said, str(project["id"]))
+
+        if event_id is not None and classified == "noise" and intent is None:
+            # Seen, and deliberately not acted on. The reaction is the whole reply.
+            await react_quietly(deps.slack, event.get("channel"), event.get("ts"), "eyes")
+        elif event_id is not None and intent is not None:
             # Answer where it was asked: every stage this queues posts into this channel and
             # thread rather than the project channel, so a question in one room is never
             # answered in another. The requester travels with the work.

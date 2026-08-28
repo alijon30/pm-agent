@@ -52,7 +52,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         raise PmError(f"project {task['project_id']} not found")
 
     meeting = parse_meeting(event["payload"])
-    flags = deps.triage.decision_bearing(meeting["transcript"])
+    flags = await deps.triage.decision_bearing(meeting["transcript"])
     selected = select_with_context(meeting["transcript"], flags)
     payload: dict[str, Any] = {
         "transcript": render_transcript(selected),

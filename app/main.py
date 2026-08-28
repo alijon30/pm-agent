@@ -9,6 +9,7 @@ missing project makes the service boot loudly degraded instead of crashing."""
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,7 +24,7 @@ from app.agents.reconciler import GeminiReconciler
 from app.agents.reporter import GeminiReporter
 from app.agents.reviewer import GeminiReviewer
 from app.agents.steward import GeminiSteward
-from app.agents.triage import PassthroughTriage
+from app.agents.triage import GemmaTriage, PassthroughTriage
 from app.config import Settings
 from app.harness.connectors.code import CodeSearch
 from app.harness.connectors.github import GitHubClient
@@ -84,6 +85,10 @@ async def finish_wiring(deps: Deps) -> None:
     deps.steward = GeminiSteward(deps.settings.model_strong, tools)
     # No tools and nothing to look up: the reviewer reads only the agent's own record.
     deps.reviewer = GeminiReviewer(deps.settings.model_fast)
+    # Gemma only when there is a key to call it with; without one the passthrough keeps every
+    # segment, which is the same answer triage gives when it cannot decide.
+    if os.environ.get("GOOGLE_API_KEY"):
+        deps.triage = GemmaTriage(deps.settings.model_triage)
     log.info("wired for project %r: %d roster member(s), %d tool(s)",
              project.get("slug"), len(roster), len(tools))
 

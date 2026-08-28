@@ -19,14 +19,23 @@ from datetime import timedelta
 from typing import Any
 
 from app.agents.base.schemas import Lessons
+from app.harness.connectors.slack_blocks import standup_blocks
 from app.harness.core.clock import iso
 from app.harness.core.errors import PmError, SourceUnavailable
+from app.harness.core.redact import redact
 from app.harness.deps import Deps
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
+from app.harness.store.tasks import OPEN_STATUSES
+from app.harness.verify.caps import check_caps
 
 WINDOW_HOURS = 24
 SCAN_LIMIT = 500
+# What "today" means in a standup: anything due in the next two days is near enough to plan
+# around, and five lines is as many promises as anyone reads before breakfast.
+WATCH_HOURS = 48
+WATCH_LINES = 5
+DONE_STATES = ("done", "completed", "merged", "closed", "canceled", "cancelled")
 
 
 def keep_evidenced(
@@ -95,7 +104,8 @@ async def gather(task: Doc, deps: Deps) -> dict[str, Any]:
     tasks_by_id = {str(t["id"]): t for t in tasks}
 
     checks = [
-        {"ref": f"task:{t['id']}", "kind": t["kind"], "issue": (t.get("params") or {}).get("issue"),
+        {"ref": f"task:{t['id']}", "kind": t["kind"], "params": t.get("params") or {},
+         "issue": (t.get("params") or {}).get("issue"),
          "expected": (t.get("params") or {}).get("expect"),
          "met": bool((t.get("result") or {}).get("met")),
          "early": bool((t.get("result") or {}).get("early")),
@@ -157,6 +167,94 @@ def recent_results(outcomes: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+async def at_risk(outcomes: dict[str, Any], today: str) -> tuple[list[Doc], list[dict[str, Any]]]:
+    """What is slipping, from what the checks already saw: the ones that came back with nothing,
+    and any issue observed past its own date and not finished. No extra fetch — a standup should
+    not cost a round of tracker calls."""
+    unmet = [c for c in outcomes.get("checks") or [] if not c.get("met")]
+    overdue: dict[str, dict[str, Any]] = {}
+    for check in outcomes.get("checks") or []:
+        observed = check.get("observed") or {}
+        due, state = str(observed.get("due") or ""), str(observed.get("state") or "")
+        identifier = str(observed.get("issue") or "")
+        if identifier and due and due < today and state.lower() not in DONE_STATES:
+            overdue[identifier] = {"issue": identifier, "due": due, "state": state or "open"}
+    return unmet, list(overdue.values())
+
+
+async def watching(project_id: str, deps: Deps) -> tuple[list[Doc], str]:
+    """The checks due soon, and — when there are none — the date of the next one, so a quiet day
+    can say how long it will stay quiet."""
+    open_checks = sorted(
+        (
+            t for t in await deps.db.query(
+                "tasks", [("project_id", "==", project_id),
+                          ("status", "in", list(OPEN_STATUSES))], limit=SCAN_LIMIT)
+            if str(t["kind"]).startswith("check_") and t.get("due_at")
+        ),
+        key=lambda t: str(t["due_at"]),
+    )
+    if not open_checks:
+        return [], ""
+    horizon = iso(deps.clock.now() + timedelta(hours=WATCH_HOURS))
+    soon = [t for t in open_checks if str(t["due_at"]) <= horizon]
+    return soon[:WATCH_LINES], "" if soon else str(open_checks[0]["due_at"])
+
+
+async def _standup(
+    task: Doc, project: Doc, outcomes: dict[str, Any], lesson: str, deps: Deps
+) -> bool:
+    """The agent speaking first, once a day, before anybody asks it anything.
+
+    Exempt from quiet hours on purpose: this runs at the start of the working day by design, and
+    deferring the morning message until the morning is over would be a bug wearing a policy's
+    clothes. The daily ping budget still applies."""
+    channel = project.get("slack_channel_id")
+    if deps.slack is None or deps.actions is None or not channel:
+        return False
+
+    today = deps.clock.now().date().isoformat()
+    key = f"standup:{project['id']}:{today}"
+    if await deps.actions.find_by_key(key) is not None:
+        return False
+    allowed = check_caps(
+        "ping", await deps.actions.counts_today(str(project["id"])), deps.clock.now(),
+        project.get("policy") or {}, respect_quiet_hours=False,
+    )
+    if not allowed.ok:
+        return False
+
+    soon, next_due = await watching(str(project["id"]), deps)
+    unmet, overdue = await at_risk(outcomes, today)
+    blocks = standup_blocks(
+        sprint=project.get("sprint") or {}, today=today, watching=soon,
+        since={
+            "met": sum(1 for c in outcomes["checks"] if c["met"] and not c["early"]),
+            "early": sum(1 for c in outcomes["checks"] if c["early"]),
+            "moved": sum(1 for m in outcomes["movements"] if m["moved"]),
+            "nudged": len(outcomes["nudges"]),
+        },
+        unmet=unmet, overdue=overdue, lesson=lesson, next_due=next_due,
+    )
+
+    action_id = await deps.actions.begin(
+        task_id=str(task["id"]), project_id=str(project["id"]), kind="slack.post",
+        idempotency_key=key, inputs={"channel": channel, "template": "standup"},
+    )
+    try:
+        ts = await deps.slack.post(str(channel), "Morning — here's today.", blocks)
+    except SourceUnavailable as exc:
+        # A standup nobody received is a shame, not a failure: the review still learned and
+        # still re-planned, and tomorrow brings another one.
+        await deps.actions.fail(action_id, redact(str(exc)))
+        return False
+    await deps.actions.finish(
+        action_id, target_ids={"channel": channel, "ts": ts},
+        revert={"op": "edit_message", "channel": channel, "ts": ts},
+    )
+    return True
+
+
 async def run(task: Doc, deps: Deps) -> StageResult:
     project = await deps.projects.get(task["project_id"])
     if project is None:
@@ -184,6 +282,8 @@ async def run(task: Doc, deps: Deps) -> StageResult:
                     evidence=lesson["evidence"], source_task_id=str(task["id"]),
                 )
 
+    posted = await _standup(task, project, outcomes, kept[0]["text"] if kept else "", deps)
+
     # The point of the review: today's plan is made against yesterday's outcomes, not against a
     # blank slate. The planner is a child rather than a call so the queue owns it like any work.
     children = [{
@@ -201,6 +301,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
             "learned": [lesson["text"] for lesson in kept],
             "dropped": dropped,
             "notes": notes,
+            "standup": posted,
         },
         children=children,
     )
