@@ -32,6 +32,6 @@ gcloud scheduler jobs "$VERB" http pm-daily-review \
   --project "$PROJECT" --location "$REGION" \
   --schedule "0 16 * * *" --time-zone "Etc/UTC" \
   --uri "$URL/tick" --http-method POST \
-  --headers "X-Tick-Token=$TOKEN,X-Tick-Kind=daily_review" \
+  --headers "^|^X-Tick-Token=$TOKEN|X-Tick-Kind=daily_review" \
   --attempt-deadline 600s
 echo "daily review → $URL/tick at 16:00 UTC (09:00 PT)"
