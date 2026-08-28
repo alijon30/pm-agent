@@ -40,7 +40,7 @@ markers = ["live: hits real Google APIs; skipped unless GOOGLE_API_KEY is set"]
 
 [tool.ruff]
 line-length = 100
-src = ["app", "tests", "scripts"]
+src = ["app", "tests", "scripts", "evals"]
 extend-exclude = ["fixtures"]
 
 [tool.ruff.lint]
@@ -65,6 +65,12 @@ name = "core, store, verify, connectors and kinds never import the model side or
 type = "forbidden"
 source_modules = ["app.harness.core", "app.harness.store", "app.harness.verify", "app.harness.connectors", "app.harness.kinds"]
 forbidden_modules = ["app.agents", "app.harness.stages", "app.harness.http", "app.harness.deps", "app.main"]
+
+[[tool.importlinter.contracts]]
+name = "the console is read-only: it can reach the store, never a stage or an outside service"
+type = "forbidden"
+source_modules = ["app.harness.http.console"]
+forbidden_modules = ["app.harness.stages", "app.harness.connectors"]
 
 [[tool.importlinter.contracts]]
 name = "agents import only connectors, core and kinds — the model cannot reach the store or the queue"

@@ -30,7 +30,7 @@ from app.harness.connectors.notion import NotionClient
 from app.harness.connectors.slack import SlackClient
 from app.harness.core.clock import SystemClock
 from app.harness.deps import Deps
-from app.harness.http import slack, tick, webhooks
+from app.harness.http import console, slack, tick, webhooks
 from app.harness.store.actions import ActionStore
 from app.harness.store.corrections import CorrectionStore
 from app.harness.store.decisions import DecisionStore
@@ -93,6 +93,7 @@ def create_app(deps: Deps) -> FastAPI:
     app.include_router(webhooks.router)
     app.include_router(tick.router)
     app.include_router(slack.router)
+    app.include_router(console.router)
 
     # Not /healthz: Google's front end reserves that exact path at the edge and answers 404
     # before the request ever reaches Cloud Run.

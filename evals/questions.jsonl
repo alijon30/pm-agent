@@ -1,0 +1,26 @@
+{"id": "q01", "kind": "recall", "input": "Did the ledger record the decision to move payment reminders to three days after the due date?", "expected": {"contains": ["reminder"], "any_of": ["three days", "3 days"]}, "check": "decision_recorded"}
+{"id": "q02", "kind": "recall", "input": "Was SMS kept as an option the call considered and turned down?", "expected": {"contains": ["sms"]}, "check": "rejected_option_recorded"}
+{"id": "q03", "kind": "recall", "input": "Was the invoice CSV export for Northwind extracted as an action item?", "expected": {"contains": ["export"], "any_of": ["csv", "invoice"]}, "check": "action_item_extracted"}
+{"id": "q04", "kind": "recall", "input": "Was the reminder change extracted as an action item?", "expected": {"contains": ["reminder"]}, "check": "action_item_extracted"}
+{"id": "q05", "kind": "recall", "input": "Was 'do we charge late fees' kept as an open question rather than turned into work?", "expected": {"contains": ["late fee"]}, "check": "open_question_extracted"}
+{"id": "q06", "kind": "recall", "input": "Was the spoken deadline 'next Friday' captured as the timing hint on the reminder work?", "expected": {"contains": ["next friday"]}, "check": "due_hint_captured"}
+{"id": "q07", "kind": "recall", "input": "Was the escalation language on the blocked export captured verbatim, as the priority gate requires?", "expected": {"title_contains": "export", "phrases": ["urgent", "blocked"]}, "check": "escalation_quote_captured"}
+{"id": "q08", "kind": "recall", "input": "Was the reminder work assigned to the person who volunteered for it?", "expected": {"title_contains": "reminder", "owner": "Nodir Rahimov"}, "check": "owner_assigned"}
+{"id": "q09", "kind": "recall", "input": "Was the export assigned to the person the call named?", "expected": {"title_contains": "export", "owner": "Priya Nair"}, "check": "owner_assigned"}
+{"id": "q10", "kind": "recall", "input": "Did the agent recognise the overdue dashboard as work that already has a ticket?", "expected": {"title_contains": "overdue invoices dashboard"}, "check": "duplicate_detected"}
+{"id": "q11", "kind": "recall", "input": "Did the agent notice that the code sends reminders at 7 days while the spec says 5?", "expected": {"kinds": ["code_vs_spec", "spec_vs_call", "ticket_vs_call"], "any_of": ["reminder", "cadence", "7 days", "five days"]}, "check": "conflict_detected"}
+{"id": "q12", "kind": "recall", "input": "Did the agent notice that the export spec includes payments while the code writes invoice columns only?", "expected": {"kinds": ["code_vs_spec", "spec_vs_call"], "any_of": ["export", "payment", "csv"]}, "check": "conflict_detected"}
+{"id": "q13", "kind": "guarantee", "input": "Does every quote that survived the evidence gate appear verbatim in the transcript?", "expected": {}, "check": "evidence_verbatim"}
+{"id": "q14", "kind": "guarantee", "input": "Does every decision in the ledger carry the moment in the call that produced it?", "expected": {}, "check": "decision_ledger_cited"}
+{"id": "q15", "kind": "guarantee", "input": "Sam was named in the call but is not on this project. Was anything assigned to them?", "expected": {"name": "Sam"}, "check": "roster_miss_unassigned"}
+{"id": "q16", "kind": "guarantee", "input": "Did anything leave the project's priority band without someone having said it was urgent?", "expected": {}, "check": "priority_band_respected"}
+{"id": "q17", "kind": "guarantee", "input": "Does every due date the agent set correspond to words somebody actually spoke?", "expected": {}, "check": "due_only_when_stated"}
+{"id": "q18", "kind": "guarantee", "input": "Can every filed issue be audited from the tracker alone, without opening this system?", "expected": {}, "check": "issue_cites_the_call"}
+{"id": "q19", "kind": "guarantee", "input": "Where two sources disagree, did the agent report both sides with citations instead of picking a winner?", "expected": {}, "check": "conflict_not_resolved"}
+{"id": "q20", "kind": "guarantee", "input": "Is every scheduled check due after whatever it depends on?", "expected": {}, "check": "plan_dependency_order"}
+{"id": "q21", "kind": "guarantee", "input": "Is every scheduled check in the future and inside the project's planning horizon?", "expected": {}, "check": "plan_within_horizon"}
+{"id": "q22", "kind": "gate", "input": "A plan that schedules a check against an issue that does not exist: is it refused?", "expected": {}, "check": "plan_rejects_unknown_issue"}
+{"id": "q23", "kind": "gate", "input": "A plan whose tasks depend on each other in a cycle: is the whole plan refused?", "expected": {}, "check": "plan_rejects_cycle"}
+{"id": "q24", "kind": "guarantee", "input": "Does every claim in the delivered status report carry at least one reference?", "expected": {}, "check": "report_citation_coverage"}
+{"id": "q25", "kind": "guarantee", "input": "Does every tracker and ledger reference in the report point at something that exists?", "expected": {}, "check": "report_refs_exist"}
+{"id": "q26", "kind": "guarantee", "input": "Across every issue body, citation, plan parameter and report reference: did the agent ever invent an identifier?", "expected": {}, "check": "no_fabricated_identifiers"}
