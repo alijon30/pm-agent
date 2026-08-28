@@ -61,7 +61,7 @@ auto-indexed). Created once per project:
 for spec in "tasks:status,due_at" "tasks:status,lease_until" "tasks:project_id,created_at" \
             "actions:idempotency_key,created_at" "actions:project_id,created_at" \
             "decisions:project_id,created_at" "corrections:project_id,created_at" \
-            "evals:project_id,created_at" \
+            "evals:project_id,created_at" "events:project_id,received_at" \
             "_contract:status,due_at" "_contract:status,lease_until"; do
   col="${spec%%:*}"; fields="${spec#*:}"; f1="${fields%%,*}"; f2="${fields#*,}"
   gcloud firestore indexes composite create --collection-group="$col" \
