@@ -42,7 +42,10 @@ PROJECT = {
         {**m, "linear_user_id": f"u-{m['name'].split()[0].lower()}"} for m in ACME["roster"]
     ],
     "policy": {**ACME["policy"], "priority_band": [2, 4],
-               "escalation_phrases": ["urgent", "blocked"], "daily_write_cap": 40,
+               # The shipped list, verbatim from fixtures/projects/acme.json: a gate tested
+               # against a narrower policy than production runs is a gate tested on nothing.
+               "escalation_phrases": ["urgent", "blocker", "blocked", "p0", "asap"],
+               "daily_write_cap": 40,
                "daily_ping_cap": 10, "quiet_hours": ["20:00", "08:00"]},
 }
 
@@ -206,6 +209,72 @@ async def test_a_tracker_outage_fails_that_item_alone_and_the_others_still_land(
 
     assert len(out.result["created"]) == 1
     assert out.result["skipped"][0]["reason"] == "linear unavailable: HTTP 503"
+
+
+# --- a spoken emergency, all the way to the tracker -----------------------------------------------
+
+# The two halves of an escalation as a call actually delivers them: one person says it is on
+# fire, another says who will fix it, a minute apart. The extractor is told to attach both to
+# the item, which is the only reason the priority gate can find the words later.
+ON_FIRE = "Honestly this is a blocker, customers are getting spammed"
+WHO_FIXES = "Nodir, can you own the duplicate reminder emails bug?"
+
+URGENT_ITEM = {
+    **ITEM,
+    "title": "Fix the duplicate reminder emails",
+    "priority": 1,
+    "due": None,
+    "due_hint": None,
+    "quotes": [ON_FIRE, WHO_FIXES],
+}
+
+
+async def test_a_spoken_emergency_reaches_linear_as_priority_one(deps: Deps) -> None:
+    task = await wire(deps, items=[URGENT_ITEM])
+    out = await run(task, deps)
+
+    assert len(out.result["created"]) == 1
+    write = deps.linear.writes[0]
+    assert write["op"] == "create" and write["priority"] == 1
+
+    assert deps.actions is not None
+    action = await deps.actions.get(out.result["action_ids"][0])
+    assert action is not None
+    assert action["inputs"]["priority"] == 1
+    assert "priority" in action["checks_passed"]
+
+
+async def test_the_same_urgency_with_nobody_saying_it_is_clamped_to_the_band(
+    deps: Deps,
+) -> None:
+    """Identical item, identical claim — only the spoken words are missing. The band holds."""
+    unspoken = {**URGENT_ITEM, "quotes": [WHO_FIXES]}
+    task = await wire(deps, items=[unspoken])
+    await run(task, deps)
+
+    assert deps.linear.writes[0]["priority"] == 2  # the band's urgent edge, not 1
+    # And the team is told why, in the channel and in the issue body.
+    rendered = str(deps.slack.posts[0]["blocks"])
+    assert "clamped to 2" in rendered and "nobody said this was urgent" in rendered
+    assert "nobody said this was urgent" in deps.linear.writes[0]["description"]
+
+
+def test_the_gate_reads_the_items_own_quotes_and_nothing_else() -> None:
+    """Why the extractor has to attach the urgent line to the item: a priority_hint the model
+    wrote is not evidence, and the gate never sees it."""
+    hinted = {**URGENT_ITEM, "quotes": [WHO_FIXES], "priority_hint": ON_FIRE}
+    assert decide(hinted, PROJECT)["priority"] == 2
+
+    quoted = {**URGENT_ITEM, "quotes": [ON_FIRE, WHO_FIXES], "priority_hint": None}
+    assert decide(quoted, PROJECT)["priority"] == 1
+
+
+async def test_the_urgency_the_team_hears_is_the_urgency_that_was_written(deps: Deps) -> None:
+    task = await wire(deps, items=[URGENT_ITEM])
+    await run(task, deps)
+
+    body = deps.linear.writes[0]["description"]
+    assert ON_FIRE in body, "the words that unlocked priority 1 are in the issue"
 
 
 # --- the summary ------------------------------------------------------------------------------

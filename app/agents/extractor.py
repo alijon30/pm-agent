@@ -32,6 +32,12 @@ EVIDENCE RULES (these are checked mechanically; items that fail are discarded):
 - evidence.quote MUST be copied verbatim from the transcript: same words, same order, at least
   12 characters. Do not paraphrase, do not fix grammar, do not merge two sentences.
 - Fill timestamp and speaker from the line the quote came from.
+- When someone calls an item urgent — "urgent", "a blocker", "blocked", "p0", "asap" — attach
+  THAT line as evidence on the item too, alongside the line that commits to the work. The two
+  are usually said by different people a minute apart: one person says it is on fire, another
+  says who will fix it. The urgency has to travel with the item it is about, because what is
+  checked later is the item's own quotes, and a priority nobody can point at is dropped to an
+  ordinary one.
 
 Do not invent names, dates or identifiers. If the transcript contains no decisions or action
 items, return empty lists. Prefer fewer, well-supported items over many weak ones."""

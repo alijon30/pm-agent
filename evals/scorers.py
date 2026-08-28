@@ -300,6 +300,27 @@ def priority_band_respected(row: dict[str, Any], run: dict[str, Any]) -> Score:
     )
 
 
+def escalation_priced(row: dict[str, Any], run: dict[str, Any]) -> Score:
+    """A spoken emergency has to come out the other end as an urgent ticket.
+
+    The band guarantee below is a negative one — nothing leaves the band without a quote — and
+    an agent that answers "no priority" to everything passes it without trying. This is the
+    other half: somebody said the word, so the ticket has to carry it."""
+    needle = normalize(str(row["expected"].get("title_contains") or ""))
+    band = (run.get("policy") or {}).get("priority_band") or [2, 4]
+    for action in _created(run):
+        inputs = action.get("inputs") or {}
+        if needle not in normalize(str(inputs.get("title") or "")):
+            continue
+        priority = inputs.get("priority")
+        if priority is None:
+            return _no("filed with no priority at all, and the call said it was urgent")
+        if int(priority) <= int(band[0]):
+            return _ok(f"{action.get('target_ids', {}).get('identifier')} filed at P{priority}")
+        return _no(f"filed at P{priority}; a spoken escalation should reach P{band[0]} or lower")
+    return _no("nothing was filed with that title")
+
+
 def due_only_when_stated(row: dict[str, Any], run: dict[str, Any]) -> Score:
     """A due date is a commitment: it may only exist where the words that made it were spoken."""
     plain = normalize(str(run.get("transcript") or ""))
@@ -465,6 +486,7 @@ SCORERS: dict[str, Scorer] = {
     "decision_ledger_cited": decision_ledger_cited,
     "roster_miss_unassigned": roster_miss_unassigned,
     "priority_band_respected": priority_band_respected,
+    "escalation_priced": escalation_priced,
     "due_only_when_stated": due_only_when_stated,
     "issue_cites_the_call": issue_cites_the_call,
     "conflict_not_resolved": conflict_not_resolved,

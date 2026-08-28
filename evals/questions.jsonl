@@ -24,3 +24,4 @@
 {"id": "q24", "kind": "guarantee", "input": "Does every claim in the delivered status report carry at least one reference?", "expected": {}, "check": "report_citation_coverage"}
 {"id": "q25", "kind": "guarantee", "input": "Does every tracker and ledger reference in the report point at something that exists?", "expected": {}, "check": "report_refs_exist"}
 {"id": "q26", "kind": "guarantee", "input": "Across every issue body, citation, plan parameter and report reference: did the agent ever invent an identifier?", "expected": {}, "check": "no_fabricated_identifiers"}
+{"id": "q27", "kind": "recall", "input": "Somebody called the blocked export urgent. Did the ticket come out of the pipeline urgent, or did the agent quietly file it as ordinary work?", "expected": {"title_contains": "export"}, "check": "escalation_priced"}
