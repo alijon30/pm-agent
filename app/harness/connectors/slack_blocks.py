@@ -15,19 +15,11 @@ import re
 from datetime import datetime
 from typing import Any
 
+from app.harness.kinds.phrasing import human_check
+
 MAX_BLOCKS = 50
 REVERT_ACTION = "revert"
 WRONG_ACTION = "wrong"
-
-# What each scheduled check means, said the way the person waiting for it would say it.
-CHECK_SENTENCES = {
-    "check_issue_state": "check that {issue} is underway",
-    "check_pr_exists": "look for a pull request on {issue}",
-    "check_pr_reviewed": "make sure {issue}'s PR gets a review",
-    "check_pr_merged": "confirm {issue} landed",
-    "nudge": "remind {person} about {about}",
-    "escalate": "raise {about} in the channel",
-}
 
 # What happens if a check comes back unmet — the half of a promise that makes it worth reading.
 UNMET_CONSEQUENCES = {
@@ -72,20 +64,6 @@ def human_due(value: str) -> str:
     """"Mon Sep 1" — the weekday is what tells someone whether a date is soon."""
     when = _parsed(value)
     return f"{when:%a %b} {when.day}" if when else ""
-
-
-def human_check(task: dict[str, Any]) -> str:
-    """One scheduled check as a sentence. An unfamiliar kind falls back to the reason the
-    planner gave, which is already written for a human."""
-    params = task.get("params") or {}
-    sentence = CHECK_SENTENCES.get(str(task.get("kind") or ""))
-    if sentence is None:
-        return str(task.get("reason") or task.get("kind") or "check on this")
-    return sentence.format(
-        issue=params.get("issue") or "it",
-        person=params.get("person") or "them",
-        about=params.get("about") or "it",
-    )
 
 
 def ref_chip(ref: str) -> str:

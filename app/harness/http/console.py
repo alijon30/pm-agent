@@ -27,6 +27,8 @@ from fastapi.responses import HTMLResponse
 
 from app.harness.core.redact import redact
 from app.harness.deps import Deps
+from app.harness.http.graph_assets import GRAPH_SCRIPT, GRAPH_STYLE
+from app.harness.kinds.phrasing import human_check
 from app.harness.store.db import Doc
 
 router = APIRouter()
@@ -37,6 +39,12 @@ SCAN_LIMIT = 500
 JOURNAL_LIMIT = 60
 AUDIT_LIMIT = 30
 GRAPH_LIMIT = 40
+# A force layout stops being readable long before it stops being fast. The cap is about the eye.
+GRAPH_NODES = 250
+ISSUE_ACTIONS = ("linear.create_issue", "linear.comment")
+# The order a story is told in when several things share a timestamp — which they do constantly,
+# because one call produces a decision, an issue and a check inside the same second.
+GRAPH_ORDER = {"meeting": 0, "decision": 1, "issue": 2, "person": 3, "check": 4, "lesson": 5}
 HEADLINE_FIELDS = (
     ("accuracy_pct", "factual accuracy"),
     ("fabricated_identifiers", "fabricated identifiers"),
@@ -291,6 +299,191 @@ def plan_groups(tasks: list[Doc]) -> list[dict[str, Any]]:
     return sorted(out, key=lambda g: str(g["created_at"]), reverse=True)
 
 
+# --- the graph --------------------------------------------------------------------------------
+
+
+def _node(node_id: str, kind: str, label: str, ts: str, **extra: Any) -> dict[str, Any]:
+    return {"id": node_id, "type": kind, "label": redact(_short(label, 60)), "ts": ts, **extra}
+
+
+def _issue_nodes(actions: list[Doc]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """One node per issue the agent touched, however many times it touched it, plus the root
+    event each one came from — which is how a decision gets connected to the ticket it caused."""
+    issues: dict[str, dict[str, Any]] = {}
+    for action in actions:
+        if action.get("kind") not in ISSUE_ACTIONS or action.get("status") != "done":
+            continue
+        targets = action.get("target_ids") or {}
+        identifier = str(targets.get("identifier") or "")
+        if not identifier:
+            continue
+        inputs = action.get("inputs") or {}
+        existing = issues.get(identifier)
+        # A create carries the title and the link; a later comment on the same issue does not,
+        # so the first good value wins rather than the last write.
+        issues[identifier] = {
+            "id": f"issue:{identifier}",
+            "type": "issue",
+            "label": redact(_short(str(inputs.get("title") or identifier), 60)),
+            "ts": str((existing or {}).get("ts") or action.get("created_at") or ""),
+            "url": str((existing or {}).get("url") or targets.get("url") or ""),
+            "owner": str((existing or {}).get("owner") or inputs.get("owner") or ""),
+        }
+    owners = {i["id"]: i["owner"] for i in issues.values() if i["owner"]}
+    return [{k: v for k, v in i.items() if k != "owner"} for i in issues.values()], owners
+
+
+def _cap(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The newest GRAPH_NODES, except that people are always kept: a roster is small, and a
+    graph of work with the people removed is a graph of the wrong thing."""
+    people = [n for n in nodes if n["type"] == "person"]
+    rest = sorted((n for n in nodes if n["type"] != "person"), key=lambda n: str(n["ts"]))
+    room = max(0, GRAPH_NODES - len(people))
+    return [*people, *rest[-room:]]
+
+
+async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
+    """The agent's world as a graph: what it was told, what it decided, what it filed, who owns
+    it, what it is watching, and what it learned. Assembled from the same documents the rest of
+    the console reads — nothing here is a second record."""
+    project_id = str(project["id"])
+    filters = [("project_id", "==", project_id)]
+    tasks = await deps.db.query("tasks", filters, order_by="created_at", limit=SCAN_LIMIT)
+    actions = await deps.db.query("actions", filters, order_by="created_at", limit=SCAN_LIMIT)
+    decisions = await deps.db.query("decisions", filters, order_by="created_at", limit=SCAN_LIMIT)
+    events = await deps.db.query("events", filters, order_by="received_at", limit=SCAN_LIMIT)
+    lessons = await deps.lessons.for_project(project_id) if deps.lessons is not None else []
+
+    nodes: list[dict[str, Any]] = []
+    # The only thing this page ever takes from an event payload is the call's title. The
+    # transcript inside it is exactly what the console must never render.
+    for event in events:
+        if event.get("provider") != "fathom":
+            continue
+        title = str((event.get("payload") or {}).get("title") or "Call")
+        nodes.append(_node(f"meeting:{event['id']}", "meeting", title,
+                           str(event.get("received_at") or "")))
+    for decision in decisions:
+        nodes.append(_node(f"decision:{decision['id']}", "decision",
+                           str(decision.get("statement") or ""),
+                           str(decision.get("created_at") or "")))
+    issue_nodes, owners = _issue_nodes(actions)
+    nodes.extend(issue_nodes)
+    for member in project.get("roster") or []:
+        name = str(member.get("name") or "")
+        if name:
+            nodes.append(_node(f"person:{name}", "person", name, ""))
+    for task in tasks:
+        if not str(task["kind"]).startswith("check_"):
+            continue
+        nodes.append(_node(
+            f"task:{task['id']}", "check", human_check(task),
+            str(task.get("created_at") or ""), status=str(task.get("status") or ""),
+            early=bool((task.get("result") or {}).get("early")),
+        ))
+    for lesson in lessons:
+        nodes.append(_node(f"lesson:{lesson['id']}", "lesson", str(lesson.get("text") or ""),
+                           str(lesson.get("created_at") or "")))
+
+    kept = _cap(nodes)
+    known = {n["id"] for n in kept}
+
+    # Which call each issue came from, routed through the task that filed it. A decision and an
+    # issue that share a root event came out of the same conversation.
+    task_root = {str(t["id"]): str(t.get("root_event_id") or "") for t in tasks}
+    issue_event: dict[str, str] = {}
+    for action in actions:
+        if action.get("kind") not in ISSUE_ACTIONS or action.get("status") != "done":
+            continue
+        identifier = str((action.get("target_ids") or {}).get("identifier") or "")
+        root = task_root.get(str(action.get("task_id") or ""), "")
+        if identifier and root:
+            issue_event.setdefault(f"issue:{identifier}", root)
+
+    edges: list[dict[str, Any]] = []
+
+    def link(source: str, target: str, rel: str, ts: str) -> None:
+        if source in known and target in known and source != target:
+            edges.append({"source": source, "target": target, "rel": rel, "ts": ts})
+
+    for decision in decisions:
+        node_id = f"decision:{decision['id']}"
+        event_id = str(decision.get("event_id") or "")
+        created = str(decision.get("created_at") or "")
+        link(f"meeting:{event_id}", node_id, "decided", created)
+        linked = [str(i) for i in decision.get("linked_issue_ids") or []]
+        if linked:
+            for identifier in linked:
+                link(node_id, f"issue:{identifier}", "led to", created)
+        else:
+            # Nothing recorded the link explicitly, so fall back to the call they share. Skipped
+            # entirely when the issue's origin is unknown — a guessed edge is worse than none.
+            for issue_id, root in issue_event.items():
+                if root and root == event_id:
+                    link(node_id, issue_id, "led to", created)
+
+    for issue_id, owner in owners.items():
+        link(issue_id, f"person:{owner}", "owned by", "")
+
+    for task in tasks:
+        if not str(task["kind"]).startswith("check_"):
+            continue
+        node_id = f"task:{task['id']}"
+        created = str(task.get("created_at") or "")
+        issue = str((task.get("params") or {}).get("issue") or "")
+        if issue:
+            link(node_id, f"issue:{issue}", "watches", created)
+        for dependency in task.get("depends_on") or []:
+            link(node_id, f"task:{dependency}", "waits on", created)
+
+    for lesson in lessons:
+        node_id = f"lesson:{lesson['id']}"
+        for ref in lesson.get("evidence") or []:
+            if str(ref).startswith("task:"):
+                link(node_id, str(ref), "learned from", str(lesson.get("created_at") or ""))
+
+    # Emitted in the order the replay should reveal them. The client walks the array rather than
+    # the clock: a burst of activity inside one second is the normal case, and a cursor moving
+    # over milliseconds would show all of it in a single frame and then sit still all night.
+    kept.sort(key=lambda n: (str(n["ts"]), GRAPH_ORDER.get(str(n["type"]), 9), str(n["id"])))
+    return {"nodes": kept, "edges": edges,
+            "generated_at": iso_now(deps), "project": str(project.get("name") or project_id)}
+
+
+def iso_now(deps: Deps) -> str:
+    return deps.clock.now().isoformat()
+
+
+def graph_page(project_name: str) -> str:
+    """One self-contained document: no script src, no stylesheet link, no font, no CDN. It
+    fetches its own data from /console/graph.json and draws everything itself."""
+    return (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>{esc(project_name)} — the agent's world</title>"
+        f"<style>{GRAPH_STYLE}</style></head><body>"
+        "<div id='stage'><svg id='canvas'><g id='edges'></g><g id='nodes'></g></svg></div>"
+        f"<header><h1>{esc(project_name)}</h1>"
+        "<p>the agent's world, as it learned it · <a href='/console'>← console</a></p></header>"
+        "<div id='legend'>"
+        + "".join(
+            f"<span><i style='background:{colour}'></i>{esc(name)}</span>"
+            for name, colour in (
+                ("call", "#b48ead"), ("decision", "#ebcb8b"), ("issue", "#5e81ac"),
+                ("person", "#a3be8c"), ("check", "#4c566a"), ("lesson", "#d08770"),
+            )
+        )
+        + "</div>"
+        "<div id='empty' style='display:none'>Nothing has happened yet.</div>"
+        "<div id='controls'>"
+        "<button id='play'>▶ Replay</button>"
+        "<input type='range' id='scrubber' min='0' max='1' value='1'>"
+        "<span id='clock'>—</span><span id='count'>0 / 0</span>"
+        "</div>"
+        f"<script>{GRAPH_SCRIPT}</script></body></html>"
+    )
+
+
 # --- rendering --------------------------------------------------------------------------------
 
 STYLE = """
@@ -328,6 +521,8 @@ td { padding:6px 8px 6px 0; border-bottom:1px solid var(--line); vertical-align:
 code { font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); }
 .empty { color:var(--muted); font-style:italic; }
 .dep { color:var(--muted); }
+a { color:inherit; text-decoration:none; border-bottom:1px solid var(--line); }
+a:hover { border-color:currentColor; }
 """
 
 
@@ -502,7 +697,8 @@ def render(
 
     body = (
         f"<h1>{esc(project.get('name') or project.get('slug') or 'project')}</h1>"
-        f"<p class='sub'>{esc(window)} · read-only console</p>"
+        f"<p class='sub'>{esc(window)} · read-only console · "
+        "<a href='/console/graph'>◉ Graph</a></p>"
         + _cards(counts)
         + "<h2>Decision journal</h2>"
         + _journal_html(journal_entries(tasks, actions)[:JOURNAL_LIMIT])
@@ -553,3 +749,22 @@ async def console(request: Request) -> HTMLResponse:
     return HTMLResponse(
         render(project, tasks, actions, corrections, lessons, runs[-1] if runs else None, today)
     )
+
+
+@router.get("/console/graph.json")
+async def graph_json(request: Request) -> dict[str, Any]:
+    """The graph as data, so the page can draw it and anyone can read it. Read-only, like the
+    rest of the console."""
+    deps: Deps = request.app.state.deps
+    project = await deps.projects.get(deps.settings.default_project_slug)
+    if project is None:
+        return {"nodes": [], "edges": [], "generated_at": iso_now(deps), "project": ""}
+    return await graph_data(project, deps)
+
+
+@router.get("/console/graph", response_class=HTMLResponse)
+async def graph_view(request: Request) -> HTMLResponse:
+    """The knowledge graph, with a scrubber that replays how it was built."""
+    deps: Deps = request.app.state.deps
+    project = await deps.projects.get(deps.settings.default_project_slug)
+    return HTMLResponse(graph_page(str((project or {}).get("name") or "pm-agent")))

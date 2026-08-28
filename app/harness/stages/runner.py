@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 
-from app.harness.connectors.slack_blocks import human_check
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
 from app.harness.deps import Deps
+from app.harness.kinds.phrasing import human_check
 from app.harness.stages import (
     act,
     checks,

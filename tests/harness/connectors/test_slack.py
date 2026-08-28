@@ -7,11 +7,9 @@ import httpx
 import pytest
 from app.harness.connectors.slack import SlackClient, react_quietly, verify_slack_signature
 from app.harness.connectors.slack_blocks import (
-    CHECK_SENTENCES,
     MAX_BLOCKS,
     call_summary_blocks,
     count_of,
-    human_check,
     human_date,
     human_due,
     plan_summary_blocks,
@@ -22,6 +20,7 @@ from app.harness.connectors.slack_blocks import (
     wrong_modal,
 )
 from app.harness.core.errors import SourceUnavailable
+from app.harness.kinds.phrasing import CHECK_SENTENCES, human_check
 
 from tests.fakes.fake_slack import FakeSlack
 
