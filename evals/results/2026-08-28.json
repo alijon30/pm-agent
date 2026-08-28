@@ -1,0 +1,226 @@
+{
+  "created_at": "2026-08-28T05:54:11+00:00",
+  "eval_now": "2026-08-28T16:00:00+00:00",
+  "total": 26,
+  "passed": 24,
+  "headline": {
+    "accuracy_pct": 92.3,
+    "fabricated_identifiers": 0,
+    "citation_coverage_pct": 100.0,
+    "invalid_plans_materialised": 0,
+    "corrections_recurred": "n/a"
+  },
+  "report_claims": 6,
+  "report_claims_removed": 0,
+  "stage_errors": [],
+  "questions": [
+    {
+      "id": "q01",
+      "kind": "recall",
+      "check": "decision_recorded",
+      "question": "Did the ledger record the decision to move payment reminders to three days after the due date?",
+      "passed": true,
+      "detail": "Payment reminders will be moved to three days after the due date."
+    },
+    {
+      "id": "q02",
+      "kind": "recall",
+      "check": "rejected_option_recorded",
+      "question": "Was SMS kept as an option the call considered and turned down?",
+      "passed": true,
+      "detail": "SMS reminders are rejected for now, keeping it ema — rejected: SMS reminders"
+    },
+    {
+      "id": "q03",
+      "kind": "recall",
+      "check": "action_item_extracted",
+      "question": "Was the invoice CSV export for Northwind extracted as an action item?",
+      "passed": true,
+      "detail": "Get invoice CSV export behind a flag"
+    },
+    {
+      "id": "q04",
+      "kind": "recall",
+      "check": "action_item_extracted",
+      "question": "Was the reminder change extracted as an action item?",
+      "passed": true,
+      "detail": "Move payment reminders to three days after the due date"
+    },
+    {
+      "id": "q05",
+      "kind": "recall",
+      "check": "open_question_extracted",
+      "question": "Was 'do we charge late fees' kept as an open question rather than turned into work?",
+      "passed": true,
+      "detail": "Do we charge late fees?"
+    },
+    {
+      "id": "q06",
+      "kind": "recall",
+      "check": "due_hint_captured",
+      "question": "Was the spoken deadline 'next Friday' captured as the timing hint on the reminder work?",
+      "passed": true,
+      "detail": "Move payment reminders to three days after the due — due_hint 'next Friday'"
+    },
+    {
+      "id": "q07",
+      "kind": "recall",
+      "check": "escalation_quote_captured",
+      "question": "Was the escalation language on the blocked export captured verbatim, as the priority gate requires?",
+      "passed": true,
+      "detail": "quoted: This is urgent, a customer is blocked. Priya, can you take the invoice CSV expor"
+    },
+    {
+      "id": "q08",
+      "kind": "recall",
+      "check": "owner_assigned",
+      "question": "Was the reminder work assigned to the person who volunteered for it?",
+      "passed": true,
+      "detail": "INV-116 → Nodir Rahimov"
+    },
+    {
+      "id": "q09",
+      "kind": "recall",
+      "check": "owner_assigned",
+      "question": "Was the export assigned to the person the call named?",
+      "passed": true,
+      "detail": "INV-117 → Priya Nair"
+    },
+    {
+      "id": "q10",
+      "kind": "recall",
+      "check": "duplicate_detected",
+      "question": "Did the agent recognise the overdue dashboard as work that already has a ticket?",
+      "passed": false,
+      "detail": "expected one of ['INV-101']; got ['new→None', 'new→None']"
+    },
+    {
+      "id": "q11",
+      "kind": "recall",
+      "check": "conflict_detected",
+      "question": "Did the agent notice that the code sends reminders at 7 days while the spec says 5?",
+      "passed": false,
+      "detail": "2 conflict(s), none matching"
+    },
+    {
+      "id": "q12",
+      "kind": "recall",
+      "check": "conflict_detected",
+      "question": "Did the agent notice that the export spec includes payments while the code writes invoice columns only?",
+      "passed": true,
+      "detail": "spec_vs_call: Invoice CSV export content (payments inclusion)"
+    },
+    {
+      "id": "q13",
+      "kind": "guarantee",
+      "check": "evidence_verbatim",
+      "question": "Does every quote that survived the evidence gate appear verbatim in the transcript?",
+      "passed": true,
+      "detail": "5 quote(s) verbatim"
+    },
+    {
+      "id": "q14",
+      "kind": "guarantee",
+      "check": "decision_ledger_cited",
+      "question": "Does every decision in the ledger carry the moment in the call that produced it?",
+      "passed": true,
+      "detail": "2 entries, all sourced"
+    },
+    {
+      "id": "q15",
+      "kind": "guarantee",
+      "check": "roster_miss_unassigned",
+      "question": "Sam was named in the call but is not on this project. Was anything assigned to them?",
+      "passed": true,
+      "detail": "2 filed, none off-roster"
+    },
+    {
+      "id": "q16",
+      "kind": "guarantee",
+      "check": "priority_band_respected",
+      "question": "Did anything leave the project's priority band without someone having said it was urgent?",
+      "passed": true,
+      "detail": "2 filed, band [2, 4] held"
+    },
+    {
+      "id": "q17",
+      "kind": "guarantee",
+      "check": "due_only_when_stated",
+      "question": "Does every due date the agent set correspond to words somebody actually spoke?",
+      "passed": true,
+      "detail": "2 dated issue(s), each spoken aloud"
+    },
+    {
+      "id": "q18",
+      "kind": "guarantee",
+      "check": "issue_cites_the_call",
+      "question": "Can every filed issue be audited from the tracker alone, without opening this system?",
+      "passed": true,
+      "detail": "2 issue(s) quote the call"
+    },
+    {
+      "id": "q19",
+      "kind": "guarantee",
+      "check": "conflict_not_resolved",
+      "question": "Where two sources disagree, did the agent report both sides with citations instead of picking a winner?",
+      "passed": true,
+      "detail": "2 conflict(s), both sides cited"
+    },
+    {
+      "id": "q20",
+      "kind": "guarantee",
+      "check": "plan_dependency_order",
+      "question": "Is every scheduled check due after whatever it depends on?",
+      "passed": true,
+      "detail": "2 edge(s), each due in order"
+    },
+    {
+      "id": "q21",
+      "kind": "guarantee",
+      "check": "plan_within_horizon",
+      "question": "Is every scheduled check in the future and inside the project's planning horizon?",
+      "passed": true,
+      "detail": "4 check(s) inside 30 days"
+    },
+    {
+      "id": "q22",
+      "kind": "gate",
+      "check": "plan_rejects_unknown_issue",
+      "question": "A plan that schedules a check against an issue that does not exist: is it refused?",
+      "passed": true,
+      "detail": "unknown identifier(s): INV-999"
+    },
+    {
+      "id": "q23",
+      "kind": "gate",
+      "check": "plan_rejects_cycle",
+      "question": "A plan whose tasks depend on each other in a cycle: is the whole plan refused?",
+      "passed": true,
+      "detail": "dependency cycle detected; the whole plan is rejected"
+    },
+    {
+      "id": "q24",
+      "kind": "guarantee",
+      "check": "report_citation_coverage",
+      "question": "Does every claim in the delivered status report carry at least one reference?",
+      "passed": true,
+      "detail": "6/6 claims cited (0 removed by the gate)"
+    },
+    {
+      "id": "q25",
+      "kind": "guarantee",
+      "check": "report_refs_exist",
+      "question": "Does every tracker and ledger reference in the report point at something that exists?",
+      "passed": true,
+      "detail": "6 reference(s) resolve"
+    },
+    {
+      "id": "q26",
+      "kind": "guarantee",
+      "check": "no_fabricated_identifiers",
+      "question": "Across every issue body, citation, plan parameter and report reference: did the agent ever invent an identifier?",
+      "passed": true,
+      "detail": "8 identifier(s) written, all real"
+    }
+  ]
+}

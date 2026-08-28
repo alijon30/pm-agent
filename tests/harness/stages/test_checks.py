@@ -229,3 +229,14 @@ async def test_a_planned_nudge_is_sent_once(deps: Deps) -> None:
 
     again = await run_nudge(task, deps)
     assert again.result["sent"] is False and len(deps.slack.posts) == 1
+
+
+async def test_a_nudge_says_a_date_the_way_a_person_would(deps: Deps) -> None:
+    overdue = [{**ISSUE, "due_date": "2026-09-04", "state": "Todo"}]
+    task = await wire(deps, kind="check_issue_state", on_unmet="nudge_assignee", issues=overdue,
+                      params={"issue": "INV-143", "expect": ["Done"]})
+    await run_check(task, deps)
+
+    text = deps.slack.posts[0]["text"]
+    assert "was due Fri Sep 4" in text or "was due Sep 4" in text
+    assert "2026-09-04" not in text

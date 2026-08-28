@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.harness.connectors.slack_blocks import human_date
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
@@ -119,7 +120,7 @@ def _values(observed: dict[str, Any], person: dict[str, Any] | None) -> dict[str
         "issue": str(observed.get("issue") or ""),
         "title": str(observed.get("title") or ""),
         "state": str(observed.get("state") or "open"),
-        "due": str(observed.get("due") or ""),
+        "due": human_date(str(observed.get("due") or "")),
         "pr_url": str(observed.get("pr_url") or ""),
         "link": f"<{url}|open it>" if url else "",
     }

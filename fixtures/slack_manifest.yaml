@@ -1,0 +1,46 @@
+# Source of truth for the Slack app configuration.
+#
+# Paste into api.slack.com/apps → your app → App Manifest, or create the app from it. Keep this
+# file and the installed app in step: what is here is what the code assumes it may do.
+#
+# reactions:write added 2026-08-28 for the 👀 / ✅ acknowledgements on report mentions. Adding a
+# scope requires reinstalling the app to the workspace — the existing bot token keeps working
+# for everything else, but reactions.add returns missing_scope until the reinstall is done.
+display_information:
+  name: pm-agent
+  description: Reads product calls, files the tickets, and watches them land.
+  background_color: "#1b1e24"
+
+features:
+  bot_user:
+    display_name: pm-agent
+    always_online: true
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: false
+    messages_tab_read_only_enabled: true
+
+oauth_config:
+  scopes:
+    bot:
+      # Mentions arrive on /slack/events; "report" in the text queues a report task.
+      - app_mentions:read
+      # Call summaries, plan announcements, nudges and reports — posted and edited in place.
+      - chat:write
+      # Map a Slack user who pressed revert or filed a correction to a roster member.
+      - users:read
+      - users:read.email
+      # 👀 when a report request is queued, ✅ when the answer is in the thread.
+      - reactions:write
+
+settings:
+  event_subscriptions:
+    request_url: https://pm-agent-999960779013.us-central1.run.app/slack/events
+    bot_events:
+      - app_mention
+  interactivity:
+    is_enabled: true
+    request_url: https://pm-agent-999960779013.us-central1.run.app/slack/interactions
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

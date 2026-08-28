@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from app.agents.base.schemas import Report
+from app.harness.connectors.slack import react_quietly
 from app.harness.connectors.slack_blocks import report_blocks
 from app.harness.core.clock import iso
 from app.harness.core.errors import PmError, SourceUnavailable
@@ -175,6 +176,12 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         verdict = await check_citations(retry, ids)
 
     posted = await _post(task, project, verdict.report, payload["sprint"], deps)
+    if posted:
+        # ✅ on the mention that asked for this. thread_ts IS that message's ts, so the person
+        # who asked sees it answered from their own message, wherever the thread has scrolled
+        # to. Best-effort, like every reaction: the report is already delivered.
+        await react_quietly(deps.slack, task["payload"].get("channel"),
+                            task["payload"].get("thread_ts"), "white_check_mark")
     return StageResult(result={
         "report": verdict.report,
         "removed": verdict.removed,

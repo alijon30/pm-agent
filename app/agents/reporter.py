@@ -40,11 +40,13 @@ You receive JSON with:
 
 Write:
 
-- "headline": one sentence. What a team lead needs to know if they read nothing else.
+- "headline": one sentence, the way a colleague opens standup — what a team lead needs to know
+  if they read nothing else. Never describe the report itself: "This report covers…", "Here is
+  the status of…" and anything like them are forbidden. Say the news.
 - "sections": only these names, in this order — shipped, moved, blocked, at_risk, conflicts,
   open_questions, decisions. Leave a section out entirely rather than emit it empty.
-- every section holds "claims", and every claim is one sentence plus the references that
-  support it.
+- every section holds "claims", and every claim is one plain sentence in the present tense,
+  plus the references that support it.
 
 The rule that outranks all the others: EVERY claim carries at least one ref, and every ref must
 be one you were given in this payload — linear:INV-26 · fathom:<meeting>@<mm:ss> ·

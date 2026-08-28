@@ -105,6 +105,16 @@ def test_a_report_says_what_it_claimed_and_what_it_could_not_prove() -> None:
     assert "removed 1 claim(s) it could not cite" in entries[0]["text"]
 
 
+def test_the_journal_says_whether_the_summary_was_posted_or_filled_in() -> None:
+    edited = journal_entries([], [action(
+        kind="slack.post", inputs={"meeting": "Q3 Billing planning", "edited": True})])
+    fresh = journal_entries([], [action(
+        kind="slack.post", inputs={"meeting": "Q3 Billing planning", "edited": False})])
+
+    assert edited[0]["text"].startswith("filled in the summary of 'Q3 Billing planning'")
+    assert fresh[0]["text"].startswith("posted the summary of 'Q3 Billing planning'")
+
+
 def test_a_revert_names_who_undid_what() -> None:
     entries = journal_entries([], [action(
         status="reverted", reverted_by="U-maya", reverted_at="2026-08-27T10:00:00+00:00",

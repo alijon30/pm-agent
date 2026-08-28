@@ -100,18 +100,107 @@ async def test_even_a_blocked_check_completes_when_reality_already_satisfied_it(
     assert await status(deps, second) == "done"
 
 
-async def test_the_early_note_lands_in_the_plan_announcements_thread(deps: Deps) -> None:
-    first, _ = await schedule_chain(deps, issues=[IN_PROGRESS])
+async def announcement(deps: Deps, *, ts: str, created_at: str, tasks: int | None = 2,
+                       key: str = "k-plan") -> str:
+    """One finished slack.post action. `tasks` is what marks it as a plan announcement rather
+    than a call summary or a nudge."""
     assert deps.actions is not None
-    announce = await deps.actions.begin(
-        task_id="plan-1", project_id="acme", kind="slack.post", idempotency_key="k-plan",
-        inputs={"channel": "C-product", "tasks": 2})
-    await deps.actions.finish(announce, target_ids={"channel": "C-product", "ts": "42.1"},
-                              revert={})
+    inputs: dict[str, Any] = {"channel": "C-product"}
+    if tasks is not None:
+        inputs["tasks"] = tasks
+    action_id = await deps.actions.begin(
+        task_id="plan-1", project_id="acme", kind="slack.post", idempotency_key=key,
+        inputs=inputs)
+    await deps.actions.finish(action_id, target_ids={"channel": "C-product", "ts": ts}, revert={})
+    await deps.db.update("actions", action_id, {"created_at": created_at})
+    return action_id
+
+
+async def test_the_early_note_lands_in_the_plan_announcements_thread(deps: Deps) -> None:
+    await schedule_chain(deps, issues=[IN_PROGRESS])
+    await announcement(deps, ts="42.1", created_at="2026-08-27T09:00:00+00:00")
+
     await resolve_early("INV-26", deps)
+
     assert len(deps.slack.posts) == 1
     note = deps.slack.posts[0]
-    assert note["thread_ts"] == "42.1" and "resolved early" in note["text"]
+    assert note["thread_ts"] == "42.1"
+    assert note["text"] == "✓ INV-26 is already underway — I've closed 1 planned check early."
+
+
+async def test_the_note_threads_under_the_newest_announcement_whatever_order_they_arrive_in(
+    deps: Deps,
+) -> None:
+    """The action query has no order_by, so on Firestore the rows come back in arbitrary order.
+    These are stored newest-first and with two decoys, so taking the last row would fail."""
+    await schedule_chain(deps, issues=[IN_PROGRESS])
+    await announcement(deps, ts="99.9", created_at="2026-08-28T09:00:00+00:00", key="k-newest")
+    await announcement(deps, ts="11.1", created_at="2026-08-20T09:00:00+00:00", key="k-oldest")
+    await announcement(deps, ts="55.5", created_at="2026-08-24T09:00:00+00:00", key="k-middle")
+    # A call summary and a nudge also live in this collection; neither is a plan announcement.
+    await announcement(deps, ts="77.7", created_at="2026-08-29T09:00:00+00:00", tasks=None,
+                       key="k-summary")
+
+    await resolve_early("INV-26", deps)
+
+    assert deps.slack.posts[0]["thread_ts"] == "99.9"
+
+
+async def test_two_checks_resolving_at_once_are_counted_in_plain_words(deps: Deps) -> None:
+    await schedule_chain(deps, issues=[IN_PROGRESS], prs=[PR])
+    await announcement(deps, ts="42.1", created_at="2026-08-27T09:00:00+00:00")
+
+    await resolve_early("INV-26", deps)
+
+    assert "I've closed 2 planned checks early." in deps.slack.posts[0]["text"]
+
+
+async def test_with_no_plan_announcement_to_thread_under_the_note_is_not_posted(
+    deps: Deps,
+) -> None:
+    await schedule_chain(deps, issues=[IN_PROGRESS])
+    resolved = await resolve_early("INV-26", deps)
+
+    assert resolved  # the early completion still stands
+    assert deps.slack.posts == []
+
+
+async def test_an_outage_while_noting_never_undoes_the_early_completion(deps: Deps) -> None:
+    from app.harness.core.errors import SourceUnavailable
+
+    await schedule_chain(deps, issues=[IN_PROGRESS])
+    await announcement(deps, ts="42.1", created_at="2026-08-27T09:00:00+00:00")
+
+    async def down(*args: Any, **kwargs: Any) -> str:
+        raise SourceUnavailable("slack", "ratelimited")
+
+    deps.slack.post = down  # type: ignore[method-assign]
+    resolved = await resolve_early("INV-26", deps)
+
+    assert len(resolved) == 1
+    assert await status(deps, resolved[0]) == "done"
+
+
+async def test_an_unexpected_failure_while_noting_is_logged_rather_than_swallowed(
+    deps: Deps, caplog: Any
+) -> None:
+    """The bare `except Exception: return` this replaced is why nobody noticed the note was
+    never posting."""
+    import logging
+
+    await schedule_chain(deps, issues=[IN_PROGRESS])
+    await announcement(deps, ts="42.1", created_at="2026-08-27T09:00:00+00:00")
+
+    async def broken(*args: Any, **kwargs: Any) -> str:
+        raise TypeError("post() got an unexpected keyword argument")
+
+    deps.slack.post = broken  # type: ignore[method-assign]
+    with caplog.at_level(logging.WARNING, logger="app.harness.stages.early"):
+        resolved = await resolve_early("INV-26", deps)
+
+    assert len(resolved) == 1  # the work still stands
+    assert "early note for INV-26 failed unexpectedly" in caplog.text
+    assert "TypeError" in caplog.text  # the traceback is in the record
 
 
 # --- the webhook door -------------------------------------------------------------------------

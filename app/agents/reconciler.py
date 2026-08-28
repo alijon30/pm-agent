@@ -32,6 +32,9 @@ For EVERY action item, in order, do this before you propose anything:
 
 Then emit one entry per action item with:
 
+- title: plain product language, imperative, under 80 characters — how a team lead would write
+  the ticket, not how the sentence was spoken. "Put the invoice CSV export behind the flag",
+  never an echo of the transcript's phrasing.
 - disposition: "new" if nothing covers it; "update" if an open issue covers it and should be
   commented on; "duplicate_of" if an issue already covers it and no further work is implied.
   For "update" and "duplicate_of", target_issue MUST be an identifier you actually read.

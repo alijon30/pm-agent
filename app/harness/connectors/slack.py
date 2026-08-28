@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
@@ -102,6 +102,21 @@ class SlackClient:
             payload["blocks"] = blocks
         await self._call("chat.update", payload)
 
+    async def react(self, channel: str, ts: str, name: str) -> None:
+        """Add one emoji reaction to a message. `name` is the emoji name with no colons.
+
+        Reacting twice is success, not a failure: a reaction is a piece of state, and
+        `already_reacted` means the state we wanted is already there. Every other application
+        error is an outage like any other."""
+        try:
+            await self._call(
+                "reactions.add", {"channel": channel, "timestamp": ts, "name": name}
+            )
+        except SourceUnavailable as exc:
+            if "already_reacted" in str(exc):
+                return
+            raise
+
     async def open_modal(self, trigger_id: str, view: dict[str, Any]) -> None:
         await self._call("views.open", {"trigger_id": trigger_id, "view": view})
 
@@ -119,3 +134,25 @@ class SlackClient:
             "name": user.get("real_name") or user.get("name") or "",
             "email": (user.get("profile") or {}).get("email") or "",
         }
+
+
+class Reactor(Protocol):
+    async def react(self, channel: str, ts: str, name: str) -> None: ...
+
+
+async def react_quietly(
+    slack: Reactor | None, channel: str | None, ts: str | None, name: str
+) -> bool:
+    """Acknowledge a message with an emoji. True if it landed.
+
+    A reaction is the only thing this agent can say in Slack that notifies nobody, which is
+    exactly why it is used to say "I have this" and "this is done". It is decoration on top of
+    work that already happened, so an outage here is a shrug, never a failed request or a
+    failed stage."""
+    if slack is None or not channel or not ts:
+        return False
+    try:
+        await slack.react(channel, ts, name)
+    except SourceUnavailable:
+        return False
+    return True

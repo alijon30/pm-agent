@@ -307,3 +307,47 @@ async def test_a_redelivered_report_mention_does_not_queue_a_second_report(
     client.post("/slack/events", content=body, headers=signed(body))
 
     assert await deps.db.count("tasks", [("kind", "==", "report")]) == 1
+
+
+async def test_a_queued_report_request_is_acknowledged_with_eyes_on_the_mention(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    body = mention("<@U0> report please")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    assert deps.slack.reactions == [
+        {"channel": "C-random", "ts": "1787821201.000100", "name": "eyes"}
+    ]
+    assert deps.slack.posts == []  # an acknowledgement nobody is notified about
+
+
+async def test_a_mention_that_queues_nothing_is_not_acknowledged(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+    body = mention("<@U0> who owns INV-143?")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    assert deps.slack.reactions == []
+
+
+async def test_a_slack_outage_while_acknowledging_still_leaves_the_report_queued(
+    client: TestClient, deps: Deps
+) -> None:
+    from app.harness.core.errors import SourceUnavailable
+
+    deps.settings.slack_signing_secret = SECRET
+    deps.slack = FakeSlack()
+
+    async def down(*args: Any, **kwargs: Any) -> None:
+        raise SourceUnavailable("slack", "ratelimited")
+
+    deps.slack.react = down  # type: ignore[method-assign]
+    body = mention("<@U0> report please")
+    response = client.post("/slack/events", content=body, headers=signed(body))
+
+    assert response.json() == {"ok": True}
+    assert await deps.db.count("tasks", [("kind", "==", "report")]) == 1

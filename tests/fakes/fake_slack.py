@@ -12,6 +12,7 @@ class FakeSlack:
         self.posts: list[dict[str, Any]] = []
         self.updates: list[dict[str, Any]] = []
         self.modals: list[dict[str, Any]] = []
+        self.reactions: list[dict[str, str]] = []
         self._users = copy.deepcopy(users or {})
         self._ts = 1_787_821_200
 
@@ -33,6 +34,13 @@ class FakeSlack:
         self, channel: str, ts: str, text: str, blocks: list[dict[str, Any]] | None = None
     ) -> None:
         self.updates.append({"channel": channel, "ts": ts, "text": text, "blocks": blocks})
+
+    async def react(self, channel: str, ts: str, name: str) -> None:
+        """Mirrors the client's already_reacted handling: adding the same reaction twice is a
+        no-op rather than a second entry, because Slack treats it as success."""
+        reaction = {"channel": channel, "ts": ts, "name": name}
+        if reaction not in self.reactions:
+            self.reactions.append(reaction)
 
     async def open_modal(self, trigger_id: str, view: dict[str, Any]) -> None:
         self.modals.append({"trigger_id": trigger_id, "view": view})

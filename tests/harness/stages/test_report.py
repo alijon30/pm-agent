@@ -228,8 +228,10 @@ async def test_the_report_reaches_the_project_channel_as_one_recorded_action(
     assert post["channel"] == "C-product" and post["thread_ts"] is None
     assert "landed a day early" in post["text"]
     rendered = str(post["blocks"])
-    assert "Sprint 1" in rendered and "2026-08-20 → 2026-09-03" in rendered
-    assert "*Shipped*" in rendered and "linear:INV-143" in rendered
+    assert "Sprint 1" in rendered and "(Aug 20 → Sep 3)" in rendered
+    assert "*Shipped*" in rendered and "*Decided*" in rendered
+    assert "_(INV-143)_" in rendered and "_(ledger)_" in rendered
+    assert "linear:INV-143" not in rendered and "decision:dec-1" not in rendered
 
     posted = await deps.db.query("actions", [("kind", "==", "slack.post")])
     assert len(posted) == 1 and posted[0]["status"] == "done"
@@ -287,3 +289,37 @@ async def test_with_no_id_gate_nothing_can_be_confirmed_so_nothing_is_claimed(
 
     assert out.result["report"]["sections"] == []
     assert len(out.result["removed"]) == 2
+
+
+async def test_a_mention_triggered_report_ticks_the_message_that_asked_for_it(
+    deps: Deps,
+) -> None:
+    task = await wire(deps, reporter_results=[GOOD_REPORT],
+                      payload={"channel": "C-random", "thread_ts": "1787821201.000100"})
+    await run(task, deps)
+
+    assert deps.slack.reactions == [
+        {"channel": "C-random", "ts": "1787821201.000100", "name": "white_check_mark"}
+    ]
+
+
+async def test_a_scheduled_report_has_no_mention_to_tick(deps: Deps) -> None:
+    task = await wire(deps, reporter_results=[GOOD_REPORT])
+    await run(task, deps)
+
+    assert deps.slack.posts[0]["channel"] == "C-product"
+    assert deps.slack.reactions == []
+
+
+async def test_a_report_that_could_not_be_posted_is_not_marked_answered(deps: Deps) -> None:
+    task = await wire(deps, reporter_results=[GOOD_REPORT],
+                      payload={"channel": "C-random", "thread_ts": "1787821201.000100"})
+
+    async def down(*args: Any, **kwargs: Any) -> str:
+        raise SourceUnavailable("slack", "ratelimited")
+
+    deps.slack.post = down  # type: ignore[method-assign]
+    out = await run(task, deps)
+
+    assert out.result["posted"] is False
+    assert deps.slack.reactions == []

@@ -11,10 +11,16 @@ fact — the one kind of action that cannot annoy anyone."""
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+from app.harness.connectors.slack_blocks import count_of
+from app.harness.core.errors import SourceUnavailable
+from app.harness.core.redact import redact
 from app.harness.deps import Deps
 from app.harness.stages.checks import CHECKS
+
+log = logging.getLogger(__name__)
 
 RESOLVABLE = ("queued", "blocked", "deferred")
 
@@ -45,7 +51,11 @@ async def resolve_early(identifier: str, deps: Deps) -> list[str]:
 
 async def _note_in_thread(identifier: str, resolved: list[str], deps: Deps) -> None:
     """A quiet line under the plan announcement, so the channel sees progress without a ping.
-    Best-effort: the early completion stands whether or not this lands."""
+    Best-effort: the early completion stands whether or not this lands.
+
+    Best-effort is not the same as silent. A bare `except Exception: return` here hid the fact
+    that this note was never reaching the channel at all, so anything unexpected is logged with
+    its traceback; only an outage is shrugged off, because that one is ordinary."""
     if deps.slack is None or deps.actions is None:
         return
     plan_posts = [
@@ -54,19 +64,24 @@ async def _note_in_thread(identifier: str, resolved: list[str], deps: Deps) -> N
     ]
     if not plan_posts:
         return
-    target = (plan_posts[-1].get("target_ids") or {})
+    # The query has no order_by — Firestore returns these in whatever order it likes, so the
+    # newest announcement is chosen here rather than by taking the last row.
+    newest = max(plan_posts, key=lambda a: str(a.get("created_at") or ""))
+    target = newest.get("target_ids") or {}
     channel, ts = target.get("channel"), target.get("ts")
     if not channel or not ts:
         return
     try:
         await deps.slack.post(
             channel,
-            f"✓ {identifier} moved ahead of schedule — {len(resolved)} planned check(s) "
-            "resolved early",
+            f"✓ {identifier} is already underway — I've closed "
+            f"{count_of(len(resolved), 'planned check')} early.",
             thread_ts=ts,
         )
-    except Exception:  # noqa: BLE001 — decoration never outranks the work
-        return
+    except SourceUnavailable as exc:
+        log.warning("early note for %s not posted: %s", identifier, redact(str(exc)))
+    except Exception:  # noqa: BLE001 — decoration never outranks the work, but it must not vanish
+        log.warning("early note for %s failed unexpectedly", identifier, exc_info=True)
 
 
 def issue_identifier_of(payload: dict[str, Any]) -> str | None:

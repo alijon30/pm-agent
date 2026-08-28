@@ -188,7 +188,10 @@ def _slack_line(action: Doc) -> tuple[str, str]:
         return "posted", f"posted the {inputs['sprint']} report to Slack"
     meeting = inputs.get("meeting")
     subject = f" of '{meeting}'" if meeting else ""
-    return "posted", f"posted the summary{subject} with a revert button on every action"
+    # The summary usually replaces the "reading the call…" message rather than arriving as a new
+    # one, and the journal should say which happened — an edit notified nobody.
+    verb = "filled in the summary" if inputs.get("edited") else "posted the summary"
+    return "posted", f"{verb}{subject} with a revert button on every action"
 
 
 def _action_entries(action: Doc) -> list[dict[str, str]]:

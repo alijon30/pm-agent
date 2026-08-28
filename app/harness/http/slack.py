@@ -13,7 +13,7 @@ from urllib.parse import parse_qs
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from app.harness.connectors.slack import verify_slack_signature
+from app.harness.connectors.slack import react_quietly, verify_slack_signature
 from app.harness.connectors.slack_blocks import wrong_modal
 from app.harness.core.errors import SourceUnavailable
 from app.harness.core.redact import redact
@@ -150,7 +150,7 @@ async def events(request: Request) -> dict[str, Any]:
         if event_id is not None and "report" in str(event.get("text") or "").lower():
             # Answer where it was asked: the stage posts into this channel and thread rather
             # than the project channel, so a question in one room is not answered in another.
-            await deps.queue.enqueue(
+            task_id = await deps.queue.enqueue(
                 kind="report",
                 project_id=project["id"],
                 params={"project": project["id"], "window": "sprint"},
@@ -158,4 +158,9 @@ async def events(request: Request) -> dict[str, Any]:
                 reason="report requested in Slack",
                 root_event_id=event_id,
             )
+            if task_id is not None:
+                # 👀 on the mention: the asker sees the request landed, in the three seconds
+                # Slack gives this route, without a message anyone has to read. The report
+                # stage adds ✅ to the same message when the answer is in the thread.
+                await react_quietly(deps.slack, event.get("channel"), event.get("ts"), "eyes")
     return {"ok": True}

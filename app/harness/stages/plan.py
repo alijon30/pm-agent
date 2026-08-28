@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from app.agents.base.schemas import Plan
-from app.harness.connectors.slack_blocks import plan_summary_blocks
+from app.harness.connectors.slack_blocks import count_of, plan_summary_blocks
 from app.harness.core.clock import iso, parse_iso
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
@@ -167,7 +167,9 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         notes = "no plan from the planner; using the default follow-up chain"
 
     supersedes = [s for s in (proposal.get("supersedes") or []) if s in open_ids]
-    trimmed = [f"{r['key']}: {r['reason']}" for r in verdict.rejected] + verdict.reasons
+    # Reasons only: the plan key is this system's handle for a task the team never saw, so it
+    # means nothing in a channel. The full rejection, key and all, is in the result and console.
+    trimmed = [r["reason"] for r in verdict.rejected] + verdict.reasons
     await _announce(task, project, verdict.tasks, trimmed, deps)
 
     result: dict[str, Any] = {
@@ -216,7 +218,8 @@ async def _announce(
     )
     try:
         ts = await deps.slack.post(
-            channel, f"Planned {len(tasks)} follow-up(s)", plan_summary_blocks(tasks, trimmed)
+            channel, f"I'll follow up on {count_of(len(tasks), 'thing')}",
+            plan_summary_blocks(tasks, trimmed),
         )
     except SourceUnavailable as exc:
         await deps.actions.fail(action_id, redact(str(exc)))

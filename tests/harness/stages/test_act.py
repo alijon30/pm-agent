@@ -216,7 +216,8 @@ async def test_one_summary_is_posted_with_a_revert_button_per_write(deps: Deps) 
 
     assert len(deps.slack.posts) == 1
     post = deps.slack.posts[0]
-    assert post["channel"] == "C-product" and "1 filed" in post["text"]
+    assert post["channel"] == "C-product"
+    assert post["text"] == "Q3 Billing planning — filed 1 ticket · 1 conflict"
     actions = [b for b in post["blocks"] if b["type"] == "actions"][0]["elements"]
     assert actions[0]["action_id"].startswith("revert:")
     assert actions[-1]["action_id"].startswith("wrong:")
@@ -228,7 +229,9 @@ async def test_conflicts_reach_the_team_and_are_never_resolved(deps: Deps) -> No
     out = await run(task, deps)
     assert len(out.result["conflicts"]) == 1
     rendered = str(deps.slack.posts[0]["blocks"])
-    assert "sources disagree" in rendered and "7 days" in rendered and "5 days" in rendered
+    assert "Sources disagree* on reminder window" in rendered
+    assert "7 days" in rendered and "5 days" in rendered
+    assert "config.py:6" in rendered and "code:acme/config.py:6" not in rendered
 
 
 async def test_a_slack_outage_never_undoes_work_that_already_landed(deps: Deps) -> None:
@@ -244,6 +247,85 @@ async def test_a_slack_outage_never_undoes_work_that_already_landed(deps: Deps) 
 
     assert len(out.result["created"]) == 1
     assert out.result["summary_action_id"] is None
+
+
+async def status_message(deps: Deps, channel: str = "C-product", ts: str = "1787821200.000100",
+                         event_id: str = "fathom:msg_1") -> dict[str, str]:
+    """The 'reading the call…' message the webhook left behind for this call."""
+    message = {"channel": channel, "ts": ts}
+    await deps.db.update("events", event_id, {"status_message": message})
+    return message
+
+
+async def test_the_summary_edits_the_message_that_said_it_was_reading_the_call(
+    deps: Deps,
+) -> None:
+    task = await wire(deps, items=[ITEM])
+    message = await status_message(deps)
+    await run(task, deps)
+
+    assert deps.slack.posts == []  # no second message: Slack notifies nobody for an edit
+    assert len(deps.slack.updates) == 1
+    edit = deps.slack.updates[0]
+    assert edit["channel"] == message["channel"] and edit["ts"] == message["ts"]
+    assert edit["text"] == "Q3 Billing planning — filed 1 ticket · 1 conflict"
+    assert [b for b in edit["blocks"] if b["type"] == "actions"], "the buttons survive the edit"
+
+
+async def test_the_recorded_action_points_at_the_message_it_edited(deps: Deps) -> None:
+    task = await wire(deps, items=[ITEM])
+    message = await status_message(deps)
+    out = await run(task, deps)
+
+    assert deps.actions is not None
+    action = await deps.actions.get(out.result["summary_action_id"])
+    assert action is not None and action["status"] == "done"
+    assert action["target_ids"] == message
+    assert action["revert"] == {"op": "edit_message", **message}
+    assert action["inputs"]["edited"] is True
+
+
+async def test_a_call_with_no_status_message_posts_a_fresh_summary(deps: Deps) -> None:
+    task = await wire(deps, items=[ITEM])
+    out = await run(task, deps)
+
+    assert len(deps.slack.posts) == 1 and deps.slack.updates == []
+    assert deps.actions is not None
+    action = await deps.actions.get(out.result["summary_action_id"])
+    assert action is not None and action["inputs"]["edited"] is False
+    assert action["revert"]["ts"] == deps.slack.posts[0]["ts"]
+
+
+async def test_a_replayed_root_still_finds_the_original_calls_status_message(
+    deps: Deps,
+) -> None:
+    task = await wire(deps, items=[ITEM])
+    message = await status_message(deps)
+    task["root_event_id"] = "fathom:msg_1#retry1"
+    await run(task, deps)
+
+    assert deps.slack.posts == []
+    assert deps.slack.updates[0]["ts"] == message["ts"]
+
+
+async def test_an_outage_while_editing_leaves_the_work_and_records_the_failure(
+    deps: Deps,
+) -> None:
+    from app.harness.core.errors import SourceUnavailable
+
+    task = await wire(deps, items=[ITEM])
+    await status_message(deps)
+
+    async def down(*args: Any, **kwargs: Any) -> None:
+        raise SourceUnavailable("slack", "ratelimited")
+
+    deps.slack.update = down  # type: ignore[method-assign]
+    out = await run(task, deps)
+
+    assert len(out.result["created"]) == 1
+    assert out.result["summary_action_id"] is None
+    failed = await deps.db.query("actions", [("kind", "==", "slack.post")])
+    assert failed[0]["status"] == "failed"
 
 
 # --- what happens next ------------------------------------------------------------------------

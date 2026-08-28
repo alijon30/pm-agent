@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.harness.connectors.slack_blocks import call_summary_blocks
+from app.harness.connectors.slack_blocks import call_summary_blocks, what_happened
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
@@ -274,7 +274,14 @@ async def _post_summary(
     deps: Deps,
 ) -> str | None:
     """One message per call. Decoration is best-effort: a Slack outage must not undo the work
-    that already landed in the tracker."""
+    that already landed in the tracker.
+
+    Where the webhook left a "reading the call…" message, this edits that message in place
+    rather than posting a second one. Slack notifies nobody for a chat.update, which is the
+    point: the team already got one notification when the call ended, and watching the message
+    fill itself in is calm in a way a second post is not. The plan announcement that follows is
+    deliberately a fresh post — that one is new information, arriving after the work is done,
+    and it should ping."""
     assert deps.actions is not None
     channel = project.get("slack_channel_id")
     if deps.slack is None or not channel:
@@ -285,23 +292,48 @@ async def _post_summary(
     if earlier is not None and earlier.get("status") == "done":
         return str(earlier["id"])
 
+    status = await _status_message(task, deps)
+    target = status["channel"] if status else channel
     action_id = await deps.actions.begin(
         task_id=task["id"], project_id=task["project_id"], kind="slack.post",
-        idempotency_key=key, inputs={"channel": channel, "meeting": meeting.get("title", "")},
+        idempotency_key=key,
+        inputs={"channel": target, "meeting": meeting.get("title", ""),
+                "edited": status is not None},
     )
     blocks = call_summary_blocks(
         meeting, created, updated, skipped, conflicts, performed, post_ref=action_id
     )
-    text = (f"{meeting.get('title', 'call')}: {len(created)} filed, {len(updated)} updated, "
-            f"{len(skipped)} skipped, {len(conflicts)} conflict(s)")
+    text = (f"{meeting.get('title', 'call')} — "
+            f"{what_happened(created, updated, skipped, conflicts)}")
     try:
-        ts = await deps.slack.post(channel, text, blocks)
+        if status is not None:
+            await deps.slack.update(status["channel"], status["ts"], text, blocks)
+            ts = status["ts"]
+        else:
+            ts = await deps.slack.post(channel, text, blocks)
     except SourceUnavailable as exc:
         await deps.actions.fail(action_id, redact(str(exc)))
         return None
     await deps.actions.finish(
-        action_id, target_ids={"channel": channel, "ts": ts},
-        revert={"op": "edit_message", "channel": channel, "ts": ts},
+        action_id, target_ids={"channel": target, "ts": ts},
+        revert={"op": "edit_message", "channel": target, "ts": ts},
     )
     counts["ping"] += 1
     return action_id
+
+
+async def _status_message(task: Doc, deps: Deps) -> dict[str, str] | None:
+    """The "reading the call…" message the webhook posted for this call, if there is one.
+
+    A replayed root carries a `#retryN` suffix in the harness this pattern comes from; this
+    codebase does not produce one today, and splitting on `#` costs nothing and keeps the
+    lookup correct if it ever does. A mention-triggered flow has no status message at all, and
+    neither does a call whose Slack post failed — both simply post fresh."""
+    root = str(task.get("root_event_id") or "")
+    if not root:
+        return None
+    event = await deps.events.get(root.split("#")[0])
+    status = (event or {}).get("status_message") or {}
+    if not status.get("channel") or not status.get("ts"):
+        return None
+    return {"channel": str(status["channel"]), "ts": str(status["ts"])}
