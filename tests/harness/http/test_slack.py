@@ -263,3 +263,47 @@ async def test_a_mention_is_recorded_once(client: TestClient, deps: Deps) -> Non
     event = await deps.events.get("slack:Ev123")
     assert event is not None and event["payload"]["text"] == "<@U0> report"
     assert await deps.db.count("events", [("provider", "==", "slack")]) == 1
+
+
+def mention(text: str, event_id: str = "Ev200", channel: str = "C-random") -> bytes:
+    return json.dumps({
+        "type": "event_callback", "event_id": event_id,
+        "event": {"type": "app_mention", "text": text, "user": "U-maya",
+                  "channel": channel, "ts": "1787821201.000100"},
+    }).encode()
+
+
+async def test_a_mention_asking_for_a_report_queues_one_aimed_at_that_thread(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    body = mention("<@U0> can we get a Report on the sprint?")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    queued = await deps.db.query("tasks", [("kind", "==", "report")])
+    assert len(queued) == 1
+    assert queued[0]["params"] == {"project": "acme", "window": "sprint"}
+    assert queued[0]["payload"] == {"channel": "C-random", "thread_ts": "1787821201.000100"}
+    assert queued[0]["root_event_id"] == "slack:Ev200"
+    assert queued[0]["status"] == "queued" and queued[0]["due_at"] == "2026-08-27T09:00:00+00:00"
+
+
+async def test_a_mention_about_anything_else_queues_nothing(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    body = mention("<@U0> who owns INV-143?")
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    assert await deps.db.count("tasks", [("kind", "==", "report")]) == 0
+
+
+async def test_a_redelivered_report_mention_does_not_queue_a_second_report(
+    client: TestClient, deps: Deps
+) -> None:
+    deps.settings.slack_signing_secret = SECRET
+    body = mention("<@U0> report please")
+    client.post("/slack/events", content=body, headers=signed(body))
+    client.post("/slack/events", content=body, headers=signed(body))
+
+    assert await deps.db.count("tasks", [("kind", "==", "report")]) == 1

@@ -128,7 +128,9 @@ async def interactions(request: Request) -> Response:
 
 @router.post("/slack/events")
 async def events(request: Request) -> dict[str, Any]:
-    """Mentions land here. Today they are recorded; Plan 4 turns a report request into a task."""
+    """Mentions land here: recorded once, and a mention asking for a report becomes a queued
+    report task. No model runs on this path — Slack wants a 200 in three seconds — and the
+    enqueue hangs off the recorded event id, so a redelivered mention writes nothing twice."""
     deps: Deps = request.app.state.deps
     raw = await _authorised(request, deps)
     body: dict[str, Any] = json.loads(raw)
@@ -139,10 +141,21 @@ async def events(request: Request) -> dict[str, Any]:
     event = body.get("event") or {}
     if event.get("type") == "app_mention":
         project = await deps.projects.default()
-        await deps.events.record(
+        event_id = await deps.events.record(
             provider="slack",
             provider_event_id=str(body.get("event_id") or event.get("ts") or ""),
             payload=event,
             project_id=project["id"],
         )
+        if event_id is not None and "report" in str(event.get("text") or "").lower():
+            # Answer where it was asked: the stage posts into this channel and thread rather
+            # than the project channel, so a question in one room is not answered in another.
+            await deps.queue.enqueue(
+                kind="report",
+                project_id=project["id"],
+                params={"project": project["id"], "window": "sprint"},
+                payload={"channel": event.get("channel"), "thread_ts": event.get("ts")},
+                reason="report requested in Slack",
+                root_event_id=event_id,
+            )
     return {"ok": True}

@@ -52,7 +52,7 @@ async def wire(
 # --- the catalog is fully executable ----------------------------------------------------------
 
 def test_every_kind_the_planner_may_schedule_has_something_that_runs_it() -> None:
-    schedulable = set(KINDS) - {"daily_review", "report", "reconcile_item", "escalate"}
+    schedulable = set(KINDS) - {"daily_review", "reconcile_item", "escalate"}
     assert schedulable <= set(STAGES), f"unrunnable kinds: {schedulable - set(STAGES)}"
 
 

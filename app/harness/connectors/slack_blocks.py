@@ -115,6 +115,28 @@ def plan_summary_blocks(tasks: list[dict[str, Any]], trimmed: list[str]) -> list
     return _truncate(blocks)
 
 
+def report_blocks(report: dict[str, Any], sprint: dict[str, Any]) -> list[dict[str, Any]]:
+    """The sprint report as the team sees it: a headline, then one block per section with every
+    claim carrying the references that were checked before it was allowed to be said."""
+    window = f" ({sprint.get('start', '')} → {sprint.get('end', '')})" if sprint.get("start") else ""
+    heading = f"*{sprint.get('name') or 'This sprint'}*{window}"
+    blocks: list[dict[str, Any]] = [_section(f"{heading}\n{report.get('headline') or ''}")]
+
+    for section in report.get("sections") or []:
+        claims = section.get("claims") or []
+        if not claims:
+            continue
+        title = str(section.get("name") or "").replace("_", " ").capitalize()
+        lines = [
+            f"• {c.get('text', '')} _({' · '.join(c.get('refs') or [])})_" for c in claims
+        ]
+        blocks.append(_section(f"*{title}*\n" + "\n".join(lines)))
+
+    if len(blocks) == 1:
+        blocks.append(_context("_Nothing this sprint could be cited; see the console._"))
+    return _truncate(blocks, keep_last=0)
+
+
 def wrong_modal(post_ref: str) -> dict[str, Any]:
     """The correction form. Its callback_id carries the post it is about."""
     return {

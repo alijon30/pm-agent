@@ -31,3 +31,11 @@ class Planner(Protocol):
         """payload: {"context", "open_tasks", "recent_results", "policy", "now", "feedback"}.
         Returns a dict shaped like agents.base.schemas.Plan."""
         ...
+
+
+class Reporter(Protocol):
+    async def run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """payload: {"sprint", "created_issues", "checks", "decisions", "open_conflicts",
+        "actions_summary", "today", "feedback"}.
+        Returns a dict shaped like agents.base.schemas.Report."""
+        ...

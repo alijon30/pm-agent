@@ -117,3 +117,36 @@ class Plan(BaseModel):
         default_factory=list, description="Keys or task ids made obsolete by this plan."
     )
     notes: str = Field(default="", description="What you observed, in one or two sentences.")
+
+
+# --- report -----------------------------------------------------------------------------------
+
+
+class Claim(BaseModel):
+    text: str = Field(description="One sentence a team lead can read and act on.")
+    refs: list[str] = Field(
+        description="Typed references that prove this claim, at least one: linear:INV-26 · "
+                    "fathom:<meeting>@<mm:ss> · decision:<id> · code:<path>:<line>. Every one "
+                    "must appear in the JSON you were given — never construct an identifier."
+    )
+
+
+class ReportSection(BaseModel):
+    name: Literal[
+        "shipped", "moved", "blocked", "at_risk", "conflicts", "open_questions", "decisions"
+    ] = Field(description="Which part of the report these claims belong to.")
+    claims: list[Claim] = Field(
+        description="The claims in this section. Omit the whole section rather than emit it "
+                    "empty."
+    )
+
+
+class Report(BaseModel):
+    headline: str = Field(
+        description="One sentence a team lead could forward to the team without editing it."
+    )
+    sections: list[ReportSection] = Field(
+        default_factory=list,
+        description="Sections in this order: shipped, moved, blocked, at_risk, conflicts, "
+                    "open_questions, decisions. Skip any that has nothing to say.",
+    )

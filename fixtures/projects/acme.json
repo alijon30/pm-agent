@@ -7,6 +7,11 @@
   "slack_channel_id": "C0BSVCR8HPH",
   "code_repo": "fixtures/acme-invoicing",
   "timezone": "America/Los_Angeles",
+  "sprint": {
+    "name": "Sprint 1",
+    "start": "2026-08-28",
+    "end": "2026-09-11"
+  },
   "policy": {
     "max_depth": 4,
     "max_children": 12,

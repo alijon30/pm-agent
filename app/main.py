@@ -20,6 +20,7 @@ from app.agents.base.tools import make_read_tools
 from app.agents.extractor import GeminiExtractor
 from app.agents.planner import GeminiPlanner
 from app.agents.reconciler import GeminiReconciler
+from app.agents.reporter import GeminiReporter
 from app.agents.triage import PassthroughTriage
 from app.config import Settings
 from app.harness.connectors.code import CodeSearch
@@ -76,6 +77,7 @@ async def finish_wiring(deps: Deps) -> None:
     )
     deps.reconciler = GeminiReconciler(deps.settings.model_strong, tools)
     deps.planner = GeminiPlanner(deps.settings.model_strong, tools)
+    deps.reporter = GeminiReporter(deps.settings.model_strong, tools)
     log.info("wired for project %r: %d roster member(s), %d tool(s)",
              project.get("slug"), len(roster), len(tools))
 

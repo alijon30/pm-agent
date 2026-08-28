@@ -18,7 +18,13 @@ async def main() -> None:
     project["roster"] = json.loads((ROOT / "roster.json").read_text())
     db = FirestoreDb(settings.gcp_project, settings.firestore_database)
     await ProjectStore(db, settings.default_project_slug).upsert(project["slug"], project)
+    sprint = project.get("sprint") or {}
+    window = (
+        f"{sprint.get('name')} ({sprint.get('start')} → {sprint.get('end')})"
+        if sprint else "no sprint set — reports will cover the last 14 days"
+    )
     print(f"seeded projects/{project['slug']} with {len(project['roster'])} roster members")
+    print(f"  sprint: {window}")
 
 
 if __name__ == "__main__":

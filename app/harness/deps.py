@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.agents.base.protocols import Extractor, Planner, Reconciler, Triage
+from app.agents.base.protocols import Extractor, Planner, Reconciler, Reporter, Triage
 from app.config import Settings
 from app.harness.core.clock import Clock
 from app.harness.store.actions import ActionStore
@@ -35,6 +35,7 @@ class Deps:
     ids: IdGate | None = None
     reconciler: Reconciler | None = None
     planner: Planner | None = None
+    reporter: Reporter | None = None
     linear: Any = None
     notion: Any = None
     code: Any = None
