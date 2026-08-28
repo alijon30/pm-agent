@@ -2,7 +2,7 @@
 # Create (or update) the one-minute tick. Reads the token from Secret Manager at creation time
 # only; it is stored inside the Scheduler job, which is IAM-protected.
 set -euo pipefail
-PROJECT="${PM_GCP_PROJECT:-pm-agent-hack-2026}"
+PROJECT="${PM_GCP_PROJECT:-pm-agent-hackathon-26}"
 REGION="${PM_REGION:-us-central1}"
 URL="$(gcloud run services describe pm-agent --project "$PROJECT" --region "$REGION" --format='value(status.url)')"
 TOKEN="$(gcloud secrets versions access latest --secret pm-tick-token --project "$PROJECT")"
