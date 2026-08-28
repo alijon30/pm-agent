@@ -107,8 +107,8 @@ def _issues_of(tasks: list[Doc]) -> list[str]:
 def _plan_line(task: Doc, children: list[Doc]) -> tuple[str, str]:
     dates = sorted({str(c.get("due_at") or "")[:10] for c in children if c.get("due_at")})
     about = ", ".join(_issues_of(children)) or "this project"
-    when = f" ({', '.join(dates)})" if dates else ""
-    return "planned", f"planned {len(children)} follow-up(s) for {about}{when}"
+    when = f" ({', '.join(human_date(d) for d in dates)})" if dates else ""
+    return "planned", f"planned {count_of(len(children), 'follow-up')} for {about}{when}"
 
 
 def _check_line(task: Doc, result: dict[str, Any]) -> tuple[str, str]:
@@ -116,9 +116,10 @@ def _check_line(task: Doc, result: dict[str, Any]) -> tuple[str, str]:
     identifier = str(observed.get("issue") or (task.get("params") or {}).get("issue") or "an issue")
     state = str(observed.get("state") or "")
     if result.get("early"):
+        due = human_date(str(task.get("due_at") or ""))
         return "early", (
-            f"{identifier} moved ahead of schedule — the {task['kind']} check due "
-            f"{str(task.get('due_at') or '')[:10]} resolved early"
+            f"{identifier} moved ahead of schedule — a check due {due or 'later'} "
+            f"resolved itself early"
         )
     if result.get("met"):
         seen = f" — {state}" if state else ""
@@ -264,7 +265,9 @@ def _task_entries(task: Doc, children: list[Doc]) -> list[dict[str, Any]]:
 def _slack_line(action: Doc) -> tuple[str, str]:
     inputs: dict[str, Any] = action.get("inputs") or {}
     if inputs.get("tasks"):
-        return "posted", f"told the channel about {inputs['tasks']} planned follow-up(s)"
+        return "posted", (
+            f"told the channel about {count_of(int(inputs['tasks']), 'planned follow-up')}"
+        )
     if inputs.get("template"):
         return "nudged", f"messaged the channel — {inputs['template']}"
     if inputs.get("sprint"):

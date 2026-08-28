@@ -62,7 +62,7 @@ def test_a_plan_reads_as_what_will_be_watched_and_when() -> None:
     entries = journal_entries([plan, *children], [])
 
     assert entries[0]["category"] == "planned"
-    assert entries[0]["text"] == "planned 2 follow-up(s) for INV-143 (2026-09-03, 2026-09-04)"
+    assert entries[0]["text"] == "planned 2 follow-ups for INV-143 (Sep 3, Sep 4)"
 
 
 def test_a_check_that_reality_beat_reads_as_good_news() -> None:
@@ -73,7 +73,7 @@ def test_a_check_that_reality_beat_reads_as_good_news() -> None:
 
     assert entries[0]["category"] == "early"
     assert "INV-143 moved ahead of schedule" in entries[0]["text"]
-    assert "due 2026-09-07" in entries[0]["text"]
+    assert "due Sep 7" in entries[0]["text"]
 
 
 def test_staying_quiet_is_recorded_as_a_decision_not_as_silence() -> None:
