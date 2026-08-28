@@ -13,6 +13,7 @@ declare -a OPTIONAL=(
   "PM_SLACK_BOT_TOKEN=pm-slack-bot-token"
   "PM_SLACK_SIGNING_SECRET=pm-slack-signing-secret"
   "PM_LINEAR_API_KEY=pm-linear-api-key"
+  "PM_LINEAR_WEBHOOK_SECRET=pm-linear-webhook-secret"
   "PM_NOTION_TOKEN=pm-notion-token"
   "PM_GITHUB_TOKEN=pm-github-token"
 )
