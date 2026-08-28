@@ -24,7 +24,9 @@ for pair in "${OPTIONAL[@]}"; do
   fi
 done
 
-ENV_VARS="PM_GCP_PROJECT=$PROJECT,PM_DEFAULT_PROJECT_SLUG=acme,GOOGLE_GENAI_USE_VERTEXAI=FALSE"
+# flash-lite for the strong tier too: the free tier allows 15 req/min against it and only 5
+# against flash, and a reconcile or report run is several calls. Quality is live-verified.
+ENV_VARS="PM_GCP_PROJECT=$PROJECT,PM_DEFAULT_PROJECT_SLUG=acme,GOOGLE_GENAI_USE_VERTEXAI=FALSE,PM_MODEL_STRONG=gemini-3.5-flash-lite"
 if [ -n "${PM_GITHUB_REPO:-}" ]; then
   ENV_VARS="$ENV_VARS,PM_GITHUB_REPO=$PM_GITHUB_REPO"
 fi
