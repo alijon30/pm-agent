@@ -341,7 +341,13 @@ def due_only_when_stated(row: dict[str, Any], run: dict[str, Any]) -> Score:
 
 
 def issue_cites_the_call(row: dict[str, Any], run: dict[str, Any]) -> Score:
-    """Every filed issue can be audited from Linear alone, without opening this system."""
+    """Every filed issue can be audited from Linear alone, without opening this system.
+
+    Two things have to be in the body, and they are not the same thing: the words somebody said,
+    and a typed reference back to the moment they said them. The quote is what a reader
+    understands; the reference is what the identifier gate re-checks. Since the reconcile stage
+    gained a deterministic self-citation this holds whether or not the model bothered — which is
+    the point, and why this asks for both rather than settling for either."""
     filed = {str((a.get("target_ids") or {}).get("identifier")) for a in _created(run)}
     bodies = {
         str(i.get("identifier")): str(i.get("description") or "")
@@ -349,10 +355,13 @@ def issue_cites_the_call(row: dict[str, Any], run: dict[str, Any]) -> Score:
     }
     if not filed:
         return _no("nothing was filed")
-    missing = [i for i in sorted(filed) if "From the call" not in bodies.get(i, "")]
-    return _ok(f"{len(filed)} issue(s) quote the call") if not missing else _no(
-        f"no call reference in: {missing}"
-    )
+    unquoted = [i for i in sorted(filed) if "From the call" not in bodies.get(i, "")]
+    uncited = [i for i in sorted(filed) if "fathom:" not in bodies.get(i, "")]
+    if unquoted:
+        return _no(f"no words from the call in: {unquoted}")
+    if uncited:
+        return _no(f"nothing pointing back at the call in: {uncited}")
+    return _ok(f"{len(filed)} issue(s) carry both the words and the moment")
 
 
 def conflict_not_resolved(row: dict[str, Any], run: dict[str, Any]) -> Score:

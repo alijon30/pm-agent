@@ -1,10 +1,21 @@
 """The rules in a prompt that a gate downstream depends on.
 
 Most prompt wording is taste and does not belong in a test. These lines are different: each one
-is the only thing standing between a gate and an item that will fail it. A live run against the
-second fixture call produced `citations: []` on every item and `priority: null` despite a spoken
-"this is a blocker", and both were prompt failures rather than gate failures — the gates worked
-exactly as designed on input that never carried what they check for."""
+carries something a gate will later check for, and a live run proved what happens when they do
+not land — `citations: []` on every item and `priority: null` despite a spoken "this is a
+blocker". Neither was a gate failure; the gates worked exactly as designed on input that never
+carried what they check for.
+
+The two rules are no longer equal, and it is worth being precise about which is load-bearing:
+
+- **Priority** still rests on the prompt alone. Only the model can decide that a sentence about
+  duplicate emails is an emergency, so if the wording stops working, the band clamps and the
+  urgency is lost. These tests are the guard.
+- **Citations** no longer do. `reconcile.with_call_citation` computes the call's own reference
+  from the evidence the extractor already verified, so an item is cited whether or not the model
+  cooperates. The rule stays because a better model should still cite what it actually opened —
+  a `linear:` or `code:` reference is something no backstop can derive — but these tests now
+  guard the quality of citations, not their existence."""
 
 from app.agents.extractor import EXTRACTOR_INSTRUCTION
 from app.agents.reconciler import RECONCILER_INSTRUCTION
