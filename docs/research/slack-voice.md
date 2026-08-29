@@ -23,6 +23,30 @@ the observed patterns below come from Anthropic's published decision logic and p
   messages, it opens a thread pulling both in — it surfaces the connection, not the log entry.
 - **Design target: a colleague who produces work in public view.** Not a tool.
 
+## What Viktor does (viktor.com — "Not a tool. A hire.")
+
+No verbatim Viktor-authored message is public either; this is reviewer-reported behaviour
+across ~12 sources (lindy.ai, eesel.ai, efficient.app, aitoolblaze.com, chiefmarketingdad.com,
+Product Hunt, G2, Fortune).
+
+- **It closes the loop with an artifact**, not an answer — a dashboard, a digest, a PR.
+- **Confirm → dry-run → go live.** Asked for a recurring Monday digest, it "confirms the
+  schedule, runs a test, posts the result." Nothing recurring starts silently.
+- **It volunteers assumptions and caveats unprompted** — "tells me its assumptions and caveats
+  without me asking" — and is specific about failure: "14 of 17 tasks without intervention; the
+  three failures involved custom API authentication."
+- **Corrections stick silently.** "Terminology I've corrected once months ago" stays corrected.
+- **It checks in.** "Checks in on me at 5pm every day to make sure I actually did what I said."
+- **Its one documented tone failure is verbosity**: "a five-paragraph answer when a sentence
+  would do" — exactly the discipline Claude tag was built to enforce.
+
+**Claude tag's edge** is restraint as a designed feature: default silence, dormancy, a plain-
+language dial for frequency, and task-scoped labels instead of running commentary. **Viktor's
+edge** is closing loops with artifacts, confirming and dry-running before automating, and
+stating its own uncertainty first. pm-agent takes both: it already produces artifacts (tickets,
+plans, reports) and already commits before it watches; what it must add is Viktor's habit of
+naming its assumptions in one clause, and it must never inherit Viktor's length.
+
 ## Slack's own rules for bots
 
 Nearly every word should facilitate an interaction — cut the rest. Personality is small
@@ -61,12 +85,17 @@ voice; a header on a two-line message; hedging in paragraphs; emoji as punctuati
    belong to; the channel gets only what someone must see without opening anything.
 6. **Bad news leads.** What slipped and why in the first line, then what I am doing about it.
    No cheerful framing, no apology padding, no chasing.
-7. **Uncertainty in one clause.** "not sure yet — checking with Priya" beats three hedges.
-8. **Cite inline.** The ticket or the call moment sits in the sentence, not in a trailing tag.
-9. **No decorative emoji.** One reaction as acknowledgement is the whole allowance.
-10. **Length ceilings.** Nudge 1–2 lines · blocker ping 2–3 lines · call summary 4–6 lines ·
-    standup 3–5 one-line bullets, no preamble · plan announcement under 150 words, one owner
-    and date per line · sprint report under 200 words · early-resolution note one line.
+7. **Assumptions and uncertainty in one clause, unprompted.** "assuming Friday's cutoff still
+   holds" / "not sure yet — checking with Priya" — Viktor's habit, at Claude tag's length.
+8. **Confirm before anything recurring, and make the first run visible.** A commitment is
+   stated back before it is kept; the first check reports in the thread before the rest go
+   quiet. Nothing standing starts silently.
+9. **Cite inline; no decorative emoji.** The ticket or the call moment sits in the sentence,
+   not in a trailing tag. One reaction as acknowledgement is the whole emoji allowance.
+10. **Length ceilings — never Viktor's five paragraphs for a sentence.** Nudge 1–2 lines ·
+    blocker ping 2–3 lines · call summary 4–6 lines · standup 3–5 one-line bullets, no
+    preamble · plan announcement under 150 words, one owner and date per line · sprint report
+    under 200 words · early-resolution note one line.
 
 The test of every message: would a sharp, warm senior PM have typed this by hand? If it reads
 like a log line, it is one.
