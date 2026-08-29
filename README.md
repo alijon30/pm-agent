@@ -88,6 +88,8 @@ flowchart LR
     W --> J[decision journal<br/>+ knowledge graph]
 ```
 
+(The same diagram as an image, for viewers without Mermaid: `docs/media/architecture.png`.)
+
 **Queue as orchestrator.** There is no workflow engine: the Firestore task graph *is* the
 orchestrator. Tasks carry `due_at`, leases, `depends_on`, and failure policy; a one-minute tick
 drains everything due and promotes whatever became unblocked. Plans materialise atomically —
@@ -104,6 +106,20 @@ classification where the failure posture matters more than brilliance: triage fa
 
 **Google Cloud.** Cloud Run (the service), Firestore (tasks, events, actions, decisions,
 lessons, wiki), Cloud Scheduler (tick + daily review), Secret Manager (every credential).
+
+## How it talks
+
+Everything the agent says in Slack goes through one voice layer (`app/harness/core/voice.py`)
+that turns the four things a colleague talks about — a person by first name, a ticket by what it
+is, a day rather than a date, and what happens next — into words. So a nudge reads
+*"Nodir — INV-27 (the duplicate reminders bug) hasn't started, and it was meant to be underway
+today. Anything in the way?"* rather than a log line. Assumptions are stated inline, once
+(*"due Monday — from 'by Monday' on the call"*); the first check of anything someone asked for
+reports back before the rest go quiet; and tone is enforced like a gate — tests fail if any
+message contains a task kind, an "(s)" plural, "the assignee", or a bare URL, and each message
+type has a length ceiling. The charter, and the research behind it (Claude in Slack, Viktor,
+Slack's own guidance), is in `docs/research/slack-voice.md`; every message the agent can send
+renders with `uv run python scripts/preview_slack.py`.
 
 ## Guarantees, measured
 
