@@ -119,8 +119,8 @@ async def test_a_requester_is_told_once_when_their_work_is_abandoned(deps: Deps)
     assert len(deps.slack.posts) == 1
     told = deps.slack.posts[0]
     assert told["channel"] == "C-random" and told["thread_ts"] == "1787821201.000100"
-    assert told["text"].startswith("<@U-maya>, I'm blocked on ")
-    assert "I'll leave this with you." in told["text"]
+    assert told["text"].startswith("<@U-maya> — I can't ")
+    assert "I'll leave it with you." in told["text"]
     assert "ghp_SECRET" not in told["text"] and "[redacted]" in told["text"]
     assert (await deps.db.get("tasks", tid) or {})["status"] == "failed"
 

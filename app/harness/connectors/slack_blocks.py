@@ -11,16 +11,29 @@ than losing the whole post."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from app.harness.core.clock import human_date, human_due, readable
+from app.harness.core.clock import human_date, human_due, readable, when_phrase
 from app.harness.core.refs import ref_chip, ref_chips
+from app.harness.core.voice import (
+    consequence_phrase,
+    first_name,
+    issue_phrase,
+    noun_phrase,
+    sentence_list,
+    spelled,
+)
 from app.harness.core.words import count_of
-from app.harness.kinds.phrasing import UNMET_CONSEQUENCES, human_check
+from app.harness.kinds.phrasing import human_check, human_finding, human_working
 
 MAX_BLOCKS = 50
 REVERT_ACTION = "revert"
 WRONG_ACTION = "wrong"
+
+# Charter rule 10: three to five one-line bullets. A standup that grows with the backlog stops
+# being read, so the ceiling is enforced here rather than hoped for.
+STANDUP_BULLETS = 5
 
 SECTION_TITLES = {
     "shipped": "Shipped",
@@ -78,6 +91,7 @@ def call_summary_blocks(
     actions: list[dict[str, Any]],
     *,
     post_ref: str = "",
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """One message per call: what was filed, what was skipped, what disagrees, and a revert
     button per action performed.
@@ -88,36 +102,43 @@ def call_summary_blocks(
     url = meeting.get("url") or ""
     heading = f"*<{url}|{title}>*" if url else f"*{title}*"
     blocks: list[dict[str, Any]] = [
-        _section(f"{heading} — {what_happened(created, updated, skipped, conflicts)}")
+        _section(f"{heading} — {what_happened(created, updated, skipped, conflicts)}.")
     ]
 
     for item in created:
-        line = f"• <{item.get('url', '')}|{item.get('identifier', '?')}> {item.get('title', '')}"
-        if item.get("owner"):
-            line += f" — {item['owner']}"
+        line = "• " + issue_phrase(
+            str(item.get("identifier") or "?"), str(item.get("title") or ""),
+            str(item.get("url") or ""),
+        )
+        owner = first_name(str(item.get("owner") or ""))
+        if owner:
+            line += f" — {owner}"
+        line += _from_the_call(item, now)
         blocks.append(_section(line))
         if item.get("note"):
             blocks.append(_context(item["note"]))
 
     for item in updated:
-        blocks.append(
-            _section(f"• <{item.get('url', '')}|{item.get('identifier', '?')}> "
-                     f"{item.get('note') or 'raised again in this call'}")
-        )
+        blocks.append(_section(
+            "• " + issue_phrase(str(item.get("identifier") or "?"), "", str(item.get("url") or ""))
+            + f" — {item.get('note') or 'raised again on the call'}"
+        ))
 
     for item in skipped:
-        blocks.append(
-            _context(f"Left alone: {item.get('title', '?')} — {item.get('reason', '')}")
-        )
+        blocks.append(_context(
+            f"Left out on purpose: {noun_phrase(str(item.get('title') or '?'))} "
+            f"({item.get('reason', '')})"
+        ))
 
     for conflict in conflicts:
         sides = "\n".join(
-            f"    · {s.get('claim', '')}  _{ref_chip(str(s.get('source', '')))}_"
+            f"    • {s.get('claim', '')} — {ref_chip(str(s.get('source', '')))}"
             for s in conflict.get("sides", [])
         )
-        blocks.append(
-            _section(f"⚠️ *Sources disagree* on {conflict.get('about', '')}\n{sides}")
-        )
+        blocks.append(_section(
+            f"⚠️ *Two answers on {conflict.get('about', 'this')}, and I can't pick one.*"
+            f"\n{sides}"
+        ))
 
     elements = [revert_button(a["id"], f"Revert {a.get('label', 'action')}") for a in actions]
     if post_ref:
@@ -127,64 +148,105 @@ def call_summary_blocks(
     return _truncate(blocks)
 
 
+def _from_the_call(item: dict[str, Any], now: datetime | None) -> str:
+    """A date the agent resolved is a small inference, so it says where it came from in the same
+    breath rather than leaving a reader to trust it. One clause, never a footnote."""
+    due, spoken = str(item.get("due") or ""), str(item.get("due_hint") or "")
+    if not due:
+        return ""
+    when = when_phrase(due, now) if now else human_date(due)
+    return f", due {when}" + (f' (from "{spoken}" on the call)' if spoken else "")
+
+
 def what_happened(
     created: list[dict[str, Any]],
     updated: list[dict[str, Any]],
     skipped: list[dict[str, Any]],
     conflicts: list[dict[str, Any]],
 ) -> str:
-    """The headline of a call summary, and the notification line above it: only the parts
-    that are not zero. Both say the same thing, so the preview never reads differently from the
-    message it previews."""
+    """What came out of a call, as a sentence somebody would say.
+
+    "filed 2 tickets · updated 1 · 1 conflict · 1 skipped" is a receipt. A colleague says "two
+    new tickets, one update to INV-26, and one thing I need a human on" — same facts, and the
+    reader learns what is being asked of them."""
     parts: list[str] = []
     if created:
-        parts.append(f"filed {count_of(len(created), 'ticket')}")
+        parts.append(f"{spelled(len(created))} new {'ticket' if len(created) == 1 else 'tickets'}")
     if updated:
-        parts.append(f"updated {len(updated)}")
+        named = ", ".join(str(u.get("identifier") or "") for u in updated if u.get("identifier"))
+        parts.append(f"one update to {named}" if len(updated) == 1 and named
+                     else f"{spelled(len(updated))} updates")
     if conflicts:
-        parts.append(count_of(len(conflicts), "conflict"))
-    if skipped:
-        parts.append(f"{len(skipped)} skipped")
-    return " · ".join(parts) or "nothing needed filing"
+        parts.append(f"{spelled(len(conflicts))} thing{'' if len(conflicts) == 1 else 's'} "
+                     "I need a human on")
+    if skipped and not parts:
+        parts.append(f"{spelled(len(skipped))} thing{'' if len(skipped) == 1 else 's'} left out")
+    # A clause, not a sentence: it is read after "Sprint 1 kickoff sync — ", where a capital
+    # letter mid-line is the tell that a machine assembled it.
+    return sentence_list(parts) or "nothing needed filing"
 
 
-def _promises(tasks: list[dict[str, Any]]) -> str:
-    """One line per scheduled check: when, what, and what happens if the answer is no."""
+def _promises(
+    tasks: list[dict[str, Any]], owners: dict[str, str] | None = None, now: datetime | None = None
+) -> str:
+    """One line per scheduled check: when, what, and who I'll go to if the answer is no.
+
+    "if not, I'll nudge the assignee" describes this system to itself. "if not, I'll check in
+    with Nodir" is a promise a person can hold me to."""
     lines: list[str] = []
     for task in tasks:
-        when = human_due(str(task.get("due_at") or ""))
-        consequence = UNMET_CONSEQUENCES.get(str(task.get("on_unmet") or "none"))
+        issue = str((task.get("params") or {}).get("issue") or "")
+        when = (when_phrase(str(task.get("due_at") or ""), now) if now
+                else human_due(str(task.get("due_at") or "")))
+        consequence = consequence_phrase(
+            str(task.get("on_unmet") or "none"), owner=(owners or {}).get(issue, "")
+        )
         lines.append(
-            f"• {f'{when} — ' if when else ''}{human_check(task)}"
+            f"• {f'{when[0].upper()}{when[1:]} — ' if when else ''}{human_check(task)}"
             f"{f' _({consequence})_' if consequence else ''}"
         )
     return "\n".join(lines)
 
 
-def commitment_blocks(tasks: list[dict[str, Any]], notes: str) -> list[dict[str, Any]]:
-    """The reply to a teammate who asked for something: the same promises as a plan
-    announcement, but addressed to one person in their own thread — or, when there is nothing
-    the agent can do, the sentence saying so instead of a shrug."""
+def commitment_blocks(
+    tasks: list[dict[str, Any]], notes: str, owners: dict[str, str] | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """The reply to a teammate who asked for something: what I'll watch and when, addressed to
+    them. When there is nothing I can do, the sentence saying so instead of a shrug."""
     if not tasks:
         return [_section(notes or "I couldn't turn that into anything I know how to watch.")]
-    blocks = [_section("*🤝 Committed:*\n" + _promises(tasks))]
+    issues = list(dict.fromkeys(
+        str((t.get("params") or {}).get("issue") or "") for t in tasks
+    ))
+    named = [i for i in issues if i]
+    opening = (f"Got it — I'll watch {named[0]} for you:" if len(named) == 1
+               else "Got it — here's what I'll keep an eye on:")
+    blocks = [_section(f"{opening}\n" + _promises(tasks, owners, now))]
     if notes:
         blocks.append(_context(notes))
     return _truncate(blocks)
 
 
-def plan_summary_blocks(tasks: list[dict[str, Any]], trimmed: list[str]) -> list[dict[str, Any]]:
+def plan_summary_blocks(
+    tasks: list[dict[str, Any]], trimmed: list[str], owners: dict[str, str] | None = None,
+    now: datetime | None = None, defaulted: bool = False,
+) -> list[dict[str, Any]]:
     """The agent saying what it will check, and when — the visible half of the planner.
 
-    Each line is a promise with a date and a consequence, because "check_pr_exists on
+    Each line is a promise with a date and a named person, because "check_pr_exists on
     2026-09-04" tells a reader nothing they can act on."""
     if not tasks:
         return [_section("_Nothing needs watching right now._")]
-    blocks = [_section("*I'll follow up on this:*\n" + _promises(tasks))]
+    blocks = [_section("Here's how I'll follow through:\n" + _promises(tasks, owners, now))]
+    if defaulted:
+        # Said once, not per line: the assumption is about all of them, and a clause repeated
+        # three times stops being an assumption and becomes noise.
+        blocks.append(_context("I picked these dates myself — nobody named one on the call."))
     if trimmed:
         blocks.append(_context(
-            f"_I dropped {count_of(len(trimmed), 'idea')} I could not verify: "
-            f"{'; '.join(trimmed)}_"
+            f"I left out {count_of(len(trimmed), 'idea')} I couldn't verify: "
+            f"{'; '.join(trimmed)}"
         ))
     return _truncate(blocks)
 
@@ -225,18 +287,26 @@ def sprint_day(sprint: dict[str, Any], today: str) -> str:
     return f"day {day} of {name}" if day >= 1 else f"{name} starts {human_date(start)}"
 
 
-def _since_yesterday(since: dict[str, int]) -> str:
-    """Only what actually happened. A standup that reports three zeroes has said nothing."""
+def _since_yesterday(since: dict[str, Any]) -> str:
+    """What changed overnight, named. "1 check came back clear · 2 issues moved" is a scoreboard;
+    "Priya got INV-26 moving; INV-25 moved too" tells you who did what."""
+    movers: list[str] = []
+    for mover in since.get("movers") or []:
+        who, issue = first_name(str(mover.get("who") or "")), str(mover.get("issue") or "")
+        if not issue:
+            continue
+        movers.append(f"{who} got {issue} moving" if who else f"{issue} moved")
+    if movers:
+        return sentence_list(movers[:3]) + "."
     parts: list[str] = []
     if since.get("met"):
-        parts.append(f"{count_of(since['met'], 'check')} came back clear")
+        parts.append(f"{count_of(int(since['met']), 'check')} came back clear")
     if since.get("early"):
         parts.append(f"{since['early']} landed early")
-    if since.get("moved"):
-        parts.append(f"{count_of(since['moved'], 'issue')} moved")
     if since.get("nudged"):
-        parts.append(f"{count_of(since['nudged'], 'nudge')} sent")
-    return " · ".join(parts)
+        parts.append(f"I chased {count_of(int(since['nudged']), 'thing')}")
+    sentence = sentence_list(parts)
+    return f"{sentence[0].upper()}{sentence[1:]}." if sentence else ""
 
 
 def standup_blocks(
@@ -244,44 +314,85 @@ def standup_blocks(
     sprint: dict[str, Any],
     today: str,
     watching: list[dict[str, Any]],
-    since: dict[str, int],
+    since: dict[str, Any],
     unmet: list[dict[str, Any]],
     overdue: list[dict[str, Any]],
     lesson: str = "",
     next_due: str = "",
+    owners: dict[str, str] | None = None,
+    titles: dict[str, str] | None = None,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """The message the agent sends before anybody asks it anything.
 
-    A standup earns its place by being short and by being about today. So: what is due in the
-    next two days, what changed since yesterday, what is slipping — and nothing else. A quiet
-    day says so in two lines rather than padding itself out to look busy."""
+    Three to five one-line bullets under one greeting, and no headings — a heading over two
+    bullets is a form, not a note from a colleague. A quiet day says so in two lines rather than
+    padding itself out to look busy."""
     day = sprint_day(sprint, today)
     greeting = f"Morning — {day}." if day else "Morning."
     happened = _since_yesterday(since)
+    at_risk = _at_risk_lines(unmet, overdue, owners or {}, now, titles or {})
 
-    if not watching and not happened and not unmet and not overdue:
-        when = f" before {human_due(next_due)}" if next_due else ""
+    if not watching and not happened and not at_risk:
+        when = f" before {when_phrase(next_due, now)}" if next_due and now else ""
         return [_section(f"*{greeting}*\nQuiet day ahead — nothing due{when}.")]
 
-    blocks = [_section(f"*{greeting}*")]
-    if watching:
-        lines = "\n".join(
-            f"• {human_due(str(t.get('due_at') or ''))} — {human_check(t)}" for t in watching
+    # What is slipping is never trimmed; a day with four things at risk should not spend its
+    # lines on what is merely scheduled.
+    room = max(0, STANDUP_BULLETS - len(at_risk) - (1 if happened else 0))
+    lines: list[str] = []
+    for task in watching[:room]:
+        issue = str((task.get("params") or {}).get("issue") or "")
+        when = when_phrase(str(task.get("due_at") or ""), now) if now else ""
+        owner = (owners or {}).get(issue, "")
+        lines.append(
+            f"• {when.capitalize() + ': ' if when else ''}"
+            f"{_about(human_working(task), issue, (titles or {}).get(issue, ''))}"
+            f"{f' — {owner}' if owner else ''}"
         )
-        blocks.append(_section(f"*Today I'm watching:*\n{lines}"))
     if happened:
-        blocks.append(_section(f"*Since yesterday:* {happened}"))
-    if unmet or overdue:
-        risks = [f"• {human_check(t)} — nothing yet" for t in unmet]
-        risks += [
-            f"• {i.get('issue', 'an issue')} was due {human_date(str(i.get('due') or ''))} "
-            f"and is still {i.get('state', 'open')}"
-            for i in overdue
-        ]
-        blocks.append(_section("*At risk:*\n" + "\n".join(risks)))
+        lines.append(f"• Since yesterday: {happened}")
+    lines.extend(at_risk)
+
+    blocks = [_section(f"*{greeting}*\n" + "\n".join(lines))]
     if lesson:
         blocks.append(_context(f"One thing I learned: {lesson}"))
     return _truncate(blocks, keep_last=0)
+
+
+def _about(sentence: str, issue: str, title: str) -> str:
+    """Put what a ticket is next to its key, once, inside a sentence that already names it.
+    "checking whether INV-27 has started" becomes "checking whether INV-27 (the duplicate
+    reminders bug) has started" — the reader stops having to remember what INV-27 was."""
+    phrase = issue_phrase(issue, title)
+    return sentence.replace(issue, phrase, 1) if issue and phrase != issue else sentence
+
+
+def _at_risk_lines(
+    unmet: list[dict[str, Any]], overdue: list[dict[str, Any]], owners: dict[str, str],
+    now: datetime | None, titles: dict[str, str] | None = None,
+) -> list[str]:
+    """What is slipping, each as one line that leads with the ticket and ends in a question
+    somebody can answer."""
+    lines: list[str] = []
+    for check in unmet[:2]:
+        issue = str((check.get("params") or {}).get("issue") or "")
+        owner = owners.get(issue, "")
+        lines.append(
+            f"• {issue_phrase(issue, (titles or {}).get(issue, '')) or 'something I watch'} — "
+            f"{human_finding(check, check.get('observed') or {})}"
+            f"{f'. {owner}, any news?' if owner else '.'}"
+        )
+    for late in overdue[:2]:
+        identifier = str(late.get("issue") or "")
+        owner = owners.get(identifier, "")
+        due = str(late.get("due") or "")
+        when = when_phrase(due, now) if now else human_date(due)
+        lines.append(
+            f"• {identifier} was due {when} and is still in {late.get('state', 'open')}"
+            f"{f' — {owner}, is it still happening?' if owner else '.'}"
+        )
+    return lines
 
 
 def wrong_modal(post_ref: str) -> dict[str, Any]:

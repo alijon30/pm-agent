@@ -7,7 +7,7 @@ import asyncio
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
 from app.harness.deps import Deps
-from app.harness.kinds.phrasing import human_check
+from app.harness.kinds.phrasing import human_infinitive
 from app.harness.stages import (
     act,
     checks,
@@ -91,8 +91,8 @@ async def _tell_the_requester(task: Doc, reason: str, deps: Deps) -> None:
     try:
         ts = await deps.slack.post(
             channel,
-            f"<@{slack_id}>, I'm blocked on {human_check(task)} — {reason}. "
-            "I'll leave this with you.",
+            f"<@{slack_id}> — I can't {human_infinitive(task)}: {reason}. "
+            "I'll leave it with you.",
             thread_ts=str(context.get("request_ts") or "") or None,
         )
     except Exception:  # noqa: BLE001 — a failed task must not fail harder on the way out

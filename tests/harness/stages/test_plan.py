@@ -182,12 +182,13 @@ async def test_the_team_is_told_what_will_be_checked(deps: Deps) -> None:
     await run(task, deps)
 
     assert len(deps.slack.posts) == 1
-    assert deps.slack.posts[0]["text"] == "I'll follow up on 2 things"
+    assert deps.slack.posts[0]["text"] == "Here's how I'll follow through:"
     rendered = str(deps.slack.posts[0]["blocks"])
-    assert "I'll follow up on this:" in rendered
-    assert "Thu Sep 3 — check that INV-143 is underway" in rendered
-    assert "if not, I'll nudge the assignee" in rendered
+    assert "Here's how I'll follow through:" in rendered
+    assert "Sep 3 — check that INV-143 is underway" in rendered
+    assert "if not, I'll check in with Nodir" in rendered
     assert "check_issue_state" not in rendered and "2026-09-03" not in rendered
+    assert "(s)" not in rendered
 
 
 async def test_a_slack_outage_never_unschedules_the_work(deps: Deps) -> None:

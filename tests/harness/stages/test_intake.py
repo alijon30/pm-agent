@@ -127,9 +127,9 @@ async def test_the_commitment_is_posted_in_the_thread_that_asked_for_it(deps: De
     reply = deps.slack.posts[0]
     assert reply["channel"] == "C-random" and reply["thread_ts"] == "1787821201.000100"
     rendered = str(reply["blocks"])
-    assert "🤝 Committed:" in rendered
-    assert "Tue Sep 1 — check that INV-26 is underway _(if not, I'll ping you)_" in rendered
-    assert "Thu Sep 3 — look for a pull request on INV-26" in rendered
+    assert "Got it — I'll watch INV-26 for you:" in rendered
+    assert "Tuesday — check that INV-26 is underway _(if not, I'll let you know)_" in rendered
+    assert "look for a pull request on INV-26" in rendered
     assert "I'll watch INV-26 and tell you if it slips." in rendered
 
 
@@ -244,7 +244,7 @@ async def test_stopping_cancels_the_checks_that_person_asked_for(deps: Deps) -> 
 
     assert out.result["cancelled"] == [mine]
     assert (await deps.db.get("tasks", mine) or {})["status"] == "cancelled"
-    assert "Done — stopped 1 check on INV-26." in deps.slack.posts[0]["text"]
+    assert "Done — I've stopped watching INV-26." in deps.slack.posts[0]["text"]
     assert deps.slack.posts[0]["thread_ts"] == "1787821201.000100"
 
 
@@ -259,8 +259,7 @@ async def test_stopping_leaves_alone_what_somebody_else_asked_for(deps: Deps) ->
     assert out.result["cancelled"] == []
     assert (await deps.db.get("tasks", theirs) or {})["status"] == "queued"
     assert (await deps.db.get("tasks", unrequested) or {})["status"] == "queued"
-    assert "I don't have any checks running on INV-26 that you asked for." in (
-        deps.slack.posts[0]["text"])
+    assert "I'm not watching anything on INV-26 for you" in deps.slack.posts[0]["text"]
 
 
 async def test_stopping_takes_the_checks_that_were_waiting_on_it_too(deps: Deps) -> None:
@@ -272,7 +271,7 @@ async def test_stopping_takes_the_checks_that_were_waiting_on_it_too(deps: Deps)
     out = await run(task, deps)
 
     assert set(out.result["cancelled"]) == {first, dependent}
-    assert "stopped 2 checks on INV-26" in deps.slack.posts[0]["text"]
+    assert "Done — I've stopped watching INV-26." in deps.slack.posts[0]["text"]
 
 
 # --- failing closed ------------------------------------------------------------------------------

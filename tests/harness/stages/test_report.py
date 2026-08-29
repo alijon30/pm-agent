@@ -230,7 +230,7 @@ async def test_the_report_reaches_the_project_channel_as_one_recorded_action(
     rendered = str(post["blocks"])
     assert "Sprint 1" in rendered and "(Aug 20 → Sep 3)" in rendered
     assert "*Shipped*" in rendered and "*Decided*" in rendered
-    assert "_(INV-143)_" in rendered and "_(ledger)_" in rendered
+    assert "_(INV-143)_" in rendered and "_(decided on the call)_" in rendered
     assert "linear:INV-143" not in rendered and "decision:dec-1" not in rendered
 
     posted = await deps.db.query("actions", [("kind", "==", "slack.post")])

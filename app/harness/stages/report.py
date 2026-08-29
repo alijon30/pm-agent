@@ -211,7 +211,8 @@ async def _post(
         task_id=task["id"], project_id=task["project_id"], kind="slack.post",
         idempotency_key=key, inputs={"channel": channel, "sprint": sprint.get("name", "")},
     )
-    text = f"{sprint.get('name', 'Status')}: {report.get('headline', '')}"
+    # The notification is the report's own headline, said once — not a label plus a repeat.
+    text = str(report.get("headline") or f"{sprint.get('name', 'Status')} report")
     try:
         ts = await deps.slack.post(
             channel, text, report_blocks(report, sprint),

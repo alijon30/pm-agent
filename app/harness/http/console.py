@@ -140,22 +140,23 @@ def _done_line(task: Doc, children: list[Doc]) -> tuple[str, str]:
         dropped = len(result.get("dropped") or [])
         tail = f"; dropped {dropped} without a verbatim quote" if dropped else ""
         return "extracted", (
-            f"read '{title}' — {len(result.get('action_items') or [])} action item(s), "
-            f"{len(result.get('decision_ids') or [])} decision(s){tail}"
+            f"read '{title}' — {count_of(len(result.get('action_items') or []), 'action item')}"
+            f", {count_of(len(result.get('decision_ids') or []), 'decision')}{tail}"
         )
     if kind == "reconcile":
         held = len(result.get("unverified") or [])
         tail = f"; {held} held back as unverified" if held else ""
         return "reconciled", (
-            f"checked {len(result.get('items') or [])} item(s) against the tracker, the spec "
-            f"and the code{tail}"
+            f"checked {count_of(len(result.get('items') or []), 'item')} against the tracker, "
+            f"the spec and the code{tail}"
         )
     if kind == "act":
         return "filed", (
             f"filed {len(result.get('created') or [])}, "
             f"updated {len(result.get('updated') or [])}, "
             f"skipped {len(result.get('skipped') or [])} — "
-            f"{len(result.get('conflicts') or [])} conflict(s) reported, never resolved"
+            f"{count_of(len(result.get('conflicts') or []), 'conflict')} reported, "
+            "never resolved"
         )
     if kind == "plan":
         return _plan_line(task, children)
@@ -163,9 +164,9 @@ def _done_line(task: Doc, children: list[Doc]) -> tuple[str, str]:
         report = result.get("report") or {}
         removed = len(result.get("removed") or [])
         claims = sum(len(s.get("claims") or []) for s in report.get("sections") or [])
-        tail = f"; removed {removed} claim(s) it could not cite" if removed else ""
+        tail = (f"; removed {count_of(removed, 'claim')} it could not cite" if removed else "")
         return "reported", (
-            f"wrote the status report — {claims} cited claim(s): "
+            f"wrote the status report — {count_of(claims, 'cited claim')}: "
             f"\"{_short(str(report.get('headline') or ''), 70)}\"{tail}"
         )
     if kind == "intake":
@@ -188,8 +189,8 @@ def _done_line(task: Doc, children: list[Doc]) -> tuple[str, str]:
         learned = result.get("learned") or []
         tail = f"; learned {count_of(len(learned), 'thing')}" if learned else ""
         return "extracted", (
-            f"read yesterday — {result.get('checked', 0)} check(s) ran, "
-            f"{result.get('nudged', 0)} message(s) sent{tail}"
+            f"read yesterday — {count_of(int(result.get('checked', 0)), 'check')} ran, "
+            f"{count_of(int(result.get('nudged', 0)), 'message')} sent{tail}"
         )
     if kind.startswith("check_"):
         return _check_line(task, result)
@@ -941,7 +942,7 @@ def _graph_html(groups: list[dict[str, Any]]) -> str:
                 esc(_short(str(task.get("reason") or ""), 70)),
             ])
         blocks.append(
-            f"<p class='sub'>{esc(label)} · {len(group['tasks'])} task(s)</p>"
+            f"<p class='sub'>{esc(label)} · {count_of(len(group['tasks']), 'task')}</p>"
             + _table(["task", "status", "due", "why"], rows, "empty plan")
         )
     return "".join(blocks)

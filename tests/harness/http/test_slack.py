@@ -81,7 +81,7 @@ async def test_revert_undoes_the_write_and_records_who_did_it(
     response = client.post("/slack/interactions", content=body, headers=signed(body))
 
     assert response.status_code == 200
-    assert "reverted INV-143" in response.json()["text"]
+    assert response.json()["text"].startswith("Reverted INV-143.")
     assert deps.linear.writes[-1] == {"op": "update", "identifier": "INV-143",
                                       "fields": {"archived": True}}
     action = await deps.actions.get(action_id)
@@ -98,7 +98,7 @@ async def test_reverting_twice_says_so_and_does_not_write_again(
     writes = len(deps.linear.writes)
 
     again = client.post("/slack/interactions", content=body, headers=signed(body))
-    assert again.json()["text"] == "already reverted"
+    assert again.json()["text"] == "That was already reverted."
     assert len(deps.linear.writes) == writes
 
 
@@ -119,7 +119,7 @@ async def test_reverting_a_created_issue_cancels_the_follow_ups_that_watched_it(
 
     body = interaction(block_action(f"revert:{action_id}"))
     text = client.post("/slack/interactions", content=body, headers=signed(body)).json()["text"]
-    assert "cancelled 2 follow-up(s)" in text
+    assert "I've also stopped 2 checks that were watching it." in text
 
     assert (await deps.db.get("tasks", watching) or {})["status"] == "cancelled"
     assert (await deps.db.get("tasks", dependent) or {})["status"] == "cancelled"
@@ -163,7 +163,7 @@ async def test_reverting_something_that_never_happened_says_so(
     await wire(deps)
     body = interaction(block_action("revert:no-such-action"))
     text = client.post("/slack/interactions", content=body, headers=signed(body)).json()["text"]
-    assert "no longer on record" in text
+    assert text == "I don't have that action on record any more."
 
 
 async def test_a_tracker_outage_during_revert_reports_it_instead_of_lying(
@@ -179,7 +179,7 @@ async def test_a_tracker_outage_during_revert_reports_it_instead_of_lying(
     deps.linear.update_issue = down  # type: ignore[method-assign]
     body = interaction(block_action(f"revert:{action_id}"))
     text = client.post("/slack/interactions", content=body, headers=signed(body)).json()["text"]
-    assert "could not undo it" in text
+    assert text.startswith("I can't undo that right now:")
     action = await deps.actions.get(action_id)
     assert action is not None and action["status"] == "done"  # not falsely marked reverted
 

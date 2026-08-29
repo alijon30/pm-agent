@@ -88,7 +88,7 @@ def decide(item: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
     owner = resolve_owner(item.get("owner"), roster)
     passed.append("roster")
     if item.get("owner") and owner is None:
-        notes.append(f"owner named in the call: '{item['owner']}' — not on this project's roster")
+        notes.append(f"{item['owner']} isn't on this project, so I left it unassigned")
 
     verdict = check_priority(item.get("priority"), quotes, policy)
     passed.append("priority")
@@ -98,7 +98,9 @@ def decide(item: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
     due = resolve_due(item.get("due"), item.get("due_hint"), quotes)
     passed.append("dates")
     if item.get("due") and due is None:
-        notes.append(f"no due date set: '{item.get('due_hint') or item['due']}' was not spoken")
+        notes.append(
+            f"no due date — '{item.get('due_hint') or item['due']}' wasn't actually said"
+        )
 
     return {
         "owner": owner,
@@ -163,6 +165,9 @@ async def _perform(
             return {"outcome": "created", "identifier": created["identifier"],
                     "url": created["url"], "action_id": action_id, "title": item["title"],
                     "owner": (decided["owner"] or {}).get("name"),
+                    # Both already decided above; carried so the summary can say where the date
+                    # came from without anybody having to go and look.
+                    "due": decided["due"], "due_hint": item.get("due_hint"),
                     "note": "; ".join(decided["notes"])}
 
         target = item["target_issue"]
@@ -301,10 +306,13 @@ async def _post_summary(
                 "edited": status is not None},
     )
     blocks = call_summary_blocks(
-        meeting, created, updated, skipped, conflicts, performed, post_ref=action_id
+        meeting, created, updated, skipped, conflicts, performed, post_ref=action_id,
+        now=deps.clock.now(),
     )
+    # The notification line is the message's own first sentence, said once — Slack shows the
+    # preview or the message, never both, so a second header would only ever be a duplicate.
     text = (f"{meeting.get('title', 'call')} — "
-            f"{what_happened(created, updated, skipped, conflicts)}")
+            f"{what_happened(created, updated, skipped, conflicts)}.")
     try:
         if status is not None:
             await deps.slack.update(status["channel"], status["ts"], text, blocks)

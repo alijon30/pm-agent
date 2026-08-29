@@ -58,10 +58,11 @@ def test_a_priority_inside_the_band_passes_through_untouched() -> None:
 def test_urgent_is_allowed_only_when_someone_actually_said_so() -> None:
     quotes = ["This is urgent, a customer is blocked."]
     allowed = check_priority(1, quotes, POLICY)
-    assert allowed.priority == 1 and "escalated" in allowed.note
+    assert allowed.priority == 1 and "somebody said so on the call" in allowed.note
 
     clamped = check_priority(1, ["let's get to it this week"], POLICY)
-    assert clamped.priority == 2 and "nobody said this was urgent" in clamped.note
+    assert clamped.priority == 2
+    assert "nobody on the call actually called it urgent" in clamped.note
 
 
 def test_a_priority_below_the_band_is_clamped_upward() -> None:

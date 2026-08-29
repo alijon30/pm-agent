@@ -13,8 +13,8 @@ REF = re.compile(r"^([a-z]+):(.+)$", re.IGNORECASE)
 
 def ref_chip(ref: str) -> str:
     """`linear:INV-26` becomes "INV-26", a Fathom moment becomes "call @ 1:58", a decision id
-    becomes "ledger". Anything whose kind we do not know comes back untouched — a reference we
-    cannot shorten is still true."""
+    becomes "decided on the call". Anything whose kind we do not know comes back untouched — a
+    reference we cannot shorten is still true."""
     match = REF.match((ref or "").strip())
     if not match:
         return (ref or "").strip()
@@ -22,9 +22,9 @@ def ref_chip(ref: str) -> str:
     if kind == "linear":
         return target
     if kind == "decision":
-        return "ledger"
+        return "decided on the call"
     if kind == "notion":
-        return "spec"
+        return "the spec"
     if kind == "wiki":
         return "brain"
     if kind == "fathom":

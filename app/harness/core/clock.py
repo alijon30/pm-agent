@@ -76,3 +76,27 @@ def human_delta(value: str, now: datetime) -> str:
     if days == 1:
         return f"tomorrow {there:%H:%M}"
     return human_due(value)
+
+
+def when_phrase(value: str, now: datetime) -> str:
+    """A date as somebody would say it out loud: "today", "tomorrow", "Monday", "Sep 4".
+
+    Different from human_delta, which answers "how soon" for a queue. This answers "when" for a
+    sentence — "it was meant to be underway today" — and a weekday is what a person uses inside
+    the week they are living in."""
+    when = readable(value)
+    if when is None:
+        return ""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    here, there = now.astimezone(UTC), when.astimezone(UTC)
+    days = (there.date() - here.date()).days
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "tomorrow"
+    if days == -1:
+        return "yesterday"
+    if 2 <= days <= 6:
+        return f"{there:%A}"
+    return human_date(value)

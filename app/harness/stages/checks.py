@@ -10,13 +10,16 @@ someone over a network failure is worse than staying quiet."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from app.harness.core.clock import human_date
+from app.harness.core.clock import when_phrase
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
+from app.harness.core.voice import first_name, issue_phrase
 from app.harness.deps import Deps
+from app.harness.kinds.phrasing import human_finding
 from app.harness.kinds.templates import render
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
@@ -97,14 +100,6 @@ CHECKS = {
 }
 
 
-# What a check that came back unmet found, in one clause, for the person who asked for it.
-FINDINGS = {
-    "check_pr_exists": "no pull request yet",
-    "check_pr_reviewed": "no review yet",
-    "check_pr_merged": "it hasn't landed",
-}
-
-
 def requester_of(task: Doc) -> dict[str, str] | None:
     """Who commissioned this check, if anyone did. Intake stamps this on; the planner's own
     follow-through has no requester and answers the assignee instead."""
@@ -117,16 +112,6 @@ def requester_of(task: Doc) -> dict[str, str] | None:
         "channel": str(context.get("request_channel") or ""),
         "ts": str(context.get("request_ts") or ""),
     }
-
-
-def finding_for(task: Doc, observed: dict[str, Any]) -> str:
-    """A state check reports the state it actually saw: "it hasn't started" is false when the
-    issue is in review and the check wanted it merged, and a false sentence in a ping is how an
-    agent loses the person it is talking to."""
-    if task["kind"] == "check_issue_state":
-        state = str(observed.get("state") or "")
-        return f"it's still {state}" if state else "it hasn't started"
-    return FINDINGS.get(str(task["kind"]), "it hasn't moved")
 
 
 def _template_for(task: Doc, observed: dict[str, Any]) -> str:
@@ -142,19 +127,22 @@ def _template_for(task: Doc, observed: dict[str, Any]) -> str:
     return "pr_unmerged"
 
 
-def _values(observed: dict[str, Any], person: dict[str, Any] | None) -> dict[str, str]:
-    mention = f"<@{person['slack_id']}>" if person and person.get("slack_id") else (
-        person["name"] if person else "Nobody is assigned"
-    )
-    url = observed.get("url") or ""
+def _values(
+    observed: dict[str, Any], person: dict[str, Any] | None, now: datetime
+) -> dict[str, str]:
+    """Everything a template needs, already in the voice: a first name, a ticket that reads as a
+    thing, a day rather than a date. The person is mentioned because a nudge is asking them to
+    do something and a name they never see is not a nudge."""
+    pr_url = str(observed.get("pr_url") or "")
     return {
-        "person": mention,
-        "issue": str(observed.get("issue") or ""),
-        "title": str(observed.get("title") or ""),
+        "person": first_name(person, mention=True) or "Nobody's on this",
+        "issue": issue_phrase(
+            str(observed.get("issue") or ""), str(observed.get("title") or ""),
+            str(observed.get("url") or ""),
+        ),
         "state": str(observed.get("state") or "open"),
-        "due": human_date(str(observed.get("due") or "")),
-        "pr_url": str(observed.get("pr_url") or ""),
-        "link": f"<{url}|open it>" if url else "",
+        "when": when_phrase(str(observed.get("due") or ""), now) or "by now",
+        "pr": f"<{pr_url}|the pull request>" if pr_url else "the pull request",
     }
 
 
@@ -191,15 +179,16 @@ async def on_unmet(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]
         await deps.queue.defer(task, allowed.defer_until or deps.clock.now(), allowed.reason)
         return []
 
+    now = deps.clock.now()
     if requester is not None:
         template = "requester_unmet"
-        values = _values(observed, None)
-        text = render(template, **{**values, "person": f"<@{requester['slack_id']}>",
-                                   "finding": finding_for(task, observed)})
+        text = render(template, **{**_values(observed, None, now),
+                                   "person": f"<@{requester['slack_id']}>",
+                                   "finding": human_finding(task, observed)})
     else:
         template = _template_for(task, observed)
         person = resolve_owner(observed.get("assignee"), project.get("roster") or [])
-        text = render(template, **_values(observed, person))
+        text = render(template, **_values(observed, person, now))
 
     key = idempotency_key(task["id"], 0, "slack.nudge")
     if await deps.actions.find_by_key(key) is not None:
@@ -222,13 +211,68 @@ async def on_unmet(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]
     return [action_id]
 
 
+async def first_look(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]:
+    """The first check of a commitment reports back; the rest go quiet.
+
+    Somebody asked for this and heard a promise. If the promise then works perfectly they hear
+    nothing at all, and a watch you cannot tell is running is one you stop believing in. So the
+    first check that comes back met says so once, tells them the silence that follows is the
+    good outcome, and never speaks again unless something changes."""
+    requester = requester_of(task)
+    parent = str(task.get("parent_task_id") or "")
+    if requester is None or not parent or observed.get("status") != "ok":
+        return []
+    channel = requester["channel"]
+    if deps.slack is None or deps.actions is None or not channel:
+        return []
+    # This task is still leased while its handler runs, so any done sibling is an earlier check
+    # of the same commitment — and this is only the first look when there are none.
+    earlier = await deps.db.query(
+        "tasks", [("parent_task_id", "==", parent), ("status", "==", "done")], limit=50
+    )
+    if earlier:
+        return []
+
+    project = await deps.projects.get(task["project_id"])
+    if project is None:
+        return []
+    if not check_caps("ping", await deps.actions.counts_today(task["project_id"]),
+                      deps.clock.now(), project.get("policy") or {}).ok:
+        return []
+    key = idempotency_key(task["id"], 0, "slack.firstlook")
+    if await deps.actions.find_by_key(key) is not None:
+        return []
+
+    action_id = await deps.actions.begin(
+        task_id=task["id"], project_id=task["project_id"], kind="slack.post",
+        idempotency_key=key, inputs={"channel": channel, "template": "first_look"},
+    )
+    issue = issue_phrase(str(observed.get("issue") or ""), str(observed.get("title") or ""),
+                         str(observed.get("url") or ""))
+    try:
+        ts = await deps.slack.post(
+            channel,
+            f"First look at {issue or 'it'}: {human_finding(task, observed, met=True)} — "
+            "I'll keep watching quietly and only speak up if that changes.",
+            thread_ts=requester["ts"] or None,
+        )
+    except SourceUnavailable as exc:
+        await deps.actions.fail(action_id, redact(str(exc)))
+        return []
+    await deps.actions.finish(
+        action_id, target_ids={"channel": channel, "ts": ts},
+        revert={"op": "edit_message", "channel": channel, "ts": ts},
+    )
+    return [action_id]
+
+
 async def run_check(task: Doc, deps: Deps) -> StageResult:
-    """One scheduled check: observe, act if it came back unmet, and record both."""
+    """One scheduled check: observe, say something if it is worth saying, and record both."""
     executor = CHECKS.get(task["kind"])
     if executor is None:
         raise PmError(f"no executor for kind {task['kind']!r}")
     met, observed = await executor(task, deps)
-    acted = [] if met else await on_unmet(task, deps, observed)
+    acted = await first_look(task, deps, observed) if met else await on_unmet(task, deps, observed)
     return StageResult(result={"met": met, "observed": observed, "acted": acted})
 
 
@@ -252,7 +296,7 @@ async def run_nudge(task: Doc, deps: Deps) -> StageResult:
     params = task["params"]
     person = resolve_owner(params.get("person"), project.get("roster") or [])
     observed = {"issue": params.get("about", ""), "title": "", "state": "open", "url": ""}
-    text = render(params["template"], **_values(observed, person))
+    text = render(params["template"], **_values(observed, person, deps.clock.now()))
 
     key = idempotency_key(task["id"], 0, "slack.nudge")
     if await deps.actions.find_by_key(key) is not None:

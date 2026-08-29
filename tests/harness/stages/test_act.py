@@ -94,13 +94,13 @@ def test_a_roster_owner_a_banded_priority_and_a_spoken_date_all_pass_through() -
 def test_an_owner_who_is_not_on_the_project_is_dropped_and_named() -> None:
     decided = decide({**ITEM, "owner": "Sam"}, PROJECT)
     assert decided["owner"] is None
-    assert "'Sam' — not on this project's roster" in decided["notes"][0]
+    assert decided["notes"][0] == "Sam isn't on this project, so I left it unassigned"
 
 
 def test_urgent_without_the_words_is_clamped_and_the_reason_is_recorded() -> None:
     decided = decide({**ITEM, "priority": 1}, PROJECT)
     assert decided["priority"] == 2
-    assert any("nobody said this was urgent" in n for n in decided["notes"])
+    assert any("nobody on the call actually called it urgent" in n for n in decided["notes"])
 
 
 def test_urgent_survives_when_someone_actually_said_it() -> None:
@@ -111,7 +111,7 @@ def test_urgent_survives_when_someone_actually_said_it() -> None:
 def test_a_date_nobody_spoke_never_becomes_a_commitment() -> None:
     decided = decide({**ITEM, "due_hint": "by tomorrow"}, PROJECT)
     assert decided["due"] is None
-    assert any("was not spoken" in n for n in decided["notes"])
+    assert any("wasn't actually said" in n for n in decided["notes"])
 
 
 def test_the_description_shows_the_quote_the_conflict_and_what_was_checked() -> None:
@@ -255,8 +255,9 @@ async def test_the_same_urgency_with_nobody_saying_it_is_clamped_to_the_band(
     assert deps.linear.writes[0]["priority"] == 2  # the band's urgent edge, not 1
     # And the team is told why, in the channel and in the issue body.
     rendered = str(deps.slack.posts[0]["blocks"])
-    assert "clamped to 2" in rendered and "nobody said this was urgent" in rendered
-    assert "nobody said this was urgent" in deps.linear.writes[0]["description"]
+    assert "nobody on the call actually called it urgent" in rendered
+    assert "nobody on the call actually called it urgent" in (
+        deps.linear.writes[0]["description"])
 
 
 def test_the_gate_reads_the_items_own_quotes_and_nothing_else() -> None:
@@ -286,7 +287,8 @@ async def test_one_summary_is_posted_with_a_revert_button_per_write(deps: Deps) 
     assert len(deps.slack.posts) == 1
     post = deps.slack.posts[0]
     assert post["channel"] == "C-product"
-    assert post["text"] == "Q3 Billing planning — filed 1 ticket · 1 conflict"
+    assert post["text"] == (
+        "Q3 Billing planning — one new ticket and one thing I need a human on.")
     actions = [b for b in post["blocks"] if b["type"] == "actions"][0]["elements"]
     assert actions[0]["action_id"].startswith("revert:")
     assert actions[-1]["action_id"].startswith("wrong:")
@@ -298,7 +300,7 @@ async def test_conflicts_reach_the_team_and_are_never_resolved(deps: Deps) -> No
     out = await run(task, deps)
     assert len(out.result["conflicts"]) == 1
     rendered = str(deps.slack.posts[0]["blocks"])
-    assert "Sources disagree* on reminder window" in rendered
+    assert "Two answers on reminder window, and I can't pick one." in rendered
     assert "7 days" in rendered and "5 days" in rendered
     assert "config.py:6" in rendered and "code:acme/config.py:6" not in rendered
 
@@ -337,7 +339,8 @@ async def test_the_summary_edits_the_message_that_said_it_was_reading_the_call(
     assert len(deps.slack.updates) == 1
     edit = deps.slack.updates[0]
     assert edit["channel"] == message["channel"] and edit["ts"] == message["ts"]
-    assert edit["text"] == "Q3 Billing planning — filed 1 ticket · 1 conflict"
+    assert edit["text"] == (
+        "Q3 Billing planning — one new ticket and one thing I need a human on.")
     assert [b for b in edit["blocks"] if b["type"] == "actions"], "the buttons survive the edit"
 
 

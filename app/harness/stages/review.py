@@ -23,6 +23,7 @@ from app.harness.connectors.slack_blocks import standup_blocks
 from app.harness.core.clock import iso
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.redact import redact
+from app.harness.core.voice import first_name
 from app.harness.deps import Deps
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
@@ -86,6 +87,9 @@ async def _movements(
         was, now = str(observed.get("state") or ""), str(live.get("state") or "")
         seen.append({
             "ref": nudge["ref"], "issue": identifier, "template": nudge.get("template"),
+            # Who owns it, so the standup can say "Priya got INV-26 moving" rather than
+            # counting the things that moved.
+            "assignee": str((live.get("assignee") or {}).get("name") or ""),
             "state_when_we_spoke": was, "state_now": now, "moved": bool(was and was != now),
         })
     return seen
@@ -201,6 +205,34 @@ async def watching(project_id: str, deps: Deps) -> tuple[list[Doc], str]:
     return soon[:WATCH_LINES], "" if soon else str(open_checks[0]["due_at"])
 
 
+def _owners(outcomes: dict[str, Any], project: Doc) -> dict[str, str]:
+    """Which first name goes with which ticket, from what the checks already observed. The
+    standup addresses people, so it needs names it did not have to look anything up for."""
+    owners: dict[str, str] = {}
+    for check in outcomes.get("checks") or []:
+        observed = check.get("observed") or {}
+        identifier, who = str(observed.get("issue") or ""), str(observed.get("assignee") or "")
+        if identifier and who:
+            owners.setdefault(identifier, first_name(who))
+    for mover in outcomes.get("movements") or []:
+        identifier, who = str(mover.get("issue") or ""), str(mover.get("assignee") or "")
+        if identifier and who:
+            owners.setdefault(identifier, first_name(who))
+    return owners
+
+
+def _titles(outcomes: dict[str, Any]) -> dict[str, str]:
+    """What each ticket is, from what the checks saw. Costs nothing — the observation is already
+    in hand — and turns a key in a standup line into a thing the reader recognises."""
+    titles: dict[str, str] = {}
+    for check in outcomes.get("checks") or []:
+        observed = check.get("observed") or {}
+        identifier, title = str(observed.get("issue") or ""), str(observed.get("title") or "")
+        if identifier and title:
+            titles.setdefault(identifier, title)
+    return titles
+
+
 async def _standup(
     task: Doc, project: Doc, outcomes: dict[str, Any], lesson: str, deps: Deps
 ) -> bool:
@@ -231,10 +263,15 @@ async def _standup(
         since={
             "met": sum(1 for c in outcomes["checks"] if c["met"] and not c["early"]),
             "early": sum(1 for c in outcomes["checks"] if c["early"]),
-            "moved": sum(1 for m in outcomes["movements"] if m["moved"]),
             "nudged": len(outcomes["nudges"]),
+            "movers": [
+                {"who": m.get("assignee") or "", "issue": m["issue"]}
+                for m in outcomes["movements"] if m["moved"]
+            ],
         },
         unmet=unmet, overdue=overdue, lesson=lesson, next_due=next_due,
+        owners=_owners(outcomes, project), titles=_titles(outcomes),
+        now=deps.clock.now(),
     )
 
     action_id = await deps.actions.begin(
@@ -242,7 +279,8 @@ async def _standup(
         idempotency_key=key, inputs={"channel": channel, "template": "standup"},
     )
     try:
-        ts = await deps.slack.post(str(channel), "Morning — here's today.", blocks)
+        first = str((blocks[0].get("text") or {}).get("text") or "").splitlines()[0]
+        ts = await deps.slack.post(str(channel), first.strip("*"), blocks)
     except SourceUnavailable as exc:
         # A standup nobody received is a shame, not a failure: the review still learned and
         # still re-planned, and tomorrow brings another one.

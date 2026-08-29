@@ -14,10 +14,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.harness.core.clock import when_phrase
 from app.harness.core.errors import SourceUnavailable
 from app.harness.core.redact import redact
+from app.harness.core.voice import first_name
 from app.harness.core.words import count_of
 from app.harness.deps import Deps
+from app.harness.kinds.phrasing import human_check
 from app.harness.stages.checks import CHECKS
 
 log = logging.getLogger(__name__)
@@ -49,6 +52,30 @@ async def resolve_early(identifier: str, deps: Deps) -> list[str]:
     return resolved
 
 
+async def _good_news(identifier: str, resolved: list[str], deps: Deps) -> str:
+    """One line of good news, with the person in it. "INV-26 is already underway" is a state
+    change; "Priya's already on INV-26" is somebody doing their job."""
+    cleared = [t for t in [await deps.db.get("tasks", tid) for tid in resolved] if t]
+    who = first_name(str(
+        ((cleared[0] if cleared else {}).get("result") or {}).get("observed", {}).get("assignee")
+        or ""
+    ))
+    opening = f"{who}'s already on {identifier}" if who else f"{identifier} is already underway"
+    dates = sorted(when_phrase(str(t.get("due_at") or ""), deps.clock.now()) for t in cleared)
+    when = f" the {dates[0]} check" if len(dates) == 1 and dates[0] else (
+        f" {count_of(len(cleared), 'check')}"
+    )
+    upcoming = [
+        t for t in await deps.db.query("tasks", [("status", "in", list(RESOLVABLE))])
+        if (t.get("params") or {}).get("issue") == identifier and t["id"] not in resolved
+    ]
+    if upcoming:
+        nxt = min(upcoming, key=lambda t: str(t.get("due_at") or ""))
+        return (f"{opening} — I've cleared{when}. Next up: {human_check(nxt)}, "
+                f"{when_phrase(str(nxt.get('due_at') or ''), deps.clock.now())}.")
+    return f"{opening} — I've cleared{when} early."
+
+
 async def _note_in_thread(identifier: str, resolved: list[str], deps: Deps) -> None:
     """A quiet line under the plan announcement, so the channel sees progress without a ping.
     Best-effort: the early completion stands whether or not this lands.
@@ -72,12 +99,7 @@ async def _note_in_thread(identifier: str, resolved: list[str], deps: Deps) -> N
     if not channel or not ts:
         return
     try:
-        await deps.slack.post(
-            channel,
-            f"✓ {identifier} is already underway — I've closed "
-            f"{count_of(len(resolved), 'planned check')} early.",
-            thread_ts=ts,
-        )
+        await deps.slack.post(channel, await _good_news(identifier, resolved, deps), thread_ts=ts)
     except SourceUnavailable as exc:
         log.warning("early note for %s not posted: %s", identifier, redact(str(exc)))
     except Exception:  # noqa: BLE001 — decoration never outranks the work, but it must not vanish

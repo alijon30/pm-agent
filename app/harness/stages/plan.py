@@ -18,7 +18,7 @@ from app.harness.core.clock import iso, parse_iso
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
-from app.harness.core.words import count_of
+from app.harness.core.voice import first_name
 from app.harness.deps import Deps
 from app.harness.kinds.registry import KINDS, catalog_for_prompt
 from app.harness.stages.base import StageResult
@@ -149,6 +149,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         )
         proposal = retry
 
+    defaulted = False
     if not verdict.tasks and not (proposal.get("tasks") or []):
         fallback = default_followups(context, policy, now).model_dump()
         verdict = await check_plan(
@@ -158,12 +159,13 @@ async def run(task: Doc, deps: Deps) -> StageResult:
             id_exists=deps.ids.exists if deps.ids is not None else nothing_exists,
         )
         notes = "no plan from the planner; using the default follow-up chain"
+        defaulted = True
 
     supersedes = [s for s in (proposal.get("supersedes") or []) if s in open_ids]
     # Reasons only: the plan key is this system's handle for a task the team never saw, so it
     # means nothing in a channel. The full rejection, key and all, is in the result and console.
     trimmed = [r["reason"] for r in verdict.rejected] + verdict.reasons
-    await _announce(task, project, verdict.tasks, trimmed, deps)
+    await _announce(task, project, verdict.tasks, trimmed, context, defaulted, deps)
 
     result: dict[str, Any] = {
         "notes": notes,
@@ -198,8 +200,20 @@ async def _propose(payload: dict[str, Any], deps: Deps) -> tuple[dict[str, Any],
     return parsed, str(parsed.get("notes") or "")
 
 
+def owners_by_issue(context: dict[str, Any]) -> dict[str, str]:
+    """Which first name goes with which ticket, so a promise can name the person I'll go to
+    rather than "the assignee"."""
+    owners: dict[str, str] = {}
+    for item in list(context.get("created") or []) + list(context.get("items") or []):
+        identifier, owner = str(item.get("identifier") or ""), str(item.get("owner") or "")
+        if identifier and owner:
+            owners.setdefault(identifier, first_name(owner))
+    return owners
+
+
 async def _announce(
-    task: Doc, project: dict[str, Any], tasks: list[dict[str, Any]], trimmed: list[str], deps: Deps
+    task: Doc, project: dict[str, Any], tasks: list[dict[str, Any]], trimmed: list[str],
+    context: dict[str, Any], defaulted: bool, deps: Deps,
 ) -> None:
     """Say what will be watched. Best-effort: a Slack outage never unschedules the work."""
     channel = project.get("slack_channel_id")
@@ -214,8 +228,9 @@ async def _announce(
     )
     try:
         ts = await deps.slack.post(
-            channel, f"I'll follow up on {count_of(len(tasks), 'thing')}",
-            plan_summary_blocks(tasks, trimmed),
+            channel, "Here's how I'll follow through:",
+            plan_summary_blocks(tasks, trimmed, owners_by_issue(context), deps.clock.now(),
+                                defaulted),
         )
     except SourceUnavailable as exc:
         await deps.actions.fail(action_id, redact(str(exc)))

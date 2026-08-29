@@ -23,7 +23,6 @@ from app.harness.core.clock import iso
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
-from app.harness.core.words import count_of
 from app.harness.deps import Deps
 from app.harness.kinds.registry import KINDS, catalog_for_prompt
 from app.harness.stages.base import StageResult
@@ -61,6 +60,28 @@ def commission(tasks: list[dict[str, Any]], task: Doc) -> list[dict[str, Any]]:
         }
         for accepted in tasks
     ]
+
+
+def interpretation(request: str, children: list[dict[str, Any]]) -> str:
+    """When the ask named no ticket and the agent picked one, say which — in the same breath.
+
+    Somebody who wrote "keep an eye on the export" needs to know I read that as INV-26, because
+    if I read it wrong the whole commitment is about the wrong thing and the only moment they
+    can cheaply tell me is now."""
+    named = [
+        issue for issue in dict.fromkeys(
+            str((child.get("params") or {}).get("issue") or "") for child in children
+        ) if issue and issue not in request
+    ]
+    if not named:
+        return ""
+    asked = _short(request, 48)
+    return f"Taking \"{asked}\" to mean {', '.join(named)}."
+
+
+def _short(text: str, limit: int) -> str:
+    words = " ".join(str(text).split())
+    return words if len(words) <= limit else words[: limit - 1] + "…"
 
 
 async def _requester_name(task: Doc, deps: Deps) -> str:
@@ -101,9 +122,9 @@ async def _cancel(task: Doc, identifier: str, deps: Deps) -> StageResult:
         cancelled.extend(await deps.queue.cancel(row["id"], "the requester asked me to stop"))
 
     said = (
-        f"Done — stopped {count_of(len(cancelled), 'check')} on {identifier}."
+        f"Done — I've stopped watching {identifier}."
         if cancelled
-        else f"I don't have any checks running on {identifier} that you asked for."
+        else f"I'm not watching anything on {identifier} for you — nothing to stop."
     )
     posted = await _reply(task, said, [], deps)
     return StageResult(result={
@@ -175,7 +196,8 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         })
 
     children = commission(verdict.tasks, task)
-    notes = str(proposal.get("notes") or "")
+    notes = " ".join(x for x in (interpretation(request, children),
+                                 str(proposal.get("notes") or "")) if x)
     posted = await _reply(task, _fallback_text(children, notes), children, deps, notes=notes)
     if posted and children:
         await react_quietly(
@@ -197,9 +219,13 @@ async def run(task: Doc, deps: Deps) -> StageResult:
 
 
 def _fallback_text(children: list[dict[str, Any]], notes: str) -> str:
+    """The notification line: the first sentence of the reply, said once."""
     if not children:
         return notes or "I couldn't turn that into anything I know how to watch."
-    return f"Committed: {count_of(len(children), 'check')}"
+    issues = [str((c.get("params") or {}).get("issue") or "") for c in children]
+    named = [i for i in dict.fromkeys(issues) if i]
+    return (f"Got it — I'll watch {named[0]} for you." if len(named) == 1
+            else "Got it — here's what I'll keep an eye on.")
 
 
 async def _reply(
@@ -223,7 +249,7 @@ async def _reply(
     )
     try:
         ts = await deps.slack.post(
-            channel, text, commitment_blocks(children, notes),
+            channel, text, commitment_blocks(children, notes, now=deps.clock.now()),
             thread_ts=task["payload"].get("thread_ts"),
         )
     except SourceUnavailable as exc:

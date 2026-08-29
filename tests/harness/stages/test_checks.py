@@ -81,8 +81,11 @@ async def test_an_issue_that_has_not_moved_produces_exactly_one_nudge(deps: Deps
     assert out.result["met"] is False and len(out.result["acted"]) == 1
     assert len(deps.slack.posts) == 1
     text = deps.slack.posts[0]["text"]
-    assert "<@U-nodir>" in text and "INV-143" in text and "still Todo" in text
-    assert "open it" in text
+    assert text.startswith("<@U-nodir> — ")
+    assert "INV-143" in text and "is still in Todo" in text
+    assert "Is it still happening?" in text
+    assert "linear.app/acme/issue/INV-143|INV-143" in text, "the link is on the identifier"
+    assert not text.endswith("https://linear.app/acme/issue/INV-143")
 
 
 async def test_an_issue_that_vanished_is_reported_and_nobody_is_nudged(deps: Deps) -> None:
@@ -191,7 +194,8 @@ async def test_an_escalation_goes_to_the_channel_and_names_the_owner(deps: Deps)
     await run_check(task, deps)
 
     text = deps.slack.posts[0]["text"]
-    assert "has not moved" in text and "Owner: <@U-nodir>" in text
+    assert "hasn't moved and is past its date" in text
+    assert "<@U-nodir> owns it" in text and "Owner:" not in text
 
 
 async def test_an_unowned_issue_escalates_without_blaming_anyone(deps: Deps) -> None:
@@ -199,15 +203,24 @@ async def test_an_unowned_issue_escalates_without_blaming_anyone(deps: Deps) -> 
     task = await wire(deps, kind="check_issue_state", on_unmet="escalate_channel", issues=unowned,
                       params={"issue": "INV-143", "expect": ["Done"]})
     await run_check(task, deps)
-    assert "has no owner" in deps.slack.posts[0]["text"]
+    assert "nobody owns it. Who's picking this up?" in deps.slack.posts[0]["text"]
 
 
 def test_every_template_renders_with_the_values_a_check_can_supply() -> None:
-    values = {"person": "<@U1>", "issue": "INV-143", "title": "t", "state": "Todo",
-              "due": "Sep 4", "pr_url": "https://x", "link": "<u|open it>",
-              "finding": "it hasn't started"}
+    """Built by the stage that builds them for real, so a template gaining a variable the
+    harness does not supply fails here rather than in somebody's channel."""
+    from datetime import UTC, datetime
+
+    from app.harness.stages.checks import _values
+
+    observed = {"issue": "INV-143", "title": "Move payment reminders", "state": "Todo",
+                "due": "2026-09-04", "url": "https://linear.app/x/INV-143",
+                "pr_url": "https://github.com/x/pull/4"}
+    values = _values(observed, {"name": "Nodir Rahimov", "slack_id": "U1"},
+                     datetime(2026, 8, 27, 9, 0, tzinfo=UTC))
     for name in TEMPLATES:
-        assert render(name, **values)
+        rendered = render(name, **{**values, "finding": "it hasn't started"})
+        assert rendered and "{" not in rendered
 
 
 def test_an_unknown_template_is_a_bug_not_a_fallback() -> None:
@@ -260,7 +273,8 @@ async def test_a_check_somebody_asked_for_answers_them_in_their_own_thread(
     assert out.result["met"] is False and len(out.result["acted"]) == 1
     ping = deps.slack.posts[0]
     assert ping["channel"] == "C-random" and ping["thread_ts"] == "1787821201.000100"
-    assert ping["text"] == "<@U-maya>, you asked me to watch INV-143 — no pull request yet."
+    assert ping["text"].startswith("<@U-maya> — you asked me to watch ")
+    assert ping["text"].endswith(": still no pull request.")
 
 
 async def test_the_ping_reports_the_state_it_actually_saw_not_a_guess(deps: Deps) -> None:
@@ -272,7 +286,7 @@ async def test_the_ping_reports_the_state_it_actually_saw_not_a_guess(deps: Deps
                       context=COMMISSIONED)
     await run_check(task, deps)
 
-    assert "it's still In Review" in deps.slack.posts[0]["text"]
+    assert "it's still in review" in deps.slack.posts[0]["text"]
 
 
 async def test_a_check_the_agent_scheduled_for_itself_still_answers_the_assignee(
@@ -315,3 +329,78 @@ async def test_a_requester_is_pinged_once_however_often_the_check_reruns(deps: D
     await run_check(task, deps)
 
     assert len(deps.slack.posts) == 1
+
+
+# --- the first look ---------------------------------------------------------------------------------
+
+async def commissioned(deps: Deps, *, parent: str, issue: str = "INV-143",
+                       kind: str = "check_issue_state") -> Doc:
+    """A check that came out of an intake commitment, with a sibling parent it shares."""
+    params: dict[str, Any] = ({"issue": issue, "expect": ["Todo", "In Progress"]}
+                              if kind == "check_issue_state" else {"issue": issue})
+    tid = await deps.queue.enqueue(kind=kind, project_id="acme", payload={}, params=params,
+                                   reason="you asked", context=COMMISSIONED)
+    assert tid is not None
+    await deps.db.update("tasks", tid, {"parent_task_id": parent})
+    task = await deps.queue.claim(tid)
+    assert task is not None
+    return task
+
+
+async def test_the_first_check_of_a_commitment_reports_back_in_the_thread(deps: Deps) -> None:
+    """A watch nobody can tell is running is one they stop believing in."""
+    await wire(deps, kind="check_issue_state", params={"issue": "INV-143", "expect": ["Todo"]})
+    task = await commissioned(deps, parent="intake-1")
+
+    out = await run_check(task, deps)
+
+    assert out.result["met"] is True and len(out.result["acted"]) == 1
+    note = deps.slack.posts[0]
+    assert note["channel"] == "C-random" and note["thread_ts"] == "1787821201.000100"
+    assert note["text"] == (
+        "First look at <https://linear.app/acme/issue/INV-143|INV-143> (the reminders to 3 days)"
+        ": it's in Todo — I'll keep watching quietly and only speak up if that changes."
+    )
+
+
+async def test_after_the_first_look_a_met_check_says_nothing(deps: Deps) -> None:
+    await wire(deps, kind="check_issue_state", params={"issue": "INV-143", "expect": ["Todo"]})
+    first = await commissioned(deps, parent="intake-1")
+    await run_check(first, deps)
+    await deps.db.update("tasks", first["id"], {"status": "done"})
+
+    second = await commissioned(deps, parent="intake-1", kind="check_pr_exists")
+    out = await run_check(second, deps)
+
+    assert out.result["acted"] == []
+    assert len(deps.slack.posts) == 1, "the watch goes quiet after it has been seen working"
+
+
+async def test_a_check_nobody_asked_for_never_reports_a_first_look(deps: Deps) -> None:
+    task = await wire(deps, kind="check_issue_state",
+                      params={"issue": "INV-143", "expect": ["Todo"]})
+
+    out = await run_check(task, deps)
+
+    assert out.result["met"] is True and out.result["acted"] == []
+    assert deps.slack.posts == []
+
+
+async def test_the_first_look_is_sent_once_however_often_the_check_reruns(deps: Deps) -> None:
+    await wire(deps, kind="check_issue_state", params={"issue": "INV-143", "expect": ["Todo"]})
+    task = await commissioned(deps, parent="intake-1")
+
+    await run_check(task, deps)
+    await run_check(task, deps)
+
+    assert len(deps.slack.posts) == 1
+
+
+async def test_the_first_look_obeys_quiet_hours_and_the_daily_budget(deps: Deps) -> None:
+    deps.clock.advance(hours=12)  # 21:00, inside the project's quiet hours
+    await wire(deps, kind="check_issue_state", params={"issue": "INV-143", "expect": ["Todo"]})
+    task = await commissioned(deps, parent="intake-1")
+
+    out = await run_check(task, deps)
+
+    assert out.result["acted"] == [] and deps.slack.posts == []

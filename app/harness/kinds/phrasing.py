@@ -47,6 +47,39 @@ WORKING_SENTENCES = {
 }
 
 
+# The same work again, in a form that survives being put after "I can't". The imperative reads
+# as an order and breaks the sentence — "I'm blocked on look for a pull request" — so a third
+# short table costs less than the grammar contortions that avoiding it would take.
+INFINITIVE_SENTENCES = {
+    "check_issue_state": "check whether {issue} has started",
+    "check_pr_exists": "find {issue}'s pull request",
+    "check_pr_reviewed": "check whether {issue}'s pull request has been reviewed",
+    "check_pr_merged": "confirm {issue} landed",
+    "nudge": "remind {person} about {about}",
+    "escalate": "raise {about} here",
+    "extract": "read the call",
+    "reconcile": "check what was said against the tracker",
+    "act": "file what the call agreed",
+    "plan": "plan the follow-through",
+    "report": "write the status report",
+    "intake": "do what you asked",
+    "daily_review": "read yesterday",
+}
+
+
+def human_infinitive(task: dict[str, Any]) -> str:
+    """What this task was going to do, phrased to follow "I can't"."""
+    params = task.get("params") or {}
+    sentence = INFINITIVE_SENTENCES.get(str(task.get("kind") or ""))
+    if sentence is None:
+        return human_check(task)
+    return sentence.format(
+        issue=params.get("issue") or "it",
+        person=params.get("person") or "them",
+        about=params.get("about") or "it",
+    )
+
+
 def human_working(task: dict[str, Any]) -> str:
     """What this task is doing, right now. Falls back to the scheduled phrasing for a kind with
     no present tense of its own, which still beats printing the kind."""
@@ -73,3 +106,38 @@ def human_check(task: dict[str, Any]) -> str:
         person=params.get("person") or "them",
         about=params.get("about") or "it",
     )
+
+
+# What a check that came back unmet actually found, in one clause. Lives with the catalog rather
+# than with the stage that first needed it, because the standup says the same thing in the
+# channel and the two must not drift into two different accounts of one observation.
+UNMET_FINDINGS = {
+    "check_pr_exists": "still no pull request",
+    "check_pr_reviewed": "still no review",
+    "check_pr_merged": "it hasn't landed",
+}
+
+
+MET_FINDINGS = {
+    "check_pr_exists": "there's a pull request open",
+    "check_pr_reviewed": "the pull request has a review",
+    "check_pr_merged": "it's landed",
+}
+
+
+def human_finding(
+    task: dict[str, Any], observed: dict[str, Any], *, met: bool = False
+) -> str:
+    """What a check actually saw, in one clause. A state check reports the state it found:
+    "it hasn't started" is false when the issue is in review and the check wanted it merged, and
+    a false sentence in a message is how an agent loses the person it is talking to."""
+    if str(task.get("kind")) == "check_issue_state":
+        state = str(observed.get("state") or "")
+        if state:
+            # Tracker states are already phrases: "In Progress" needs no preposition in front of
+            # it, and "it's in In Progress" is the tell that a machine glued the sentence.
+            said = state.lower() if state.lower().startswith("in ") else f"in {state}"
+            return f"it's {said}" if met else f"it's still {said}"
+        return "it's underway" if met else "it hasn't started"
+    table = MET_FINDINGS if met else UNMET_FINDINGS
+    return table.get(str(task.get("kind")), "it's moving" if met else "it hasn't moved")

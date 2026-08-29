@@ -126,6 +126,7 @@ async def test_the_review_gathers_yesterdays_checks_nudges_and_movements(deps: D
     assert [n["ref"] for n in outcomes["nudges"]] == [f"action:{action_id}"]
     assert outcomes["movements"] == [{
         "ref": f"action:{action_id}", "issue": "INV-26", "template": "pr_missing",
+        "assignee": "Priya",
         "state_when_we_spoke": "Todo", "state_now": "In Progress", "moved": True}]
 
 
@@ -301,10 +302,10 @@ async def test_the_agent_speaks_first_with_what_today_holds(deps: Deps) -> None:
     assert deps.slack.posts[0]["channel"] == "C-product"
     rendered = said(deps)
     assert "Morning — day 3 of Sprint 1." in rendered
-    assert "Today I'm watching:" in rendered
-    assert "Thu Aug 27 — check that INV-26 is underway" in rendered
-    assert "Since yesterday:" in rendered and "1 check came back clear" in rendered
-    assert "1 nudge sent" in rendered
+    # No headings on a short standup: five bullets under one greeting is a note, not a form.
+    assert "Today I'm watching:" not in rendered and "At risk:" not in rendered
+    assert "Today: checking whether INV-26 is underway" in rendered
+    assert "Since yesterday: Priya got INV-26 moving." in rendered
 
 
 async def test_a_quiet_day_says_so_in_two_lines(deps: Deps) -> None:
@@ -316,7 +317,7 @@ async def test_a_quiet_day_says_so_in_two_lines(deps: Deps) -> None:
     assert out.result["standup"] is True
     blocks = deps.slack.posts[0]["blocks"]
     assert len(blocks) == 1
-    assert "Quiet day ahead — nothing due before Fri Sep 4." in said(deps)
+    assert "Quiet day ahead — nothing due before Sep 4." in said(deps)
 
 
 async def test_what_is_slipping_gets_a_line_each(deps: Deps) -> None:
@@ -329,9 +330,9 @@ async def test_what_is_slipping_gets_a_line_each(deps: Deps) -> None:
     await run(task, deps)
 
     rendered = said(deps)
-    assert "At risk:" in rendered
-    assert "look for a pull request on INV-26 — nothing yet" in rendered
-    assert "INV-26 was due Aug 20 and is still Todo" in rendered
+    assert "INV-26 — still no pull request." in rendered
+    assert "INV-26 was due Aug 20 and is still in Todo" in rendered
+    assert "At risk:" not in rendered, "a heading over two lines is a form, not a note"
 
 
 async def test_a_lesson_learned_this_morning_is_shared_with_the_team(deps: Deps) -> None:

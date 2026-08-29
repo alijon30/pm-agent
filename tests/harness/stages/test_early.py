@@ -125,7 +125,7 @@ async def test_the_early_note_lands_in_the_plan_announcements_thread(deps: Deps)
     assert len(deps.slack.posts) == 1
     note = deps.slack.posts[0]
     assert note["thread_ts"] == "42.1"
-    assert note["text"] == "✓ INV-26 is already underway — I've closed 1 planned check early."
+    assert note["text"].startswith("Priya's already on INV-26 — I've cleared")
 
 
 async def test_the_note_threads_under_the_newest_announcement_whatever_order_they_arrive_in(
@@ -152,7 +152,7 @@ async def test_two_checks_resolving_at_once_are_counted_in_plain_words(deps: Dep
 
     await resolve_early("INV-26", deps)
 
-    assert "I've closed 2 planned checks early." in deps.slack.posts[0]["text"]
+    assert "I've cleared 2 checks early." in deps.slack.posts[0]["text"]
 
 
 async def test_with_no_plan_announcement_to_thread_under_the_note_is_not_posted(

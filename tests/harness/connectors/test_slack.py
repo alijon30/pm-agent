@@ -86,22 +86,24 @@ def test_the_call_summary_names_what_was_filed_updated_skipped_and_disputed() ->
                                  post_ref="post-1")
     rendered = render(blocks)
     assert "Q3 Billing planning" in rendered
-    assert "filed 1 ticket · updated 1 · 1 conflict · 1 skipped" in rendered
-    assert "INV-143> Move payment reminders to 3 days — Nodir Rahimov" in rendered
-    assert "Left alone: Ship SMS reminders — no verbatim quote found in transcript" in rendered
-    assert "Sources disagree* on reminder window" in rendered
+    assert "one new ticket, one update to INV-104, and one thing I need a human on." in rendered
+    assert "INV-143> (the payment reminders to 3 days) — Nodir" in rendered
+    assert "Left out on purpose: SMS reminders (no verbatim quote found in transcript)"\
+        in rendered
+    assert "Two answers on reminder window, and I can't pick one." in rendered
 
 
 def test_the_summary_headline_never_reports_a_count_of_zero() -> None:
     rendered = render(call_summary_blocks(MEETING, CREATED, [], [], [], ACTIONS))
-    assert "filed 1 ticket" in rendered
+    assert "one new ticket." in rendered
     assert "updated" not in rendered and "skipped" not in rendered and "conflict" not in rendered
+    assert " 0 " not in rendered and "(s)" not in rendered
 
 
 def test_a_ticket_nobody_was_named_for_carries_no_owner_at_all() -> None:
     unowned = [{**CREATED[0], "owner": None}]
     rendered = render(call_summary_blocks(MEETING, unowned, [], [], [], []))
-    assert "Move payment reminders to 3 days" in rendered
+    assert "the payment reminders to 3 days" in rendered
     assert "unassigned" not in rendered and "owner" not in rendered
 
 
@@ -146,12 +148,14 @@ PLANNED = [
 
 
 def test_the_plan_summary_promises_something_a_person_can_hold_it_to() -> None:
-    rendered = render(plan_summary_blocks(PLANNED, trimmed=["review: unknown issue"]))
-    assert "I'll follow up on this:" in rendered
-    assert "Tue Sep 1 — check that INV-26 is underway _(if not, I'll nudge the assignee)_" \
+    rendered = render(plan_summary_blocks(
+        PLANNED, trimmed=["INV-999 doesn't exist"], owners={"INV-26": "Nodir"}))
+    assert "Here's how I'll follow through:" in rendered
+    assert "Tue Sep 1 — check that INV-26 is underway _(if not, I'll check in with Nodir)_" \
         in rendered
     assert "Thu Sep 3 — look for a pull request on INV-26" in rendered
-    assert "I dropped 1 idea I could not verify" in rendered
+    assert "I left out 1 idea I couldn't verify" in rendered
+    assert "the assignee" not in rendered, "a promise names the person it is about"
 
 
 def test_the_plan_summary_never_shows_a_task_kind_or_an_iso_date() -> None:
@@ -189,9 +193,9 @@ def test_a_citation_is_rendered_as_something_a_person_can_read() -> None:
     assert ref_chip("linear:INV-26") == "INV-26"
     assert ref_chip("fathom:8841201@00:01:58") == "call @ 01:58"
     assert ref_chip("fathom:8841201@01:23:45") == "call @ 01:23:45"
-    assert ref_chip("decision:9f2a1b4c") == "ledger"
+    assert ref_chip("decision:9f2a1b4c") == "decided on the call"
     assert ref_chip("code:acme/invoices/export.py:41") == "export.py:41"
-    assert ref_chip("notion:page-prd") == "spec"
+    assert ref_chip("notion:page-prd") == "the spec"
 
 
 def test_a_reference_shaped_like_nothing_we_know_is_shown_as_it_is() -> None:
@@ -199,9 +203,9 @@ def test_a_reference_shaped_like_nothing_we_know_is_shown_as_it_is() -> None:
     assert ref_chip("") == ""
 
 
-def test_three_decisions_on_one_claim_read_as_one_ledger() -> None:
+def test_three_decisions_on_one_claim_read_as_one_mention_of_the_call() -> None:
     assert ref_chips(["decision:a", "decision:b", "linear:INV-1", "linear:INV-1"]) == [
-        "ledger", "INV-1"]
+        "decided on the call", "INV-1"]
 
 
 def test_dates_are_written_the_way_people_say_them() -> None:

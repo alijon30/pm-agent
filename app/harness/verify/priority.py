@@ -42,12 +42,13 @@ def check_priority(
     if proposed < most_urgent:
         phrases = policy.get("escalation_phrases") or []
         if has_escalation(evidence_quotes, phrases):
-            return PriorityVerdict(proposed, "escalated: the call used escalation language")
+            return PriorityVerdict(proposed, "marked urgent — somebody said so on the call")
         return PriorityVerdict(
             most_urgent,
-            f"priority {proposed} clamped to {most_urgent}: nobody said this was urgent",
+            "left at normal priority — nobody on the call actually called it urgent",
         )
 
     return PriorityVerdict(
-        least_urgent, f"priority {proposed} clamped to {least_urgent}: below the project band"
+        least_urgent,
+        f"raised to {least_urgent} — {proposed} is below what this project uses",
     )

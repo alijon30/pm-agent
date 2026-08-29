@@ -19,6 +19,7 @@ from app.harness.connectors.slack import react_quietly, verify_slack_signature
 from app.harness.connectors.slack_blocks import wrong_modal
 from app.harness.core.errors import SourceUnavailable
 from app.harness.core.redact import redact
+from app.harness.core.words import count_of
 from app.harness.deps import Deps
 
 router = APIRouter()
@@ -114,14 +115,14 @@ def _payload(raw: bytes) -> dict[str, Any]:
 async def _revert(action_id: str, who: str, deps: Deps) -> str:
     """Undo one action. Returns what to tell the human."""
     if deps.actions is None:
-        return "nothing to revert: no action log"
+        return "I can't undo that — there's no action log for this project."
     action = await deps.actions.get(action_id)
     if action is None:
-        return "that action is no longer on record"
+        return "I don't have that action on record any more."
     if action.get("status") == "reverted":
-        return "already reverted"
+        return "That was already reverted."
     if action.get("status") != "done":
-        return "that action never completed, so there is nothing to undo"
+        return "That never completed, so there's nothing to undo."
 
     revert = action.get("revert") or {}
     op = revert.get("op")
@@ -135,9 +136,9 @@ async def _revert(action_id: str, who: str, deps: Deps) -> str:
         elif op == "edit_message" and deps.slack is not None:
             await deps.slack.update(revert["channel"], revert["ts"], "_reverted_", [])
         else:
-            return f"no way to undo a {op!r} action"
+            return "I don't know how to undo that one."
     except SourceUnavailable as exc:
-        return f"could not undo it: {redact(str(exc))}"
+        return f"I can't undo that right now: {redact(str(exc))}."
 
     await deps.actions.mark_reverted(action_id, by=who)
 
@@ -153,8 +154,9 @@ async def _revert(action_id: str, who: str, deps: Deps) -> str:
                 "queued", "blocked", "deferred"
             ):
                 cancelled += len(await deps.queue.cancel(task["id"], f"{identifier} was reverted"))
-    suffix = f"; cancelled {cancelled} follow-up(s)" if cancelled else ""
-    return f"reverted {identifier or 'the action'}{suffix}"
+    suffix = (f" I've also stopped {count_of(cancelled, 'check')} that were watching it."
+              if cancelled else "")
+    return f"Reverted {identifier or 'it'}.{suffix}"
 
 
 @router.post("/slack/interactions")

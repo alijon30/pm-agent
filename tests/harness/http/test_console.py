@@ -100,9 +100,9 @@ def test_a_report_says_what_it_claimed_and_what_it_could_not_prove() -> None:
         "removed": [{"section": "moved", "text": "y", "reason": "no reference"}]})], [])
 
     assert entries[0]["category"] == "reported"
-    assert "1 cited claim(s)" in entries[0]["text"]
+    assert "1 cited claim" in entries[0]["text"]
     assert "Reminders landed early." in entries[0]["text"]
-    assert "removed 1 claim(s) it could not cite" in entries[0]["text"]
+    assert "removed 1 claim it could not cite" in entries[0]["text"]
 
 
 def test_the_journal_says_whether_the_summary_was_posted_or_filled_in() -> None:
@@ -135,7 +135,7 @@ def test_the_journal_runs_newest_first_across_tasks_and_actions() -> None:
     )
 
     assert [e["category"] for e in entries] == ["filed", "extracted"]
-    assert "read 'Q3 Billing planning' — 1 action item(s), 1 decision(s)" in entries[1]["text"]
+    assert "read 'Q3 Billing planning' — 1 action item, 1 decision" in entries[1]["text"]
 
 
 def test_an_empty_history_produces_an_empty_journal() -> None:
