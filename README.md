@@ -95,6 +95,13 @@ orchestrator. Tasks carry `due_at`, leases, `depends_on`, and failure policy; a 
 drains everything due and promotes whatever became unblocked. Plans materialise atomically —
 a plan that fails its gate materialises nothing.
 
+*Why not ADK's workflow agents?* ADK's `SequentialAgent` / `ParallelAgent` orchestrate within
+one model turn; this agent's work spans days, survives restarts, and must be inspectable and
+revertible after the fact. So ADK does what it is best at — the five reasoning steps, with
+schema-enforced output and guarded tools — and a durable, deterministic queue does the
+sequencing. An orchestrator that a model can talk into a loop is the one thing this system
+refuses to have.
+
 **Intent before effect.** Every external write is recorded with an idempotency key and its
 revert payload before the connector call. Replays are detected by key; reverts are one click.
 
