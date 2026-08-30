@@ -83,13 +83,14 @@ async def test_the_real_client_parses_the_documented_issue_shape() -> None:
             "id": "uuid-142", "identifier": "INV-142", "title": "Move payment reminders to 3 days",
             "description": "From Q3 planning", "url": "https://linear.app/acme/issue/INV-142",
             "priority": 3, "updatedAt": "2026-08-27T09:00:00.000Z", "dueDate": None,
-            "state": {"name": "Todo"}, "assignee": {"id": "u-nodir", "name": "Nodir Rahimov"},
+            "state": {"name": "Todo", "type": "unstarted"},
+            "assignee": {"id": "u-nodir", "name": "Nodir Rahimov"},
         }}})
 
     issue = await client_with(httpx.MockTransport(respond)).get_issue("INV-142")
     assert issue == {"id": "uuid-142", "identifier": "INV-142",
                      "title": "Move payment reminders to 3 days", "description": "From Q3 planning",
-                     "state": "Todo", "priority": 3,
+                     "state": "Todo", "state_type": "unstarted", "priority": 3,
                      "assignee": {"id": "u-nodir", "name": "Nodir Rahimov"}, "due_date": None,
                      "url": "https://linear.app/acme/issue/INV-142",
                      "updated_at": "2026-08-27T09:00:00.000Z"}
@@ -180,3 +181,20 @@ async def test_the_real_search_sends_a_word_and_filter() -> None:
     assert seen["team"] == {"id": {"eq": "team-1"}}
     assert len(seen["and"]) == 2
     assert seen["and"][0]["or"][0] == {"title": {"containsIgnoreCase": "overdue"}}
+
+
+async def test_an_issue_reports_linears_own_state_type_not_the_teams_column_name() -> None:
+    """A workspace can call its done column anything. The enum behind it does not move, so
+    "is this still open?" survives the rename."""
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"issue": {
+            "id": "u", "identifier": "INV-9", "title": "t", "description": "",
+            "url": "", "priority": None, "updatedAt": "", "dueDate": None,
+            "state": {"name": "Shipped 🚀", "type": "completed"}, "assignee": None,
+        }}})
+
+    issue = await client_with(httpx.MockTransport(respond)).get_issue("INV-9")
+
+    assert issue is not None
+    assert issue["state"] == "Shipped 🚀"
+    assert issue["state_type"] == "completed"

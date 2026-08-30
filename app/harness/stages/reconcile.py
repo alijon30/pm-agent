@@ -8,12 +8,13 @@ items that needed it are held back and retried once, and Act simply does not see
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from app.agents.base.schemas import ReconcileResult
 from app.harness.connectors.fathom import parse_meeting
 from app.harness.core.clock import iso
 from app.harness.core.errors import PmError, SourceUnavailable
+from app.harness.core.voice import LEADING_VERBS
 from app.harness.core.words import count_of
 from app.harness.deps import Deps
 from app.harness.stages.base import StageResult
@@ -87,6 +88,137 @@ def quotes_for(index: int, action_items: list[dict[str, Any]]) -> list[str]:
     return []
 
 
+# --- an "update" that names no issue ------------------------------------------------------------
+
+class IssueSearch(Protocol):
+    async def search_issues(
+        self, team_id: str, text: str, *, limit: int = 8
+    ) -> list[dict[str, Any]]: ...
+
+
+NEEDS_TARGET = ("update", "duplicate_of")
+CLOSED_STATES = frozenset({"completed", "canceled", "cancelled"})
+MIN_SEARCH_WORDS = 2
+SEARCH_STOPWORDS = frozenset({
+    "a", "an", "and", "the", "to", "for", "of", "on", "in", "at", "by", "with", "from", "into",
+    "behind", "that", "this", "it", "its", "as", "be", "is", "are", "was", "were", "so", "or",
+    "but", "we", "our", "should", "will", "need", "needs", "after", "before", "when", "then",
+    "also", "up", "out", "off", "all", "any", "new",
+})
+DOWNGRADE_PREFIX = (
+    "Possibly duplicates existing work — the call referred to something already tracked but I "
+    "couldn't tell which."
+)
+
+
+def search_words(title: str) -> list[str]:
+    """The words worth searching a tracker on, in the order the title said them.
+
+    The leading verb goes ("Put the invoice CSV export…" is not about putting) and so do the
+    joining words, because the search is a word-AND: every extra word can only lose the match
+    we are looking for."""
+    words = [w.strip(".,;:!?()[]'\"").lower() for w in str(title or "").split()]
+    words = [w for w in words if w and w not in SEARCH_STOPWORDS]
+    if len(words) > 1 and words[0] in LEADING_VERBS:
+        words = words[1:]
+    return words
+
+
+def is_open(issue: dict[str, Any]) -> bool:
+    """Whether an issue is still live work.
+
+    An issue whose state type we do not know counts as open. That is the cautious direction:
+    a candidate kept can only make the "exactly one match" test harder to pass, while a
+    candidate wrongly dropped could leave one match standing and point an update at the wrong
+    ticket."""
+    return str(issue.get("state_type") or "").strip().lower() not in CLOSED_STATES
+
+
+async def resolve_target(
+    item: dict[str, Any], team_id: str, linear: IssueSearch
+) -> tuple[str, str]:
+    """The issue an update must have meant, when the tracker names exactly one.
+
+    The title is searched whole first, then with its trailing words dropped one at a time —
+    titles put their subject early and their qualifiers late, so "invoice CSV export behind
+    feature flag" narrows to "invoice CSV export", which is the phrase the ticket was filed
+    under. The first search that matches anything decides: one open issue is an answer, several
+    is an ambiguity we must not guess at, and narrowing further would only add more.
+
+    Returns (identifier, note); both empty when nothing can be resolved safely, including when
+    the tracker is down — an outage is not evidence that no issue exists."""
+    words = search_words(str(item.get("title") or ""))
+    for keep in range(len(words), MIN_SEARCH_WORDS - 1, -1):
+        try:
+            hits = [i for i in await linear.search_issues(team_id, " ".join(words[:keep]))
+                    if is_open(i)]
+        except SourceUnavailable:
+            return "", ""
+        if len(hits) == 1:
+            found = str(hits[0].get("identifier") or "")
+            return found, f"matched to {found} by title"
+        if hits:
+            return "", ""
+    return "", ""
+
+
+async def resolve_missing_targets(
+    items: list[dict[str, Any]], team_id: str, linear: IssueSearch | None
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Give every update that named no issue a target where the tracker makes it unambiguous.
+
+    Returns the items and the titles still without one. A model that says "update" and then
+    names nothing has described work with nowhere to go, and the harness can often find the
+    where itself rather than letting the commitment fall on the floor."""
+    resolved: list[dict[str, Any]] = []
+    unresolved: list[str] = []
+    for item in items:
+        if item.get("disposition") not in NEEDS_TARGET or str(
+            item.get("target_issue") or ""
+        ).strip():
+            resolved.append(item)
+            continue
+        found, note = await resolve_target(item, team_id, linear) if linear else ("", "")
+        if found:
+            resolved.append({**item, "target_issue": found, "match_note": note})
+        else:
+            unresolved.append(str(item.get("title") or "?"))
+            resolved.append(item)
+    return resolved, unresolved
+
+
+def _target_feedback(titles: list[str]) -> str:
+    return (
+        "These items say \"update\" or \"duplicate_of\" but name no issue to update: "
+        f"{'; '.join(titles)}. Give each one a target_issue you have opened with the tools, or "
+        "make it \"new\"."
+    )
+
+
+def downgrade_unresolved(
+    items: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Turn an update with nowhere to go into a clearly-labelled new issue.
+
+    Somebody committed to this on a call. Filing it as a possible duplicate leaves the team a
+    ticket to merge in one click; dropping it leaves them nothing, and nobody finds out until
+    the work does not happen. The label is the honesty: the description says up front that this
+    may already exist."""
+    kept: list[dict[str, Any]] = []
+    downgraded: list[str] = []
+    for item in items:
+        if item.get("disposition") in NEEDS_TARGET and not str(
+            item.get("target_issue") or ""
+        ).strip():
+            body = str(item.get("description") or "").strip()
+            kept.append({**item, "disposition": "new", "target_issue": None,
+                         "description": f"{DOWNGRADE_PREFIX} {body}".strip()})
+            downgraded.append(str(item.get("title") or "?"))
+        else:
+            kept.append(item)
+    return kept, downgraded
+
+
 async def _verify(
     items: list[dict[str, Any]], ids: IdGate
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
@@ -111,15 +243,21 @@ async def _verify(
     return verified, unverified, outage
 
 
-def _feedback(unverified: list[dict[str, Any]]) -> str:
-    lines = "; ".join(
-        f"{u.get('title', '?')} — {u.get('gate_reason', '')}" for u in unverified
-    )
-    return (
-        "These items were rejected because they name things that could not be confirmed: "
-        f"{lines}. Re-check each identifier with the tools before citing it. Never write a "
-        "reference you did not open; omit the citation and say what you could not verify."
-    )
+def _feedback(unverified: list[dict[str, Any]], homeless: list[str] | None = None) -> str:
+    """The one thing the model is told before its single retry: exactly what was wrong."""
+    parts: list[str] = []
+    if unverified:
+        lines = "; ".join(
+            f"{u.get('title', '?')} — {u.get('gate_reason', '')}" for u in unverified
+        )
+        parts.append(
+            "These items were rejected because they name things that could not be confirmed: "
+            f"{lines}. Re-check each identifier with the tools before citing it. Never write a "
+            "reference you did not open; omit the citation and say what you could not verify."
+        )
+    if homeless:
+        parts.append(_target_feedback(homeless))
+    return " ".join(parts)
 
 
 async def run(task: Doc, deps: Deps) -> StageResult:
@@ -160,20 +298,34 @@ async def run(task: Doc, deps: Deps) -> StageResult:
     # The self-citation is added before verification, not after, so there is exactly one place
     # that decides whether a reference is real. If the event is not in the store the item comes
     # back unverified like any other, bounces once, and is held back honestly.
+    team_id = str(project.get("linear_team_id") or "")
     items, uncitable = with_call_citation(
         parsed.get("items") or [], meeting["meeting_id"], action_items
     )
+    # An "update" that names no issue has nowhere to go. Resolve what the tracker makes
+    # unambiguous before verification, so a recovered target is checked like any other.
+    items, homeless = await resolve_missing_targets(items, team_id, deps.linear)
+    matched = [i["match_note"] for i in items if i.get("match_note")]
     verified, unverified, outage = await _verify(items, ids)
 
     bounced = False
-    if unverified:
+    downgraded: list[str] = []
+    if unverified or homeless:
         bounced = True
         rescued = ReconcileResult.model_validate(
-            await deps.reconciler.run({**payload, "feedback": _feedback(unverified)})
+            await deps.reconciler.run(
+                {**payload, "feedback": _feedback(unverified, homeless)}
+            )
         ).model_dump()
         items, uncitable = with_call_citation(
             rescued.get("items") or [], meeting["meeting_id"], action_items
         )
+        items, homeless = await resolve_missing_targets(items, team_id, deps.linear)
+        matched = [i["match_note"] for i in items if i.get("match_note")]
+        # The bounce was its chance to say which issue it meant. Anything still pointing
+        # nowhere is filed as a labelled possible duplicate rather than lost.
+        if homeless:
+            items, downgraded = downgrade_unresolved(items)
         verified, unverified, outage = await _verify(items, ids)
         parsed = rescued
 
@@ -188,9 +340,17 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         "decision_ids": extracted.get("decision_ids") or [],
         "bounced": bounced,
         "notes": [
-            f"{count_of(len(uncitable), 'item')} could not be given the moment in the call they "
-            f"came from — no timestamp on their evidence: {', '.join(uncitable)}"
-        ] if uncitable else [],
+            *([
+                f"{count_of(len(uncitable), 'item')} could not be given the moment in the call "
+                f"they came from — no timestamp on their evidence: {', '.join(uncitable)}"
+            ] if uncitable else []),
+            *matched,
+            *([
+                f"{count_of(len(downgraded), 'item')} said \"update\" but named no issue even "
+                f"after being asked, so {'it was' if len(downgraded) == 1 else 'they were'} "
+                f"filed as possible duplicates for a human to merge: {', '.join(downgraded)}"
+            ] if downgraded else []),
+        ],
     }
 
     children: list[dict[str, Any]] = [{

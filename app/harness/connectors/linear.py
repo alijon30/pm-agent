@@ -16,7 +16,7 @@ from app.harness.core.redact import redact
 
 _ISSUE_FIELDS = """
 id identifier title description url priority updatedAt dueDate
-state { name } assignee { id name }
+state { name type } assignee { id name }
 """
 
 _GET_ISSUE = f"query($id: String!) {{ issue(id: $id) {{ {_ISSUE_FIELDS} }} }}"
@@ -85,6 +85,9 @@ def _norm_issue(raw: dict[str, Any]) -> dict[str, Any]:
         "title": raw.get("title") or "",
         "description": raw.get("description") or "",
         "state": (raw.get("state") or {}).get("name") or "",
+        # Linear's own enum (backlog/unstarted/started/completed/canceled), not the workspace's
+        # display name, so "is this still open?" survives a team renaming its columns.
+        "state_type": (raw.get("state") or {}).get("type") or "",
         "priority": raw.get("priority"),
         "assignee": {"id": assignee["id"], "name": assignee["name"]} if assignee else None,
         "due_date": raw.get("dueDate"),

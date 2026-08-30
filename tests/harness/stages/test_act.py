@@ -5,6 +5,7 @@ from typing import Any
 
 from app.harness.deps import Deps
 from app.harness.stages.act import build_description, decide, run
+from app.harness.stages.reconcile import DOWNGRADE_PREFIX
 from app.harness.store.actions import ActionStore
 from app.harness.store.db import Doc
 
@@ -435,3 +436,14 @@ def test_the_same_disagreement_reported_twice_reaches_the_team_once() -> None:
     kept = dedupe_conflicts([code_vs_spec, spec_vs_call, code_vs_spec, same_pair_relabelled])
     assert len(kept) == 2
     assert kept[0]["kind"] == "code_vs_spec"
+
+
+def test_a_downgraded_duplicate_says_so_in_the_first_line_a_human_reads() -> None:
+    """The label is the whole justification for filing it. Buried anywhere but the top, the
+    team merges nothing and we have quietly created the duplicate we were trying to avoid."""
+    downgraded = {**ITEM, "disposition": "new", "target_issue": None,
+                  "description": DOWNGRADE_PREFIX + " Raised again in the kickoff."}
+
+    body = build_description(downgraded, MEETING, "key-abc", [])
+
+    assert body.splitlines()[0].startswith("Possibly duplicates existing work —")

@@ -6,6 +6,7 @@ from typing import Any
 
 from evals.scorers import (
     SCORERS,
+    duplicate_detected,
     fabricated_identifiers,
     identifier_pattern,
     no_fabricated_identifiers,
@@ -126,3 +127,39 @@ def test_assigning_work_to_someone_off_the_roster_fails_the_guarantee() -> None:
 def test_every_scorer_is_reachable_by_name() -> None:
     assert SCORERS["no_fabricated_identifiers"] is no_fabricated_identifiers
     assert all(callable(scorer) for scorer in SCORERS.values())
+
+
+# --- an update the harness resolved itself ------------------------------------------------------
+
+def _run(items: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "reconcile": {"items": items},
+        "issues": [{"identifier": "INV-25", "title": "Add invoice CSV export"}],
+        "seeded_identifiers": ["INV-25"],
+    }
+
+
+def test_an_update_the_harness_matched_itself_still_counts_as_catching_the_duplicate() -> None:
+    """The reconciler said "update" and named nothing; the stage found the one issue that
+    answered to the title. The team got the right outcome, so the eval must say so."""
+    row = {"expected": {"title_contains": "csv export"}}
+
+    score = duplicate_detected(row, _run([
+        {"title": "Put the invoice CSV export behind a flag", "disposition": "update",
+         "target_issue": "INV-25", "match_note": "matched to INV-25 by title"}]))
+
+    assert score.passed
+
+
+def test_an_update_that_was_downgraded_is_not_counted_as_catching_it() -> None:
+    """A labelled possible duplicate is the honest fallback, not a success. Scoring it as one
+    would hide the reconciler's miss behind the harness's recovery."""
+    row = {"expected": {"title_contains": "csv export"}}
+
+    score = duplicate_detected(row, _run([
+        {"title": "Put the invoice CSV export behind a flag", "disposition": "new",
+         "target_issue": None,
+         "description": "Possibly duplicates existing work — the call referred to something "
+                        "already tracked but I couldn't tell which."}]))
+
+    assert not score.passed

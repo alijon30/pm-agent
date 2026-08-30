@@ -45,6 +45,12 @@ def spelled(number: int) -> str:
     return SPELLED[number] if 0 <= number < len(SPELLED) else str(number)
 
 
+def count_in_words(number: int, singular: str) -> str:
+    """"one check", "two messages" — the same pluralisation as count_of, said aloud. Small
+    numbers read as words everywhere a person is being spoken to."""
+    return f"{spelled(number)} {singular}" if number == 1 else f"{spelled(number)} {singular}s"
+
+
 def first_name(member: dict[str, Any] | str | None, *, mention: bool = False) -> str:
     """What to call someone. `mention=True` when they owe the next action and should be
     notified; plain text when the name is only attribution and a ping would be noise."""

@@ -9,8 +9,10 @@ from app.harness.core.errors import SourceUnavailable
 from app.harness.deps import Deps
 from app.harness.stages.reconcile import (
     call_citation,
+    is_open,
     item_refs,
     run,
+    search_words,
     with_call_citation,
 )
 from app.harness.verify.ids import IdGate
@@ -307,3 +309,187 @@ async def test_an_item_with_no_timestamp_is_filed_and_the_gap_is_recorded(deps: 
     assert out.result["unverified"] == []  # nothing false was written, so nothing is held back
     assert "no timestamp on their evidence" in out.result["notes"][0]
     assert "Move payment reminders to 3 days" in out.result["notes"][0]
+
+
+# --- an "update" that names no issue ------------------------------------------------------------
+
+TRACKED = [
+    {"id": "u-25", "identifier": "INV-25", "title": "Add invoice CSV export",
+     "description": "Finance asked for it", "state": "Backlog", "state_type": "backlog",
+     "priority": 4, "assignee": None, "due_date": None, "url": "", "updated_at": ""},
+]
+HOMELESS_ITEM = {
+    **GOOD_ITEM, "index": 0, "title": "Put the invoice CSV export behind a feature flag",
+    "description": "Raised again in the kickoff.", "disposition": "update", "target_issue": None,
+    "citations": ["fathom:8841201@00:01:58"], "conflicts": [], "facts": [],
+}
+HOMELESS = {"items": [HOMELESS_ITEM], "decision_conflicts": []}
+
+
+def linear_with(*issues: dict[str, Any]) -> FakeLinear:
+    return FakeLinear(issues=list(issues))
+
+
+# --- picking the words to search on -------------------------------------------------------------
+
+def test_a_title_is_searched_on_the_words_that_identify_the_work() -> None:
+    assert search_words("Put the invoice CSV export behind a feature flag") == [
+        "invoice", "csv", "export", "feature", "flag"]
+    assert search_words("Build the overdue invoices dashboard for finance") == [
+        "overdue", "invoices", "dashboard", "finance"]
+
+
+def test_an_issue_of_unknown_state_counts_as_open() -> None:
+    """Keeping a candidate can only make "exactly one match" harder to reach. Dropping one
+    could leave a single wrong match standing."""
+    assert is_open({"identifier": "INV-1"})
+    assert is_open({"state_type": "started"})
+    assert not is_open({"state_type": "completed"})
+    assert not is_open({"state_type": "canceled"})
+
+
+# --- resolving it ourselves ---------------------------------------------------------------------
+
+async def test_an_update_naming_no_issue_is_matched_to_the_one_the_tracker_holds(
+    deps: Deps,
+) -> None:
+    """The reconciler said "update" and named nothing. Exactly one open issue answers to the
+    title, so the harness supplies what the model left out instead of losing the commitment."""
+    deps.reconciler = FakeReconciler([HOMELESS])
+    deps.ids = make_ids(linear=linear_with(*TRACKED))
+    deps.linear = linear_with(*TRACKED)
+
+    out = await run(await seed(deps), deps)
+
+    assert [i["target_issue"] for i in out.result["items"]] == ["INV-25"]
+    assert [i["disposition"] for i in out.result["items"]] == ["update"]
+    assert "matched to INV-25 by title" in out.result["notes"]
+
+
+async def test_a_matched_target_is_verified_like_one_the_model_wrote(deps: Deps) -> None:
+    """A recovered identifier is still an identifier: if it does not resolve it is held back."""
+    deps.reconciler = FakeReconciler([HOMELESS, HOMELESS])
+    deps.ids = make_ids(linear=linear_with())
+    deps.linear = linear_with(*TRACKED)
+
+    out = await run(await seed(deps), deps)
+
+    assert out.result["items"] == []
+    assert "INV-25" in out.result["unverified"][0]["gate_reason"]
+
+
+async def test_an_update_that_already_names_its_issue_is_left_alone(deps: Deps) -> None:
+    named = {**HOMELESS_ITEM, "target_issue": "INV-104"}
+    deps.reconciler, deps.ids = FakeReconciler([{"items": [named], "decision_conflicts": []}]), (
+        make_ids())
+    deps.linear = linear_with(*TRACKED)
+
+    out = await run(await seed(deps), deps)
+
+    assert [i["target_issue"] for i in out.result["items"]] == ["INV-104"]
+    assert out.result["notes"] == []
+    assert not out.result["bounced"]
+
+
+async def test_a_new_item_is_never_matched_to_an_existing_issue(deps: Deps) -> None:
+    deps.reconciler, deps.ids = FakeReconciler([GOOD]), make_ids()
+    deps.linear = linear_with(*TRACKED)
+
+    out = await run(await seed(deps), deps)
+
+    assert out.result["items"][0]["target_issue"] is None
+    assert out.result["items"][0]["disposition"] == "new"
+
+
+# --- when it cannot be resolved -----------------------------------------------------------------
+
+async def test_several_matches_are_never_guessed_between(deps: Deps) -> None:
+    """Two issues answer to the title. Picking one would be a coin flip against a team's
+    tracker, so the model is asked and the item is downgraded when it still will not say."""
+    twin = {**TRACKED[0], "id": "u-26", "identifier": "INV-26",
+            "title": "Rework invoice CSV export"}
+    deps.reconciler, deps.ids = FakeReconciler([HOMELESS, HOMELESS]), make_ids()
+    deps.linear = linear_with(TRACKED[0], twin)
+
+    out = await run(await seed(deps), deps)
+
+    assert [i["disposition"] for i in out.result["items"]] == ["new"]
+    assert out.result["items"][0]["description"].startswith(
+        "Possibly duplicates existing work —")
+
+
+async def test_no_match_at_all_takes_the_same_road(deps: Deps) -> None:
+    deps.reconciler, deps.ids = FakeReconciler([HOMELESS, HOMELESS]), make_ids()
+    deps.linear = linear_with()
+
+    out = await run(await seed(deps), deps)
+
+    assert [i["disposition"] for i in out.result["items"]] == ["new"]
+    assert out.result["items"][0]["target_issue"] is None
+
+
+async def test_the_model_is_told_exactly_what_it_left_out_before_anything_is_downgraded(
+    deps: Deps,
+) -> None:
+    fake = FakeReconciler([HOMELESS, HOMELESS])
+    deps.reconciler, deps.ids = fake, make_ids()
+    deps.linear = linear_with()
+
+    out = await run(await seed(deps), deps)
+
+    assert out.result["bounced"]
+    feedback = fake.calls[1]["feedback"]
+    assert "names no issue" in feedback or "name no issue" in feedback
+    assert "Put the invoice CSV export behind a feature flag" in feedback
+
+
+async def test_the_model_correcting_itself_is_believed_and_nothing_is_downgraded(
+    deps: Deps,
+) -> None:
+    corrected = {**HOMELESS_ITEM, "target_issue": "INV-104"}
+    deps.reconciler = FakeReconciler([HOMELESS, {"items": [corrected],
+                                                 "decision_conflicts": []}])
+    deps.ids = make_ids()
+    deps.linear = linear_with()
+
+    out = await run(await seed(deps), deps)
+
+    assert [i["disposition"] for i in out.result["items"]] == ["update"]
+    assert out.result["items"][0]["target_issue"] == "INV-104"
+
+
+async def test_a_downgrade_is_written_down_where_a_human_will_read_it(deps: Deps) -> None:
+    deps.reconciler, deps.ids = FakeReconciler([HOMELESS, HOMELESS]), make_ids()
+    deps.linear = linear_with()
+
+    out = await run(await seed(deps), deps)
+
+    note = " ".join(out.result["notes"])
+    assert "named no issue" in note
+    assert "Put the invoice CSV export behind a feature flag" in note
+
+
+async def test_the_original_description_survives_the_downgrade(deps: Deps) -> None:
+    deps.reconciler, deps.ids = FakeReconciler([HOMELESS, HOMELESS]), make_ids()
+    deps.linear = linear_with()
+
+    out = await run(await seed(deps), deps)
+
+    assert "Raised again in the kickoff." in out.result["items"][0]["description"]
+
+
+async def test_a_tracker_outage_never_looks_like_no_such_issue(deps: Deps) -> None:
+    """An outage is not evidence the issue does not exist, so nothing is matched on it — and
+    the item takes the honest road rather than a wrong one."""
+    class Down(FakeLinear):
+        async def search_issues(
+            self, team_id: str, text: str, *, limit: int = 8
+        ) -> list[dict[str, Any]]:
+            raise SourceUnavailable("linear", "502")
+
+    deps.reconciler, deps.ids = FakeReconciler([HOMELESS, HOMELESS]), make_ids()
+    deps.linear = Down(issues=list(TRACKED))
+
+    out = await run(await seed(deps), deps)
+
+    assert [i["disposition"] for i in out.result["items"]] == ["new"]

@@ -28,8 +28,15 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from app.harness.core.clock import human_date, human_delta, human_due, iso, readable
+from app.harness.core.dedupe import collapse
 from app.harness.core.redact import redact
 from app.harness.core.refs import ref_chip
+from app.harness.core.voice import (
+    count_in_words,
+    first_name,
+    issue_phrase,
+    sentence_list,
+)
 from app.harness.core.words import count_of
 from app.harness.deps import Deps
 from app.harness.http.graph_assets import GRAPH_SCRIPT, GRAPH_STYLE
@@ -104,96 +111,147 @@ def _issues_of(tasks: list[Doc]) -> list[str]:
     return seen
 
 
+def _named(identifiers: list[str], noun: str) -> str:
+    """Up to four things are named; more than that and the count is the useful part."""
+    kept = [i for i in identifiers if i]
+    if not kept:
+        return ""
+    return sentence_list(kept) if len(kept) <= 4 else count_in_words(len(kept), noun)
+
+
+def _who(name_or_id: str, roster: list[dict[str, Any]]) -> str:
+    """A first name, from a roster name or a Slack id. Falls back to whatever it was given —
+    a journal that says "U-maya" is still better than one that says nothing."""
+    for member in roster or []:
+        known = (str(member.get("name") or ""), str(member.get("slack_id") or ""))
+        if name_or_id and name_or_id in known:
+            return first_name(member)
+    return first_name(name_or_id) if name_or_id else ""
+
+
 def _plan_line(task: Doc, children: list[Doc]) -> tuple[str, str]:
+    if not children:
+        return "planned", "nothing needed watching, so I scheduled nothing"
     dates = sorted({str(c.get("due_at") or "")[:10] for c in children if c.get("due_at")})
-    about = ", ".join(_issues_of(children)) or "this project"
+    about = _named(_issues_of(children), "ticket") or "this project"
     when = f" ({', '.join(human_date(d) for d in dates)})" if dates else ""
-    return "planned", f"planned {count_of(len(children), 'follow-up')} for {about}{when}"
+    return "planned", f"lined up {count_in_words(len(children), 'check')} on {about}{when}"
 
 
-def _check_line(task: Doc, result: dict[str, Any]) -> tuple[str, str]:
+def _check_line(task: Doc, result: dict[str, Any], roster: list[dict[str, Any]]) -> tuple[str, str]:
     observed = result.get("observed") or {}
     identifier = str(observed.get("issue") or (task.get("params") or {}).get("issue") or "an issue")
     state = str(observed.get("state") or "")
     if result.get("early"):
         due = human_date(str(task.get("due_at") or ""))
         return "early", (
-            f"{identifier} moved ahead of schedule — a check due {due or 'later'} "
-            f"resolved itself early"
+            f"{identifier} moved ahead of schedule — the check due {due or 'later'} "
+            "answered itself"
         )
     if result.get("met"):
-        seen = f" — {state}" if state else ""
-        return "checked", f"{identifier} is where it should be{seen}"
+        return "checked", f"{identifier} is where it should be{f' — {state}' if state else ''}"
     if result.get("acted"):
-        return "nudged", f"{identifier} had not moved — said something, once, to the assignee"
-    reason = str(observed.get("reason") or observed.get("status") or "nothing to say")
-    return "checked", f"{identifier} had not moved — stayed quiet ({reason})"
+        who = _who(str(observed.get("assignee") or ""), roster)
+        return "nudged", f"{identifier} hadn't moved — said so once{f', to {who}' if who else ''}"
+    reason = str(observed.get("reason") or observed.get("status") or "nothing worth saying")
+    return "checked", f"{identifier} hadn't moved — stayed quiet ({reason})"
 
 
-def _done_line(task: Doc, children: list[Doc]) -> tuple[str, str]:
-    """One sentence for a finished task, in the words a person would use."""
+def _act_line(result: dict[str, Any]) -> tuple[str, str]:
+    """What one call actually produced. A line that reports three zeroes has said nothing, so
+    only the parts that happened get named — and when nothing did, it says that outright."""
+    created = _named([str(c.get("identifier") or "") for c in result.get("created") or []],
+                     "ticket")
+    updated = _named([str(u.get("identifier") or "") for u in result.get("updated") or []],
+                     "issue")
+    skipped, conflicts = len(result.get("skipped") or []), len(result.get("conflicts") or [])
+    parts: list[str] = []
+    if created:
+        parts.append(f"filed {created}")
+    if updated:
+        parts.append(f"updated {updated}")
+    if skipped:
+        parts.append(f"left {count_in_words(skipped, 'item')} out on purpose")
+    if conflicts:
+        parts.append(f"flagged {count_in_words(conflicts, 'disagreement')} for a human")
+    if not parts:
+        return "filed", "read the call and found nothing new to file"
+    return "filed", sentence_list(parts)
+
+
+def _done_line(
+    task: Doc, children: list[Doc], roster: list[dict[str, Any]]
+) -> tuple[str, str]:
+    """One sentence for a finished task, in the words a person would use — and never a zero."""
     result: dict[str, Any] = task.get("result") or {}
     kind = str(task["kind"])
 
     if kind == "extract":
         title = str((result.get("meeting") or {}).get("title") or "a call")
-        dropped = len(result.get("dropped") or [])
-        tail = f"; dropped {dropped} without a verbatim quote" if dropped else ""
-        return "extracted", (
-            f"read '{title}' — {count_of(len(result.get('action_items') or []), 'action item')}"
-            f", {count_of(len(result.get('decision_ids') or []), 'decision')}{tail}"
-        )
+        parts = []
+        if result.get("action_items"):
+            parts.append(count_in_words(len(result["action_items"]), "action item"))
+        if result.get("decision_ids"):
+            parts.append(count_in_words(len(result["decision_ids"]), "decision"))
+        if result.get("dropped"):
+            parts.append(f"dropped {count_in_words(len(result['dropped']), 'item')} "
+                         "with no verbatim quote")
+        return "extracted", f"read '{title}' — {sentence_list(parts) or 'nothing new'}"
     if kind == "reconcile":
-        held = len(result.get("unverified") or [])
-        tail = f"; {held} held back as unverified" if held else ""
-        return "reconciled", (
-            f"checked {count_of(len(result.get('items') or []), 'item')} against the tracker, "
-            f"the spec and the code{tail}"
-        )
+        items, held = len(result.get("items") or []), len(result.get("unverified") or [])
+        if not items and not held:
+            return "reconciled", "checked the call against the tracker and found nothing to file"
+        parts = []
+        if items:
+            parts.append(f"checked {count_in_words(items, 'item')} against the tracker, the "
+                         "spec and the code")
+        if held:
+            parts.append(f"held {count_in_words(held, 'item')} back as unverified")
+        return "reconciled", sentence_list(parts)
     if kind == "act":
-        return "filed", (
-            f"filed {len(result.get('created') or [])}, "
-            f"updated {len(result.get('updated') or [])}, "
-            f"skipped {len(result.get('skipped') or [])} — "
-            f"{count_of(len(result.get('conflicts') or []), 'conflict')} reported, "
-            "never resolved"
-        )
+        return _act_line(result)
     if kind == "plan":
         return _plan_line(task, children)
     if kind == "report":
         report = result.get("report") or {}
         removed = len(result.get("removed") or [])
         claims = sum(len(s.get("claims") or []) for s in report.get("sections") or [])
-        tail = (f"; removed {count_of(removed, 'claim')} it could not cite" if removed else "")
+        tail = (f"; dropped {count_in_words(removed, 'claim')} it couldn't cite" if removed else "")
         return "reported", (
-            f"wrote the status report — {count_of(claims, 'cited claim')}: "
+            f"wrote the status report — {count_in_words(claims, 'cited claim')}: "
             f"\"{_short(str(report.get('headline') or ''), 70)}\"{tail}"
         )
     if kind == "intake":
         if result.get("identifier"):
+            stopped = len(result.get("cancelled") or [])
             return "cancelled", (
-                f"stopped {count_of(len(result.get('cancelled') or []), 'check')} on "
-                f"{result['identifier']} — the person who asked for them said so"
+                f"stopped watching {result['identifier']} — the person who asked said so"
+                if stopped else
+                f"asked to stop watching {result['identifier']}, but nothing was running"
             )
         accepted = result.get("accepted") or []
         if accepted:
             return "planned", (
-                f"a teammate asked for something and I committed to "
-                f"{count_of(len(accepted), 'check')}"
+                f"a teammate asked for something and I took on "
+                f"{count_in_words(len(accepted), 'check')}"
             )
         return "checked", (
-            f"a teammate asked for something I could not do — "
+            f"a teammate asked for something I can't do — "
             f"{_short(str(result.get('notes') or 'and I said so'), 70)}"
         )
     if kind == "daily_review":
-        learned = result.get("learned") or []
-        tail = f"; learned {count_of(len(learned), 'thing')}" if learned else ""
+        parts = []
+        if result.get("checked"):
+            parts.append(f"{count_in_words(int(result['checked']), 'check')} ran")
+        if result.get("nudged"):
+            parts.append(f"{count_in_words(int(result['nudged']), 'message')} went out")
+        if result.get("learned"):
+            parts.append(f"learned {count_in_words(len(result['learned']), 'thing')}")
         return "extracted", (
-            f"read yesterday — {count_of(int(result.get('checked', 0)), 'check')} ran, "
-            f"{count_of(int(result.get('nudged', 0)), 'message')} sent{tail}"
+            f"reviewed yesterday — {sentence_list(parts) or 'a quiet day, nothing to learn from'}"
         )
     if kind.startswith("check_"):
-        return _check_line(task, result)
+        return _check_line(task, result, roster)
     if kind == "nudge":
         if result.get("sent"):
             return "nudged", f"sent one nudge about {(task.get('params') or {}).get('about', '')}"
@@ -231,13 +289,15 @@ def action_refs(action: Doc) -> list[str]:
     return refs
 
 
-def _task_entries(task: Doc, children: list[Doc]) -> list[dict[str, Any]]:
+def _task_entries(
+    task: Doc, children: list[Doc], roster: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     ts, kind, status = _ts_of(task), str(task["kind"]), str(task["status"])
     refs = task_refs(task, children)
     entries: list[dict[str, Any]] = []
 
     if status == "done":
-        category, text = _done_line(task, children)
+        category, text = _done_line(task, children, roster)
         entries.append(_entry(ts, category, text, refs))
     elif status == "deferred":
         entries.append(_entry(ts, "deferred", (
@@ -263,25 +323,44 @@ def _task_entries(task: Doc, children: list[Doc]) -> list[dict[str, Any]]:
     return entries
 
 
-def _slack_line(action: Doc) -> tuple[str, str]:
+def _slack_line(
+    action: Doc, task: Doc | None, children: list[Doc], roster: list[dict[str, Any]]
+) -> tuple[str, str]:
+    """What one Slack post was, said as what it did rather than which template it used."""
     inputs: dict[str, Any] = action.get("inputs") or {}
+    observed = ((task or {}).get("result") or {}).get("observed") or {}
+
     if inputs.get("tasks"):
-        return "posted", (
-            f"told the channel about {count_of(int(inputs['tasks']), 'planned follow-up')}"
+        dates = sorted({str(c.get("due_at") or "")[:10] for c in children if c.get("due_at")})
+        when = f" ({', '.join(human_date(d) for d in dates)})" if dates else ""
+        return "posted", f"posted the follow-through plan{when}"
+    template = str(inputs.get("template") or "")
+    if template == "standup":
+        return "posted", "posted the morning standup"
+    if template == "first_look":
+        issue = str(observed.get("issue") or "it")
+        return "posted", f"told whoever asked that the first check on {issue} looked fine"
+    if template == "blocked":
+        return "failed", "told whoever asked that I was stuck"
+    if template:
+        who = _who(str(observed.get("assignee") or ""), roster)
+        about = str(observed.get("issue") or (task or {}).get("params", {}).get("issue") or "")
+        return "nudged", (
+            f"nudged {who or 'the channel'}{f' about {about}' if about else ''}"
         )
-    if inputs.get("template"):
-        return "nudged", f"messaged the channel — {inputs['template']}"
     if inputs.get("sprint"):
-        return "posted", f"posted the {inputs['sprint']} report to Slack"
+        return "posted", f"posted the {inputs['sprint']} report"
     meeting = inputs.get("meeting")
     subject = f" of '{meeting}'" if meeting else ""
     # The summary usually replaces the "reading the call…" message rather than arriving as a new
     # one, and the journal should say which happened — an edit notified nobody.
     verb = "filled in the summary" if inputs.get("edited") else "posted the summary"
-    return "posted", f"{verb}{subject} with a revert button on every action"
+    return "posted", f"{verb}{subject}, with a revert button on every action"
 
 
-def _action_entries(action: Doc) -> list[dict[str, Any]]:
+def _action_entries(
+    action: Doc, task: Doc | None, children: list[Doc], roster: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     kind, status = str(action.get("kind")), str(action.get("status"))
     refs = action_refs(action)
     targets: dict[str, Any] = action.get("target_ids") or {}
@@ -289,52 +368,63 @@ def _action_entries(action: Doc) -> list[dict[str, Any]]:
     inputs: dict[str, Any] = action.get("inputs") or {}
 
     if status == "reverted":
-        who = str(action.get("reverted_by") or "someone")
+        who = _who(str(action.get("reverted_by") or ""), roster) or "someone"
         return [_entry(str(action.get("reverted_at") or _ts_of(action)), "reverted",
                        f"{who} reverted {identifier or kind}", refs)]
     if status == "failed":
         return [_entry(_ts_of(action), "failed",
-                       f"could not {kind} — {_short(str(action.get('error')))}", refs)]
+                       f"couldn't {kind} — {_short(str(action.get('error')))}", refs)]
     if status == "pending":
         return [_entry(_ts_of(action), "pending",
                        f"started {kind} — recorded before doing it, not yet confirmed", refs)]
 
     ts = _ts_of(action)
     if kind == "linear.create_issue":
-        cited = list(action.get("citations") or [])
-        checks = list(action.get("checks_passed") or [])
-        tail = f" · cited {' · '.join(cited[:2])}" if cited else " · no citation on record"
-        gates = f" · checks: {', '.join(checks)}" if checks else ""
-        title = _short(str(inputs.get("title") or ""), 60)
-        return [_entry(ts, "filed",
-                       f"filed {identifier or 'an issue'} — {title}{tail}{gates}", refs)]
+        # A citation is shown as a person reads it; an issue with none says nothing about it,
+        # because a line that announces an absence on every ticket stops being information.
+        cited = [ref_chip(str(c)) for c in (action.get("citations") or [])][:2]
+        owner = _who(str(inputs.get("owner") or ""), roster)
+        clauses = [
+            f"filed {issue_phrase(identifier or 'an issue', str(inputs.get('title') or ''))}",
+            *( [f"assigned to {owner}"] if owner else [] ),
+            *( [f"cited {' · '.join(cited)}"] if cited else [] ),
+        ]
+        return [_entry(ts, "filed", sentence_list(clauses), refs)]
     if kind == "linear.comment":
         return [_entry(ts, "filed", (
             f"commented on {identifier or 'an issue'} — "
             f"{_short(str(inputs.get('title') or 'raised again in a call'), 60)}"
         ), refs)]
     if kind.startswith("slack."):
-        category, text = _slack_line(action)
+        category, text = _slack_line(action, task, children, roster)
         return [_entry(ts, category, text, refs)]
     return [_entry(ts, "done", f"{kind} completed", refs)]
 
 
-def journal_entries(tasks: list[Doc], actions: list[Doc]) -> list[dict[str, Any]]:
+def journal_entries(
+    tasks: list[Doc], actions: list[Doc], roster: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
     """The agent's decisions, newest first, as plain sentences.
 
-    Pure: two lists of documents in, a list of {ts, category, text} out. `category` is both the
-    badge a reader sees and the CSS class, so a new kind of entry needs no template change."""
+    Pure: documents in, a list of {ts, category, text, refs} out. `category` is both the badge a
+    reader sees and the CSS class, so a new kind of entry needs no template change. The roster is
+    optional and only ever used to turn a name or a Slack id into a first name."""
+    people = roster or []
     children: dict[str, list[Doc]] = {}
     for task in tasks:
         parent = str(task.get("parent_task_id") or "")
         if parent:
             children.setdefault(parent, []).append(task)
+    by_id = {str(t["id"]): t for t in tasks}
 
     entries: list[dict[str, Any]] = []
     for task in tasks:
-        entries.extend(_task_entries(task, children.get(str(task["id"]), [])))
+        entries.extend(_task_entries(task, children.get(str(task["id"]), []), people))
     for action in actions:
-        entries.extend(_action_entries(action))
+        owner = by_id.get(str(action.get("task_id") or ""))
+        entries.extend(_action_entries(
+            action, owner, children.get(str(action.get("task_id") or ""), []), people
+        ))
     return sorted(entries, key=lambda e: e["ts"], reverse=True)
 
 
@@ -645,7 +735,12 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     filters = [("project_id", "==", project_id)]
     tasks = await deps.db.query("tasks", filters, order_by="created_at", limit=SCAN_LIMIT)
     actions = await deps.db.query("actions", filters, order_by="created_at", limit=SCAN_LIMIT)
-    decisions = await deps.db.query("decisions", filters, order_by="created_at", limit=SCAN_LIMIT)
+    # Collapsed on the way in: production holds near-duplicates from before the ledger guarded
+    # against them, and a graph with the same decision twice is a graph nobody trusts.
+    decisions = collapse(
+        await deps.db.query("decisions", filters, order_by="created_at", limit=SCAN_LIMIT),
+        lambda row: str(row.get("statement") or ""),
+    )
     events = await deps.db.query("events", filters, order_by="received_at", limit=SCAN_LIMIT)
     lessons = await deps.lessons.for_project(project_id) if deps.lessons is not None else []
 
@@ -748,7 +843,9 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
         ]
         for issue_id in linked:
             expand.setdefault(issue_id, []).append(f"decision:{decision['id']}")
-    story = attribute(journal_entries(tasks, actions), known, expand)
+    story = attribute(
+        journal_entries(tasks, actions, project.get("roster") or []), known, expand
+    )
 
     observed = _observations(tasks)
     created_by_issue = {
@@ -851,42 +948,87 @@ def graph_page(project_name: str) -> str:
 # --- rendering --------------------------------------------------------------------------------
 
 STYLE = """
-:root { color-scheme: light dark; --fg:#16181d; --muted:#6b7280; --line:#e3e5ea; --bg:#fbfbfc;
-        --card:#fff; --accent:#2f6f4f; --warn:#a3421c; }
-@media (prefers-color-scheme: dark) {
-  :root { --fg:#e6e8ec; --muted:#9aa1ad; --line:#2a2e37; --bg:#14161a; --card:#1b1e24;
-          --accent:#7fd1a5; --warn:#e0a07a; } }
+/* The console and the graph are one surface seen two ways, so they share a palette, a material
+   and a typeface. Tokens, gradient and glass are lifted from GRAPH_STYLE deliberately: a judge
+   clicking between the two pages should never feel they left the product. */
+:root { --bg:#06080d; --fg:#e8ecf4; --muted:#7e899c; --line:rgba(148,163,184,.14);
+        --panel:rgba(15,19,29,.78); --accent:#7dd3e0; --good:#a3be8c; --warm:#ebcb8b;
+        --warn:#bf616a; color-scheme: dark; }
 * { box-sizing: border-box; }
-body { margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--fg);
-       font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
-main { max-width: 940px; margin: 0 auto; }
-h1 { font-size:20px; margin:0 0 2px; } h2 { font-size:14px; text-transform:uppercase;
-       letter-spacing:.08em; color:var(--muted); margin:34px 0 10px; font-weight:600; }
-.sub { color:var(--muted); margin:0 0 18px; font-size:13px; }
-.cards { display:flex; flex-wrap:wrap; gap:10px; }
-.card { background:var(--card); border:1px solid var(--line); border-radius:8px;
-        padding:9px 13px; min-width:104px; }
-.card b { display:block; font-size:19px; font-weight:650; } .card span { color:var(--muted);
-        font-size:12px; }
-.j { list-style:none; margin:0; padding:0; }
-.j li { display:flex; gap:10px; padding:6px 0; border-bottom:1px solid var(--line);
-        align-items:baseline; }
-.j time { color:var(--muted); font-variant-numeric:tabular-nums; font-size:12px;
-          white-space:nowrap; }
-.tag { font-size:11px; letter-spacing:.04em; text-transform:uppercase; padding:1px 7px;
-       border-radius:99px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
-.tag.filed,.tag.reported,.tag.early { color:var(--accent); border-color:var(--accent); }
-.tag.failed,.tag.refused,.tag.cancelled,.tag.deferred { color:var(--warn);
-       border-color:var(--warn); }
-table { width:100%; border-collapse:collapse; font-size:13px; }
-th { text-align:left; color:var(--muted); font-weight:600; font-size:12px;
-     border-bottom:1px solid var(--line); padding:6px 8px 6px 0; }
-td { padding:6px 8px 6px 0; border-bottom:1px solid var(--line); vertical-align:top; }
-code { font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); }
-.empty { color:var(--muted); font-style:italic; }
+body { margin:0; padding:30px 20px 72px; color:var(--fg); min-height:100%;
+  font:14.5px/1.6 ui-sans-serif,-apple-system,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+  background:
+    radial-gradient(ellipse 110% 60% at 50% 0%, rgba(56,78,118,.20) 0%, rgba(10,14,22,0) 62%),
+    radial-gradient(circle at 50% 20%, #0c111d 0%, #080b12 55%, #05070b 100%);
+  background-attachment:fixed; }
+/* The same faint dot grid the graph hangs its void on, fading out before the fold. */
+body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:radial-gradient(circle, rgba(148,163,184,.06) 1px, transparent 1.4px);
+  background-size:26px 26px;
+  -webkit-mask-image:linear-gradient(#000 0%, transparent 70%);
+  mask-image:linear-gradient(#000 0%, transparent 70%); }
+main { max-width:960px; margin:0 auto; position:relative; z-index:1; }
+
+h1 { font-size:22px; margin:0 0 3px; font-weight:700; letter-spacing:-.015em;
+  background:linear-gradient(135deg, #f2f5fa 30%, #9fb2cc);
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+h2 { font-size:9.5px; text-transform:uppercase; letter-spacing:.14em; color:var(--muted);
+  margin:38px 0 12px; font-weight:600; }
+.sub { color:var(--muted); margin:0 0 20px; font-size:12.5px; letter-spacing:.01em; }
+
+/* Every panel is the same glass as the graph's floating chrome. */
+.card, .j li, table { background:var(--panel);
+  -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4); }
+.cards { display:flex; flex-wrap:wrap; gap:11px; }
+.card { border:1px solid var(--line); border-radius:14px; padding:12px 16px; min-width:112px;
+  box-shadow:0 14px 40px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.05); }
+.card b { display:block; font-size:22px; font-weight:700; letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums; }
+.card span { color:var(--muted); font-size:11.5px; }
+
+.j { list-style:none; margin:0; padding:0; border:1px solid var(--line); border-radius:14px;
+  overflow:hidden; box-shadow:0 14px 40px rgba(0,0,0,.42); }
+.j li { display:flex; gap:11px; padding:9px 15px; align-items:baseline; line-height:1.5;
+  border-bottom:1px solid var(--line); }
+.j li:last-child { border-bottom:none; }
+.j time { color:var(--muted); font-variant-numeric:tabular-nums; font-size:11.5px;
+  white-space:nowrap; margin-left:auto; padding-left:10px; }
+
+/* Category chips carry the graph's tints, so "filed" is the same green in both places. */
+.tag { font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:2px 9px;
+  border-radius:999px; white-space:nowrap; font-weight:600; flex:none; min-width:74px;
+  text-align:center; color:#8892a4; border:1px solid rgba(136,146,164,.3);
+  background:rgba(136,146,164,.1); }
+.tag.filed, .tag.reported, .tag.early { color:#a3be8c; border-color:rgba(163,190,140,.34);
+  background:rgba(163,190,140,.11); }
+.tag.planned, .tag.posted { color:#88c0d0; border-color:rgba(136,192,208,.34);
+  background:rgba(136,192,208,.11); }
+.tag.nudged { color:#ebcb8b; border-color:rgba(235,203,139,.34);
+  background:rgba(235,203,139,.11); }
+.tag.extracted, .tag.reconciled { color:#b48ead; border-color:rgba(180,142,173,.34);
+  background:rgba(180,142,173,.11); }
+.tag.deferred, .tag.reverted { color:#d08770; border-color:rgba(208,135,112,.34);
+  background:rgba(208,135,112,.11); }
+.tag.refused, .tag.failed, .tag.cancelled { color:#bf616a; border-color:rgba(191,97,106,.34);
+  background:rgba(191,97,106,.11); }
+
+table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px;
+  border:1px solid var(--line); border-radius:14px; overflow:hidden;
+  box-shadow:0 14px 40px rgba(0,0,0,.42); }
+th { text-align:left; color:var(--muted); font-weight:600; font-size:9.5px;
+  text-transform:uppercase; letter-spacing:.12em; padding:10px 14px;
+  border-bottom:1px solid var(--line); background:rgba(148,163,184,.05); }
+td { padding:9px 14px; border-bottom:1px solid var(--line); vertical-align:top;
+  color:#c6cede; }
+tr:last-child td { border-bottom:none; }
+code { font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--accent);
+  background:rgba(125,211,224,.09); border:1px solid rgba(125,211,224,.18);
+  border-radius:5px; padding:1px 6px; }
+.empty { color:var(--muted); font-style:italic; font-size:13px; }
 .dep { color:var(--muted); }
-a { color:inherit; text-decoration:none; border-bottom:1px solid var(--line); }
-a:hover { border-color:currentColor; }
+a { color:inherit; text-decoration:none; border-bottom:1px solid var(--line);
+  transition:border-color 140ms ease, color 140ms ease; }
+a:hover { color:var(--accent); border-color:var(--accent); }
 """
 
 
@@ -1065,7 +1207,9 @@ def render(
         "<a href='/console/graph'>◉ Graph</a></p>"
         + _cards(counts)
         + "<h2>Decision journal</h2>"
-        + _journal_html(journal_entries(tasks, actions)[:JOURNAL_LIMIT])
+        + _journal_html(
+            journal_entries(tasks, actions, project.get("roster") or [])[:JOURNAL_LIMIT]
+        )
         + "<h2>Task graph</h2>"
         + _graph_html(plan_groups(sorted(
             tasks, key=lambda t: str(t.get("created_at") or ""), reverse=True)[:GRAPH_LIMIT]))

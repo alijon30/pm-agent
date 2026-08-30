@@ -6,8 +6,9 @@ from __future__ import annotations
 from typing import Any
 
 from app.harness.core.clock import Clock, iso
+from app.harness.core.dedupe import duplicate_of
 from app.harness.core.keys import new_id
-from app.harness.store.db import Db
+from app.harness.store.db import Db, Doc
 
 
 class DecisionStore:
@@ -24,14 +25,28 @@ class DecisionStore:
     ) -> list[str]:
         ids: list[str] = []
         now = iso(self._clock.now())
+        # Read once: a call restating a decision is the common case, and each new statement is
+        # checked against everything the project already holds, including earlier calls.
+        existing = await self._db.query("decisions", [("project_id", "==", project_id)])
         for d in decisions:
             first = (d.get("evidence") or [{}])[0]
+            source = f"fathom:{meeting['meeting_id']}@{first.get('timestamp', '')}"
+
+            said_before = duplicate_of(str(d["statement"]), existing)
+            if said_before is not None:
+                # The same decision, said again. The earlier entry is the one other documents
+                # already cite, so it keeps its id and gains the second moment as evidence.
+                ids.append(str(said_before["id"]))
+                await self._also_quoted(said_before, first.get("quote", ""), source)
+                continue
+
             doc_id = new_id()
             await self._db.create("decisions", doc_id, {
                 "statement": d["statement"],
                 "rejected_options": list(d.get("rejected_options") or []),
-                "source": f"fathom:{meeting['meeting_id']}@{first.get('timestamp', '')}",
+                "source": source,
                 "quote": first.get("quote", ""),
+                "also_quoted": [],
                 "meeting_title": meeting.get("title", ""),
                 "meeting_url": meeting.get("url", ""),
                 "linked_issue_ids": [],
@@ -40,4 +55,16 @@ class DecisionStore:
                 "created_at": now,
             })
             ids.append(doc_id)
+            existing.append({"id": doc_id, "statement": d["statement"], "also_quoted": []})
         return ids
+
+    async def _also_quoted(self, decision: Doc, quote: str, source: str) -> None:
+        """A second moment the same decision was made, kept beside the first. Nothing is
+        overwritten: the ledger only ever gains evidence."""
+        if not quote:
+            return
+        already = list(decision.get("also_quoted") or [])
+        if any(str(e.get("source")) == source for e in already):
+            return
+        already.append({"quote": quote, "source": source})
+        await self._db.update("decisions", str(decision["id"]), {"also_quoted": already})

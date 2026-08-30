@@ -609,3 +609,60 @@ def test_the_dock_never_polls_while_the_reader_is_in_the_past(client: TestClient
 
     assert "if (!atLive() || playing) return;" in page
     assert "window.setInterval(poll, 60000)" in page
+
+
+# --- duplicates already in the ledger ---------------------------------------------------------
+
+async def test_a_decision_recorded_twice_before_the_guard_existed_draws_one_node(
+    deps: Deps,
+) -> None:
+    """The production ledger holds pairs written before the write-side guard, and nobody is
+    rewriting those documents. The graph collapses them on the way out instead."""
+    ids = await a_whole_story(deps)
+    twin = "d-twin"
+    await deps.db.create("decisions", twin, {
+        "statement": "Payment reminders move to three days after due.",
+        "rejected_options": [], "source": "fathom:8841201@00:04:10",
+        "quote": "so, three days after due", "also_quoted": [], "meeting_title": "",
+        "meeting_url": "", "linked_issue_ids": [], "project_id": "acme",
+        "event_id": ids["event"], "created_at": "2026-08-27T10:05:00+00:00"})
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    graph = await graph_data(project, deps)
+    decisions = [n for n in graph["nodes"] if n["type"] == "decision"]
+
+    assert len(decisions) == 1
+    assert decisions[0]["id"] == f"decision:{ids['decision']}", "the cited one survives"
+    assert not any(n["id"] == f"decision:{twin}" for n in graph["nodes"])
+
+
+async def test_collapsing_a_duplicate_never_orphans_the_lines_drawn_to_it(deps: Deps) -> None:
+    ids = await a_whole_story(deps)
+    await deps.db.create("decisions", "d-twin", {
+        "statement": "Payment reminders move to three days after due.",
+        "rejected_options": [], "source": "", "quote": "", "also_quoted": [],
+        "meeting_title": "", "meeting_url": "", "linked_issue_ids": [], "project_id": "acme",
+        "event_id": ids["event"], "created_at": "2026-08-27T10:05:00+00:00"})
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    graph = await graph_data(project, deps)
+    drawn = {n["id"] for n in graph["nodes"]}
+
+    assert all(e["source"] in drawn and e["target"] in drawn for e in graph["edges"])
+
+
+async def test_two_genuinely_different_decisions_both_reach_the_graph(deps: Deps) -> None:
+    ids = await a_whole_story(deps)
+    await deps.db.create("decisions", "d-other", {
+        "statement": "Ship the invoice CSV export behind a feature flag.",
+        "rejected_options": [], "source": "", "quote": "", "also_quoted": [],
+        "meeting_title": "", "meeting_url": "", "linked_issue_ids": [], "project_id": "acme",
+        "event_id": ids["event"], "created_at": "2026-08-27T10:05:00+00:00"})
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    graph = await graph_data(project, deps)
+
+    assert len([n for n in graph["nodes"] if n["type"] == "decision"]) == 2

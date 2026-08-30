@@ -1,10 +1,12 @@
 """The console is the page a judge lands on, so these tests are about it telling the truth
 plainly, escaping everything, and never being the reason the service looks broken."""
 
+import re
 from typing import Any
 
 from app.harness.deps import Deps
-from app.harness.http.console import journal_entries, plan_groups
+from app.harness.http.console import STYLE, journal_entries, plan_groups
+from app.harness.http.graph_assets import GRAPH_SCRIPT, GRAPH_STYLE
 from app.harness.store.actions import ActionStore
 from app.harness.store.corrections import CorrectionStore
 from fastapi.testclient import TestClient
@@ -40,15 +42,17 @@ def action(**fields: Any) -> dict[str, Any]:
 
 # --- the journal ------------------------------------------------------------------------------
 
-def test_a_filed_issue_reads_as_a_sentence_with_its_citation_and_its_gates() -> None:
+def test_a_filed_issue_reads_as_a_sentence_with_its_owner_and_its_citation() -> None:
     entries = journal_entries([], [action(
-        target_ids={"identifier": "INV-143"}, inputs={"title": "Move payment reminders"},
-        citations=["fathom:8841201@00:01:58"], checks_passed=["roster", "priority", "dates"])])
+        target_ids={"identifier": "INV-143"},
+        inputs={"title": "Move payment reminders", "owner": "Nodir Rahimov"},
+        citations=["fathom:8841201@00:01:58"], checks_passed=["roster", "priority", "dates"])],
+        [{"name": "Nodir Rahimov", "slack_id": "U-nodir"}])
 
     assert entries[0]["category"] == "filed"
     assert entries[0]["text"] == (
-        "filed INV-143 — Move payment reminders · cited fathom:8841201@00:01:58 · "
-        "checks: roster, priority, dates")
+        "filed INV-143 (the payment reminders), assigned to Nodir, and cited call @ 01:58")
+    assert "fathom:" not in entries[0]["text"], "a citation is shown the way a person reads it"
 
 
 def test_a_plan_reads_as_what_will_be_watched_and_when() -> None:
@@ -62,7 +66,7 @@ def test_a_plan_reads_as_what_will_be_watched_and_when() -> None:
     entries = journal_entries([plan, *children], [])
 
     assert entries[0]["category"] == "planned"
-    assert entries[0]["text"] == "planned 2 follow-ups for INV-143 (Sep 3, Sep 4)"
+    assert entries[0]["text"] == "lined up two checks on INV-143 (Sep 3, Sep 4)"
 
 
 def test_a_check_that_reality_beat_reads_as_good_news() -> None:
@@ -100,9 +104,9 @@ def test_a_report_says_what_it_claimed_and_what_it_could_not_prove() -> None:
         "removed": [{"section": "moved", "text": "y", "reason": "no reference"}]})], [])
 
     assert entries[0]["category"] == "reported"
-    assert "1 cited claim" in entries[0]["text"]
+    assert "one cited claim" in entries[0]["text"]
     assert "Reminders landed early." in entries[0]["text"]
-    assert "removed 1 claim it could not cite" in entries[0]["text"]
+    assert "dropped one claim it couldn't cite" in entries[0]["text"]
 
 
 def test_the_journal_says_whether_the_summary_was_posted_or_filled_in() -> None:
@@ -135,7 +139,7 @@ def test_the_journal_runs_newest_first_across_tasks_and_actions() -> None:
     )
 
     assert [e["category"] for e in entries] == ["filed", "extracted"]
-    assert "read 'Q3 Billing planning' — 1 action item, 1 decision" in entries[1]["text"]
+    assert "read 'Q3 Billing planning' — one action item and one decision" in entries[1]["text"]
 
 
 def test_an_empty_history_produces_an_empty_journal() -> None:
@@ -236,8 +240,8 @@ async def test_the_console_tells_the_story_of_what_the_agent_did(
     page = client.get("/console").text
 
     assert "Q3 Billing" in page and "Sprint 1 · 2026-08-20 → 2026-09-03" in page
-    assert "filed INV-143 — Move payment reminders" in page
-    assert "checks: roster, priority, dates" in page
+    assert "filed INV-143 (the payment reminders)" in page
+    assert "cited call @ 01:58" in page
     assert "reminder window" in page and "code:acme/config.py:6" in page
     assert "design goes to Priya" in page
     assert "fabricated identifiers" in page and "95.8" in page
@@ -338,3 +342,45 @@ def test_a_plan_line_belongs_to_the_issues_it_scheduled_work_about() -> None:
 
     planned = next(e for e in entries if e["category"] == "planned")
     assert "issue:INV-143" in planned["refs"]
+
+
+# --- the console and the graph are one surface -------------------------------------------------
+
+def _graph_tints() -> dict[str, str]:
+    """CATEGORY_TINT as the graph's script declares it."""
+    block = re.search(r"const CATEGORY_TINT = \{(.+?)\};", GRAPH_SCRIPT, re.S)
+    assert block is not None
+    return dict(re.findall(r"(\w+):\s*\"(#[0-9a-f]{6})\"", block.group(1)))
+
+
+def test_a_category_is_the_same_colour_on_the_console_as_on_the_graph() -> None:
+    """The two pages show the same journal. A judge clicking between them must not have to
+    relearn what green means."""
+    neutral = "#8892a4"
+
+    for category, tint in _graph_tints().items():
+        rule = re.search(rf"\.tag\.{category}\b[^{{]*\{{([^}}]+)\}}", STYLE)
+        used = rule.group(1) if rule else STYLE[STYLE.index(".tag {"):]
+        assert tint in used or (tint == neutral and neutral in used), (
+            f"{category} is {tint} on the graph but not on the console"
+        )
+
+
+def test_every_category_the_journal_emits_has_a_chip_colour() -> None:
+    for category in _graph_tints():
+        assert f".tag.{category}" in STYLE or category in ("checked", "pending", "done"), (
+            f"no chip style for {category}"
+        )
+
+
+def test_the_console_wears_the_same_palette_as_the_graph() -> None:
+    for token in ("--bg:#06080d", "--fg:#e8ecf4", "--accent:#7dd3e0", "--panel:rgba(15,19,29,.78)"):
+        assert token in STYLE and token in GRAPH_STYLE
+
+
+def test_the_console_page_still_asks_the_network_for_nothing(client: TestClient) -> None:
+    body = client.get("/console").text
+
+    assert "http://" not in body.replace("http://www.w3.org", "")
+    assert "<script" not in body
+    assert "@import" not in body
