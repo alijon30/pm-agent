@@ -68,10 +68,10 @@ the runbook now has the us-east1 detour.
 The whole loop is **live-proven, end to end, off a real recorded call** — extraction caught
 every planted moment, reconciliation caught a real accidental duplicate (updated INV-25
 instead of re-filing it), the planner's dependency chain resolved four days early off a Linear
-webhook within seconds, and the first autonomous standup fired at 9:00 sharp. Across five eval
+webhook within seconds, and the first autonomous standup fired at 9:00 sharp. Across six eval
 runs: **0 fabricated identifiers, 100% report citation coverage, 0 invalid plans
-materialised**. The best result was the worst run: quota starvation dropped judgment scores,
-and the guarantees held anyway — the agent degrades to silence, never to lies.
+materialised**. The best results were the worst runs: quota starvation and small-model variance
+dropped judgment scores, and the guarantees held anyway — the agent degrades to silence, never to lies.
 
 ## What we learned
 

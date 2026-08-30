@@ -130,20 +130,23 @@ renders with `uv run python scripts/preview_slack.py`.
 
 ## Guarantees, measured
 
-The eval harness replays the full pipeline against the fixture company and asks 26 questions —
-recall, judgment, and hard guarantees. Five runs on free-tier quota:
+The eval harness replays the full pipeline against the fixture company and asks 27 questions —
+recall, judgment, and hard guarantees. Six runs on free-tier quota, `gemini-3.5-flash-lite`:
 
 | Metric | Result across all 5 runs |
 |---|---|
 | Fabricated identifiers | **0** |
 | Report citation coverage | **100%** |
 | Invalid plans materialised | **0** |
-| Judgment accuracy | 81–92% (mean 86.5%) |
+| Judgment accuracy | 74–92% (mean 83%); 58% on one quota-starved run |
 
-The most instructive run was the worst one: run 3 scored 15/26 because back-to-back runs
-exhausted the API quota mid-pipeline. The guarantees held anyway — a starved pm-agent wrote
-*nothing*, cited *nothing false*, invented *no identifiers*. It degrades to silence, never to
-lies. Full results in `evals/results/`.
+Two runs are the instructive ones. The quota-starved run scored 15/26 because back-to-back
+runs exhausted the API mid-pipeline; the 20/27 run had no rate limiting at all — the small model
+simply extracted fewer items and planned nothing that time. In both, the guarantees held: a
+starved or unlucky pm-agent writes *less*, cites *nothing false*, invents *no identifiers*. It
+degrades to silence, never to lies — and the judgment spread is the argument for running the
+reasoning agents on a stronger Gemini tier in production, which is a one-line config change
+(`PM_MODEL_STRONG`). Full results in `evals/results/`.
 
 ## Run it
 
