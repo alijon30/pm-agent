@@ -42,6 +42,7 @@ from app.harness.store.firestore import FirestoreDb
 from app.harness.store.lessons import LessonStore
 from app.harness.store.projects import ProjectStore
 from app.harness.store.tasks import TaskQueue
+from app.harness.store.wiki import WikiStore
 from app.harness.verify.ids import IdGate
 
 log = logging.getLogger(__name__)
@@ -133,6 +134,7 @@ def build_deps(settings: Settings | None = None) -> Deps:
         triage=PassthroughTriage(),
         actions=ActionStore(db, clock),
         corrections=CorrectionStore(db, clock),
+        wiki=WikiStore(db, clock),
         lessons=LessonStore(db, clock),
         linear=LinearClient(s.linear_api_key) if s.linear_api_key else None,
         notion=NotionClient(s.notion_token) if s.notion_token else None,

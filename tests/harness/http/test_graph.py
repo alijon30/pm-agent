@@ -882,7 +882,7 @@ def test_a_narrow_strip_shows_dots_without_a_caption(client: TestClient) -> None
     page = client.get("/console/graph").text
 
     assert "labelAt:" in page
-    assert "strip.width < TUNING.labelAt" in page
+    assert "strip.width < u(TUNING.labelAt)" in page
 
 
 def test_a_half_scrolled_day_still_shows_its_date(client: TestClient) -> None:
@@ -901,14 +901,19 @@ def test_the_week_opens_at_its_right_end(client: TestClient) -> None:
     history rather than on empty ground past the last check."""
     page = client.get("/console/graph").text
 
-    assert "setPan(worldWidth <= stage.clientWidth ? 0 : stage.clientWidth - worldWidth);" in page
+    assert "const want = worldWidth - stage.clientWidth;" in page
+    assert "function snapEdges()" in page, "a scroll never starts halfway through a card"
+    assert "worldWidth = Math.max(worldWidth, at + stage.clientWidth);" in page
     assert 'nowButton.addEventListener("click", openingView);' in page
 
 
-def test_the_grid_ends_where_the_work_ends(client: TestClient) -> None:
+def test_the_grid_fills_the_screen_it_is_given(client: TestClient) -> None:
+    """Content in the top third of a 27-inch monitor is a page that decided the viewport was
+    somebody else's problem."""
     page = client.get("/console/graph").text
 
-    assert "contentHeight = y + 24;" in page
+    assert "const LANE_SHARE = {" in page
+    assert "stage.clientHeight - u(TUNING.head)" in page
     assert 'ground.style.height = contentHeight + "px";' in page
     assert 'rule.style.height = contentHeight + "px";' in page
 
@@ -934,3 +939,112 @@ def test_the_check_chip_draws_that_owner(client: TestClient) -> None:
     assert 'if (node.type === "check" && owner) chip.appendChild(avatar(String(owner), 18));' \
         in page
     assert 'body.appendChild(el("div", "from", "from: " + node.from_call));' in page
+
+
+def test_the_page_scales_with_the_monitor_it_is_shown_on(client: TestClient) -> None:
+    """13px type on a 2560px panel is small; Linear gets away with it because Linear fills its
+    screen with rows and we do not."""
+    page = client.get("/console/graph").text
+
+    assert "font-size:clamp(13px, 0.66vw, 18px)" in page
+    assert "function u(value)" in page, "every layout number goes through the scale"
+    assert "function measureRem()" in page
+
+
+def test_the_width_rule_on_the_page_is_the_one_that_was_tested(client: TestClient) -> None:
+    """The rule is specified and tested as `spread` in graph_layout.py; the page mirrors it,
+    so the two constants that decide it have to agree."""
+    from app.harness.http.graph_layout import FUTURE_STRETCH, LANE_SHARE
+
+    page = client.get("/console/graph").text
+
+    assert f"const FUTURE_STRETCH = {FUTURE_STRETCH};" in page
+    for lane, share in LANE_SHARE.items():
+        assert f"{lane}: {share}" in page, f"{lane} share differs from graph_layout"
+
+
+def test_a_week_a_little_too_wide_is_squeezed_before_it_is_scrolled(client: TestClient) -> None:
+    """The rule is specified and tested as `spread` in graph_layout.py; the page mirrors it,
+    so the constant that decides how far it will squeeze has to agree."""
+    from app.harness.http.graph_layout import SQUEEZE_LIMIT
+
+    page = client.get("/console/graph").text
+
+    assert f"const SQUEEZE_LIMIT = {SQUEEZE_LIMIT};" in page
+    assert "floor: u((data.floors || {})[d.key] || 0)" in page
+
+
+def test_a_lane_does_not_grow_into_empty_ground(client: TestClient) -> None:
+    """Filling the screen with nothing is not better than ending early."""
+    page = client.get("/console/graph").text
+
+    assert "const LANE_STRETCH_CAP = 1.5;" in page
+    assert "Math.round(need[lane] * LANE_STRETCH_CAP)" in page
+
+
+def test_the_type_steps_down_rather_than_hiding_the_week(client: TestClient) -> None:
+    """On a 27-inch monitor the week fits at 16px and not at 17. Everything visible at
+    slightly smaller type beats bigger type behind a scrollbar."""
+    page = client.get("/console/graph").text
+
+    assert "function fitRem(data)" in page
+    assert "BASE_REM * fits" in page
+    assert "fitRem(data);" in page, "and it runs before anything is placed"
+
+
+def test_the_dots_hang_off_the_last_row_not_the_bottom_of_the_lane(client: TestClient) -> None:
+    """They belong to the work above them, not to whatever space the lane was given."""
+    page = client.get("/console/graph").text
+
+    assert "const below = laneTop[lane] + u(TUNING.lanePad)" in page
+    assert "below + u(TUNING.rowGap) + line * u(TUNING.smallLine)" in page
+    assert "rowGap: 12," in page
+
+
+def test_the_opening_view_never_starts_inside_a_conversation(client: TestClient) -> None:
+    """Rounding to the nearest boundary could round forward and slice the last working day in
+    half — the day the reviewer most wants to read."""
+    page = client.get("/console/graph").text
+
+    assert "const at = snapEdges().reduce((best, e) => (e <= want && e > best ? e : best), 0);" \
+        in page
+
+
+async def test_what_the_team_told_it_appears_beside_what_it_worked_out(deps: Deps) -> None:
+    """Both are things the agent knows now and did not know before, so both are Learned."""
+    from app.harness.store.wiki import WikiStore
+
+    await deps.projects.upsert("acme", PROJECT)
+    deps.wiki = WikiStore(deps.db, deps.clock)
+    await deps.wiki.add_entry("acme", "ownership", {
+        "text": "Billing and statements go to Nodir", "person": "Nodir Rahimov",
+        "source": "slack:C1:1", "said_by": "Maya Chen"})
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    graph = await graph_data(project, deps)
+    learned = [n for n in graph["nodes"] if n["type"] == "lesson"]
+
+    assert [n["label"] for n in learned] == ["learned: Billing and statements go to Nodir"]
+    assert learned[0]["lane"] == "learned"
+    assert learned[0]["owner"] == "Nodir Rahimov"
+
+
+async def test_a_retired_rule_is_not_drawn(deps: Deps) -> None:
+    from app.harness.store.wiki import WikiStore
+
+    await deps.projects.upsert("acme", PROJECT)
+    deps.wiki = WikiStore(deps.db, deps.clock)
+    await deps.wiki.add_entry("acme", "ownership", {
+        "text": "Billing goes to Nodir", "subject": ["billing"], "person": "Nodir Rahimov",
+        "source": "slack:C1:1"})
+    await deps.wiki.add_entry("acme", "ownership", {
+        "text": "Billing goes to Priya", "subject": ["billing"], "person": "Priya Nair",
+        "source": "slack:C1:2"})
+    project = await deps.projects.get("acme")
+    assert project is not None
+
+    graph = await graph_data(project, deps)
+
+    assert [n["label"] for n in graph["nodes"] if n["type"] == "lesson"] == [
+        "learned: Billing goes to Priya"]

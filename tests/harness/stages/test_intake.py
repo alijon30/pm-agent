@@ -10,6 +10,7 @@ from app.harness.deps import Deps
 from app.harness.stages.intake import commission, commissioned_by, run
 from app.harness.store.actions import ActionStore
 from app.harness.store.db import Doc
+from app.harness.store.wiki import WikiStore
 from app.harness.verify.ids import IdGate
 
 from tests.conftest import ACME
@@ -305,3 +306,116 @@ async def test_what_the_agent_learned_about_itself_reaches_the_steward(deps: Dep
     await run(task, deps)
 
     assert deps.steward.calls[0]["lessons"] == ["Ask before Friday afternoon, not after."]
+
+
+# --- being told how to work -------------------------------------------------------------------
+
+OWNERSHIP = {"tasks": [], "supersedes": [], "notes": "",
+             "memory": {"kind": "ownership", "subject": ["billing", "statements"],
+                        "person": "Nodir Rahimov",
+                        "text": "Billing and statements go to Nodir"}}
+PREFERENCE = {"tasks": [], "supersedes": [], "notes": "",
+              "memory": {"kind": "preference", "subject": ["nudge"], "person": None,
+                         "text": "never nudge anyone before ten"}}
+STRANGER = {"tasks": [], "supersedes": [], "notes": "",
+            "memory": {"kind": "ownership", "subject": ["billing"], "person": "Dave",
+                       "text": "Billing goes to Dave"}}
+
+
+def brain_of(deps: Deps) -> WikiStore:
+    assert deps.wiki is not None
+    return deps.wiki
+
+
+async def with_brain(deps: Deps, **kwargs: Any) -> Doc:
+    task = await wire(deps, **kwargs)
+    deps.wiki = WikiStore(deps.db, deps.clock)
+    return task
+
+
+async def test_an_instruction_is_remembered_rather_than_scheduled(deps: Deps) -> None:
+    task = await with_brain(deps, steward_results=[OWNERSHIP],
+                            params={"text": "from now on assign billing to Nodir",
+                                    "instruct": True})
+
+    out = await run(task, deps)
+
+    assert out.children == [], "a rule is not a check"
+    assert out.result["remembered"]["person"] == "Nodir Rahimov"
+    found = await brain_of(deps).relevant("acme", "the statements page", kinds=("ownership",))
+    assert [e["person"] for e in found] == ["Nodir Rahimov"]
+
+
+async def test_it_says_back_what_it_will_do_from_now_on(deps: Deps) -> None:
+    task = await with_brain(deps, steward_results=[OWNERSHIP],
+                            params={"text": "assign billing to Nodir", "instruct": True})
+
+    out = await run(task, deps)
+
+    assert out.result["notes"] == "Noted — billing, statements go to Nodir from now on."
+    assert deps.slack.posts, "and says it in the thread"
+
+
+async def test_a_preference_is_said_back_in_their_own_words(deps: Deps) -> None:
+    task = await with_brain(deps, steward_results=[PREFERENCE],
+                            params={"text": "never nudge before ten", "instruct": True})
+
+    out = await run(task, deps)
+
+    assert out.result["notes"] == "Noted — from now on: never nudge anyone before ten."
+
+
+async def test_an_owner_who_is_not_on_the_roster_is_refused_and_nothing_is_stored(
+    deps: Deps,
+) -> None:
+    """A name the agent invented would be handed back to the team for weeks as though they
+    had chosen it."""
+    task = await with_brain(deps, steward_results=[STRANGER],
+                            params={"text": "assign billing to Dave", "instruct": True})
+
+    out = await run(task, deps)
+
+    assert out.result["remembered"] is None
+    assert out.result["notes"] == "I don't know a Dave on this project — who did you mean?"
+    assert await brain_of(deps).pages("acme") == []
+
+
+async def test_the_same_instruction_twice_is_remembered_once(deps: Deps) -> None:
+    task = await with_brain(deps, steward_results=[OWNERSHIP],
+                            params={"text": "assign billing to Nodir", "instruct": True})
+    await run(task, deps)
+
+    again = await deps.queue.enqueue(
+        kind="intake", project_id="acme", params={"text": "assign billing to Nodir"},
+        payload={"channel": "C-random", "thread_ts": "1787821201.000100",
+                 "requester": "U-maya"},
+        reason="again", root_event_id="slack:Ev1")
+    assert again is not None
+    claimed = await deps.queue.claim(again)
+    assert claimed is not None
+    deps.steward = FakeSteward([OWNERSHIP])
+    await run(claimed, deps)
+
+    pages = await brain_of(deps).pages("acme")
+    assert len(pages[0]["entries"]) == 1, "one memory, not one per telling"
+
+
+async def test_the_steward_is_shown_what_it_has_already_been_told(deps: Deps) -> None:
+    task = await with_brain(deps, steward_results=[OWNERSHIP],
+                            params={"text": "assign billing to Nodir", "instruct": True})
+    await run(task, deps)
+
+    later = await deps.queue.enqueue(
+        kind="intake", project_id="acme", params={"text": "who owns billing statements?"},
+        payload={"channel": "C-random", "thread_ts": "2.0", "requester": "U-maya"},
+        reason="asked", root_event_id="slack:Ev2")
+    assert later is not None
+    claimed = await deps.queue.claim(later)
+    assert claimed is not None
+    fake = FakeSteward([{"tasks": [], "supersedes": [], "notes": "", "memory": None}])
+    deps.steward = fake
+    await run(claimed, deps)
+
+    brain = fake.calls[0]["brain"]
+    assert [e["text"] for e in brain] == ["Billing and statements go to Nodir"]
+    assert brain[0]["ref"].startswith("wiki:ownership#")

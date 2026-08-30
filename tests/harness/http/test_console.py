@@ -498,3 +498,35 @@ def test_the_act_summary_does_not_repeat_the_lines_beneath_it() -> None:
     # "flagged two disagreements for a human from 'Q3 planning'".
     assert _act_line({"created": [{}], "conflicts": [{}, {}]}, "Q3 planning")[1] == (
         "filed one ticket from 'Q3 planning' and flagged two disagreements for a human")
+
+
+# --- the company brain --------------------------------------------------------------------------
+
+def test_the_brain_is_a_section_a_reviewer_can_read(client: TestClient) -> None:
+    page = client.get("/console").text
+
+    assert ">Brain</h2>" in page
+    assert "tell the agent something in Slack" in page, "and says how to fill it"
+
+
+def test_a_retired_rule_stays_on_the_page_struck_through() -> None:
+    """The useful question about an ownership rule is often "since when", and a page that
+    silently rewrites itself cannot answer it."""
+    from zoneinfo import ZoneInfo
+
+    from app.harness.http.console import _brain_html
+
+    html = _brain_html([{
+        "slug": "ownership", "kind": "ownership", "title": "Ownership", "entries": [
+            {"id": "a", "text": "Billing goes to Nodir", "person": "Nodir Rahimov",
+             "said_by": "Maya Chen", "source": "slack:C1:1",
+             "created_at": "2026-08-28T17:00:00+00:00",
+             "retired_at": "2026-08-30T17:00:00+00:00"},
+            {"id": "b", "text": "Billing goes to Priya", "person": "Priya Nair",
+             "said_by": "Maya Chen", "source": "slack:C1:2",
+             "created_at": "2026-08-30T17:00:00+00:00", "retired_at": None},
+        ]}], ZoneInfo("America/Los_Angeles"))
+
+    assert "class='retired'" in html
+    assert "Billing goes to Nodir" in html, "history is kept"
+    assert html.index("Billing goes to Priya") < html.index("Billing goes to Nodir")

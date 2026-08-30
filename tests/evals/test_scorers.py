@@ -163,3 +163,28 @@ def test_an_update_that_was_downgraded_is_not_counted_as_catching_it() -> None:
                         "already tracked but I couldn't tell which."}]))
 
     assert not score.passed
+
+
+def test_a_brain_nothing_reads_is_reported_as_such() -> None:
+    """Something stored and never handed to a stage is worse than not stored, because it looks
+    like memory. This is the plumbing question, not the judgment one."""
+    from evals.run_evals import brain_reached
+
+    brain = [{"slug": "ownership", "entries": [
+        {"id": "a", "page": "ownership"}, {"id": "b", "page": "ownership"}]}]
+
+    assert brain_reached({"brain": brain, "payloads": [
+        {"brain": [{"ref": "wiki:ownership#a"}]}]}) == "1/2"
+    assert brain_reached({"brain": brain, "payloads": []}) == "0/2"
+    assert brain_reached({"brain": [], "payloads": []}) == "n/a", "nothing stored, nothing owed"
+
+
+def test_a_retired_rule_is_not_counted_against_the_plumbing() -> None:
+    from evals.run_evals import brain_reached
+
+    brain = [{"slug": "ownership", "entries": [
+        {"id": "a", "page": "ownership"},
+        {"id": "old", "page": "ownership", "retired_at": "2026-08-30T00:00:00+00:00"}]}]
+
+    assert brain_reached({"brain": brain,
+                          "payloads": [{"brain": [{"ref": "wiki:ownership#a"}]}]}) == "1/1"

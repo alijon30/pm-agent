@@ -5,6 +5,7 @@ nothing, because it would be believed."""
 from typing import Any
 
 import pytest
+from app.harness.core.clock import iso
 from app.harness.core.errors import PmError
 from app.harness.deps import Deps
 from app.harness.stages.review import (
@@ -17,6 +18,7 @@ from app.harness.stages.review import (
 from app.harness.store.actions import ActionStore
 from app.harness.store.db import Doc
 from app.harness.store.lessons import LessonStore
+from app.harness.store.wiki import WikiStore
 
 from tests.conftest import ACME
 from tests.fakes.fake_agents import FakeReviewer
@@ -425,3 +427,51 @@ async def test_a_project_with_no_channel_simply_does_not_speak(deps: Deps) -> No
 
     out = await run(task, deps)
     assert out.result["standup"] is False
+
+
+# --- the strongest evidence there is ------------------------------------------------------------
+
+async def test_the_reviewer_is_shown_what_a_person_undid(deps: Deps) -> None:
+    """A revert is somebody taking the trouble to say the agent was wrong. Inferring that from
+    an unmet check would be reading tea leaves."""
+    task = await wire(deps)
+    assert deps.actions is not None
+    action_id = await deps.actions.begin(
+        task_id="t-1", project_id="acme", kind="linear.create_issue",
+        idempotency_key="k-1", inputs={"title": "Ship the wrong thing"})
+    await deps.actions.finish(action_id, target_ids={"identifier": "INV-99"}, revert={})
+    await deps.db.update("actions", action_id, {
+        "reverted_at": iso(deps.clock.now()), "reverted_by": "U-maya"})
+
+    gathered = await gather(task, deps)
+
+    assert [r["identifier"] for r in gathered["reverts"]] == ["INV-99"]
+    assert gathered["reverts"][0]["by"] == "U-maya"
+    assert f"action:{action_id}" in evidence_ids(gathered)
+
+
+async def test_the_reviewer_is_shown_what_a_person_corrected(deps: Deps) -> None:
+    task = await wire(deps)
+    deps.wiki = WikiStore(deps.db, deps.clock)
+    where = await deps.wiki.add_entry("acme", "correction", {
+        "text": "wrong: assigned to Priya; right: billing goes to Nodir",
+        "source": "slack:C1:1", "said_by": "Maya Chen"})
+    assert where is not None
+
+    gathered = await gather(task, deps)
+
+    assert [c["said_by"] for c in gathered["corrections"]] == ["Maya Chen"]
+    assert f"wiki:{where[0]}#{where[1]}" in evidence_ids(gathered)
+
+
+def test_a_lesson_may_cite_a_correction() -> None:
+    """The evidence gate is a membership test, so a new kind of evidence has to be admitted
+    deliberately rather than by the model asserting it."""
+    allowed = {"wiki:corrections#abc", "action:xyz"}
+
+    kept, dropped = keep_evidenced(
+        [{"text": "Ask before reassigning billing", "evidence": ["wiki:corrections#abc"]},
+         {"text": "Invented", "evidence": ["wiki:corrections#nope"]}], allowed)
+
+    assert [k["text"] for k in kept] == ["Ask before reassigning billing"]
+    assert [d["text"] for d in dropped] == ["Invented"]

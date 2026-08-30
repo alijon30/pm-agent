@@ -60,10 +60,17 @@ async def _good_news(identifier: str, resolved: list[str], deps: Deps) -> str:
         ((cleared[0] if cleared else {}).get("result") or {}).get("observed", {}).get("assignee")
         or ""
     ))
-    opening = f"{who}'s already on {identifier}" if who else f"{identifier} is already underway"
+    # A check the work overtook is cleared for a different reason than one somebody got ahead
+    # of, and the note should say which.
+    moot = bool(cleared) and all(
+        ((t.get("result") or {}).get("observed") or {}).get("moot") for t in cleared
+    )
+    opening = f"{identifier} is done" if moot else (
+        f"{who}'s already on {identifier}" if who else f"{identifier} is already underway"
+    )
     dates = sorted(when_phrase(str(t.get("due_at") or ""), deps.clock.now()) for t in cleared)
-    when = f" the {dates[0]} check" if len(dates) == 1 and dates[0] else (
-        f" {count_of(len(cleared), 'check')}"
+    when = f" the {dates[0]} check" if len(dates) == 1 and dates[0] and not moot else (
+        f" {count_of(len(cleared), 'remaining check' if moot else 'check')}"
     )
     upcoming = [
         t for t in await deps.db.query("tasks", [("status", "in", list(RESOLVABLE))])
@@ -73,7 +80,9 @@ async def _good_news(identifier: str, resolved: list[str], deps: Deps) -> str:
         nxt = min(upcoming, key=lambda t: str(t.get("due_at") or ""))
         return (f"{opening} — I've cleared{when}. Next up: {human_check(nxt)}, "
                 f"{when_phrase(str(nxt.get('due_at') or ''), deps.clock.now())}.")
-    return f"{opening} — I've cleared{when} early."
+    # "early" is the whole point when somebody got ahead of the schedule, and wrong when the
+    # work simply finished — nothing was early about it.
+    return f"{opening} — I've cleared{when}." if moot else f"{opening} — I've cleared{when} early."
 
 
 async def _note_in_thread(identifier: str, resolved: list[str], deps: Deps) -> None:

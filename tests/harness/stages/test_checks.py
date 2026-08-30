@@ -4,6 +4,7 @@ to one person, only when there is something real to say."""
 from datetime import UTC, datetime
 from typing import Any
 
+from app.harness.core.errors import SourceUnavailable
 from app.harness.deps import Deps
 from app.harness.kinds.registry import KINDS
 from app.harness.kinds.templates import TEMPLATES, render
@@ -404,3 +405,80 @@ async def test_the_first_look_obeys_quiet_hours_and_the_daily_budget(deps: Deps)
     out = await run_check(task, deps)
 
     assert out.result["acted"] == [] and deps.slack.posts == []
+
+
+# --- work that finished before the check ran --------------------------------------------------
+
+DONE_ISSUE = {**ISSUE, "state": "Done"}
+
+
+async def test_a_check_never_chases_a_pull_request_for_finished_work(deps: Deps) -> None:
+    """An engineer marks INV-143 Done without a branch that names it. Asking "where is the
+    pull request?" the next morning reads as the agent not having noticed."""
+    task = await wire(deps, kind="check_pr_exists", params={"issue": "INV-143"},
+                      on_unmet="nudge_assignee", issues=[DONE_ISSUE], prs=[])
+
+    met, observed = await CHECKS["check_pr_exists"](task, deps)
+
+    assert met is True
+    assert observed["moot"] is True
+    assert observed["reason"] == "issue is done"
+
+
+async def test_a_moot_check_sends_nobody_anything(deps: Deps) -> None:
+    task = await wire(deps, kind="check_pr_exists", params={"issue": "INV-143"},
+                      on_unmet="nudge_assignee", issues=[DONE_ISSUE], prs=[])
+
+    out = await run_check(task, deps)
+
+    assert out.result["met"] is True
+    assert not out.result.get("acted"), "no nudge about work that is finished"
+    assert deps.slack.posts == []
+
+
+async def test_work_still_in_flight_is_chased_exactly_as_before(deps: Deps) -> None:
+    """The moot rule must not become a way to stop checking."""
+    task = await wire(deps, kind="check_pr_exists", params={"issue": "INV-143"},
+                      on_unmet="nudge_assignee", issues=[{**ISSUE, "state": "In Progress"}],
+                      prs=[])
+
+    met, observed = await CHECKS["check_pr_exists"](task, deps)
+
+    assert met is False
+    assert "moot" not in observed
+
+
+async def test_a_tracker_that_cannot_answer_changes_nothing(deps: Deps) -> None:
+    """An outage is not evidence the work is done."""
+    class Down(FakeLinear):
+        async def get_issue(self, identifier: str) -> dict[str, Any] | None:
+            raise SourceUnavailable("linear", "502")
+
+    task = await wire(deps, kind="check_pr_exists", params={"issue": "INV-143"}, prs=[])
+    deps.linear = Down(issues=[DONE_ISSUE])
+
+    met, observed = await CHECKS["check_pr_exists"](task, deps)
+
+    assert met is False
+    assert "moot" not in observed
+
+
+async def test_asking_whether_finished_work_has_started_is_moot_too(deps: Deps) -> None:
+    task = await wire(deps, kind="check_issue_state",
+                      params={"issue": "INV-143", "expect": ["In Progress"]},
+                      on_unmet="nudge_assignee", issues=[DONE_ISSUE])
+
+    met, observed = await CHECKS["check_issue_state"](task, deps)
+
+    assert met is True and observed["moot"] is True
+
+
+async def test_a_check_that_was_waiting_for_done_is_a_success_not_a_moot(deps: Deps) -> None:
+    """It got what it asked for. Calling that moot would hide the agent's own win."""
+    task = await wire(deps, kind="check_issue_state",
+                      params={"issue": "INV-143", "expect": ["Done"]}, issues=[DONE_ISSUE])
+
+    met, observed = await CHECKS["check_issue_state"](task, deps)
+
+    assert met is True
+    assert "moot" not in observed

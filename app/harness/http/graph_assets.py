@@ -11,12 +11,16 @@ GRAPH_STYLE = """
   /* Done is indigo, the way Linear draws it. Green means exactly one thing on this page —
      the agent finished ahead of its own schedule — so it appears nowhere else. */
   --done:#5e6ad2; --progress:#f2c94c; --failed:#eb5757; --spark:#4cb782;
-  --gutter:92px; --head:36px; --bar:44px; --top:40px;
-  --radius:6px;
+  --gutter:7.08rem; --head:2.77rem; --bar:3.4rem; --top:2.75rem;
+  --radius:0.46rem;
 }
 * { box-sizing:border-box; }
+/* The page scales with the monitor. Linear ships 13px type because Linear fills its screen
+   with rows; this one does not, so on a 27-inch panel everything grows a little rather than
+   sitting in the top corner at phone size. */
+html { font-size:clamp(13px, 0.66vw, 18px); }
 html, body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--text);
-  font:13px/1.5 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;
+  font:1rem/1.5 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;
   font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased; }
 button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:all 120ms ease; }
 
@@ -24,9 +28,9 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 #top { position:fixed; top:0; left:0; right:0; height:var(--top); z-index:20;
   background:var(--surface); border-bottom:1px solid var(--border); display:flex;
   align-items:center; gap:14px; padding:0 14px; }
-#title { font-size:15px; font-weight:500; letter-spacing:-.01em; }
-#tagline { font-size:12px; color:var(--muted); }
-#status { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:7px;
+#title { font-size:1.15rem; font-weight:500; letter-spacing:-.01em; }
+#tagline { font-size:0.92rem; color:var(--muted); }
+#status { font-size:0.92rem; color:var(--muted); display:flex; align-items:center; gap:7px;
   margin-left:8px; min-width:0; }
 #status b { font-weight:400; color:var(--text); overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap; }
@@ -35,16 +39,16 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 @keyframes soft { 0%,100% { opacity:1; } 50% { opacity:.4; } }
 #tools { margin-left:auto; display:flex; align-items:center; gap:12px; }
 .flat { background:transparent; color:var(--muted); border:1px solid var(--border);
-  padding:5px 11px; font-size:12px; }
+  padding:5px 11px; font-size:0.92rem; }
 .flat:hover { border-color:var(--border-hi); color:var(--text); }
 #avatars { display:flex; align-items:center; }
 #avatars .who { margin-left:-6px; cursor:pointer; transition:transform 120ms ease; }
 #avatars .who:first-child { margin-left:0; }
 #avatars .who:hover { transform:translateY(-1px); z-index:2; }
-.disc { width:22px; height:22px; border-radius:50%; background:var(--border-hi);
-  color:var(--text); font-size:10px; font-weight:500; display:flex; align-items:center;
+.disc { width:1.7rem; height:1.7rem; border-radius:50%; background:var(--border-hi);
+  color:var(--text); font-size:0.77rem; font-weight:500; display:flex; align-items:center;
   justify-content:center; border:1.5px solid var(--surface); }
-#link { color:var(--muted); font-size:12px; text-decoration:none; }
+#link { color:var(--muted); font-size:0.92rem; text-decoration:none; }
 #link:hover { color:var(--text); }
 
 /* --- the grid ------------------------------------------------------------------------------ */
@@ -61,10 +65,10 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 .col.future { background-image:repeating-linear-gradient(45deg,
   rgba(255,255,255,.03) 0 1px, transparent 1px 7px); }
 .col-head { position:absolute; top:0; height:var(--head); display:flex; align-items:center;
-  font-size:12px; font-weight:500; color:var(--muted); white-space:nowrap; padding-left:12px;
+  font-size:0.92rem; font-weight:500; color:var(--muted); white-space:nowrap; padding-left:12px;
   z-index:4; }
 .col-head.today { color:var(--text); border-bottom:2px solid var(--accent); }
-.col-sub { position:absolute; font-size:11px; color:var(--faint); white-space:nowrap;
+.col-sub { position:absolute; font-size:0.85rem; color:var(--faint); white-space:nowrap;
   padding-left:12px; z-index:4; }
 #headband { position:absolute; top:0; left:0; height:var(--head); z-index:3;
   background:var(--surface); border-bottom:1px solid var(--border); }
@@ -72,21 +76,21 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 /* Lane rows. */
 .lane { position:absolute; left:0; border-top:1px solid var(--border); }
 .lane-tag { position:absolute; left:12px; right:8px; }
-.lane-name { font-size:11px; color:var(--muted); }
+.lane-name { font-size:0.85rem; color:var(--muted); }
 /* A stranger has no idea what "Understood" is a row of. */
-.lane-about { font-size:10px; color:var(--faint); line-height:1.3; margin-top:1px; }
-.lane-none { position:absolute; font-size:11px; color:var(--faint); padding-left:12px;
+.lane-about { font-size:0.77rem; color:var(--faint); line-height:1.3; margin-top:1px; }
+.lane-none { position:absolute; font-size:0.85rem; color:var(--faint); padding-left:12px;
   white-space:nowrap; }
 /* Conversations are divided at half the weight of a day, so the day stays the stronger line. */
 .strip-rule { position:absolute; top:0; width:1px; background:var(--border); opacity:.5; }
-.hair-label { position:absolute; font-size:10px; color:var(--faint); white-space:nowrap;
+.hair-label { position:absolute; font-size:0.77rem; color:var(--faint); white-space:nowrap;
   overflow:hidden; text-overflow:ellipsis; }
 #gutter { position:fixed; top:calc(var(--top) + var(--head)); left:0; width:var(--gutter);
   bottom:var(--bar); z-index:6; background:var(--bg);
   border-right:1px solid var(--border); pointer-events:none; }
 
 #nowline { stroke:var(--accent); stroke-width:1; }
-#nowtag { position:absolute; z-index:5; font-size:10px; font-weight:500; color:#fff;
+#nowtag { position:absolute; z-index:5; font-size:0.77rem; font-weight:500; color:#fff;
   background:var(--accent); border-radius:3px; padding:1px 6px; transform:translateX(-50%); }
 
 /* --- nodes are rows and chips -------------------------------------------------------------- */
@@ -105,22 +109,23 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 
 /* An issue reads like a row in a tracker. */
 /* A title is the content, so it gets two lines before it is ever cut. */
-.issue { width:260px; min-height:28px; display:flex; align-items:flex-start; gap:7px;
-  padding:6px 8px; }
+/* Given room, a title is shown rather than cut. Truncation is a last resort, not a default. */
+.issue { width:20rem; max-width:22rem; min-height:2.15rem; display:flex; align-items:flex-start;
+  gap:0.54rem; padding:0.46rem 0.62rem; }
 .issue .ico, .issue .bars, .issue .disc { margin-top:1px; }
-.issue .key { font-size:12px; font-weight:500; color:var(--text); flex:none; }
-.issue .ttl { font-size:12px; color:var(--muted); line-height:1.35; flex:1;
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.issue .key { font-size:0.92rem; font-weight:500; color:var(--text); flex:none; }
+.issue .ttl { font-size:0.92rem; color:var(--muted); line-height:1.35; flex:1;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 .ico { flex:none; display:block; }
 .bars { flex:none; display:flex; align-items:flex-end; gap:1.5px; height:10px; }
 .bars i { width:2.5px; background:var(--faint); border-radius:1px; }
 .bars i.on { background:var(--muted); }
 
 /* A call is the one thing with more to say than a row. */
-.card { width:220px; padding:9px 10px 8px; }
-.card .ttl { font-size:13px; font-weight:500; line-height:1.35;
+.card { width:16.9rem; padding:9px 10px 8px; }
+.card .ttl { font-size:1rem; font-weight:500; line-height:1.35;
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.card .when { margin-top:2px; font-size:11px; color:var(--muted); }
+.card .when { margin-top:2px; font-size:0.85rem; color:var(--muted); }
 .strip { display:flex; gap:2px; margin-top:8px; }
 .seg { flex:1; height:4px; border-radius:2px; background:var(--border); }
 .seg.done { background:var(--done); }
@@ -129,25 +134,26 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 .seg.failed { background:var(--failed); }
 .seg.skipped { background-image:repeating-linear-gradient(45deg,
   rgba(255,255,255,.06) 0 1px, transparent 1px 4px); background-color:var(--border); }
-.note { margin-top:6px; font-size:11px; color:var(--muted); overflow:hidden;
+.note { margin-top:6px; font-size:0.85rem; color:var(--muted); overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; }
 
 /* A decision, a conflict and a check are all text chips with a leading mark. */
-.text-chip { width:220px; padding:7px 9px; display:flex; gap:7px; align-items:flex-start; }
+.text-chip { width:16.9rem; max-width:18rem; padding:0.54rem 0.7rem; display:flex;
+  gap:0.54rem; align-items:flex-start; }
 .chip-body { flex:1; min-width:0; }
-.text-chip .from { margin-top:3px; font-size:10px; color:var(--faint);
+.text-chip .from { margin-top:3px; font-size:0.77rem; color:var(--faint);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .text-chip .up { color:var(--spark); }
-.text-chip .g { font-size:10px; line-height:1.5; color:var(--muted); flex:none; }
+.text-chip .g { font-size:0.77rem; line-height:1.5; color:var(--muted); flex:none; }
 .text-chip .g.warn { color:var(--progress); }
-.text-chip p { margin:0; font-size:12px; line-height:1.35; color:var(--text);
-  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.text-chip p { margin:0; font-size:0.92rem; line-height:1.35; color:var(--text);
+  display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
 .check p { -webkit-line-clamp:2; }
-.check { min-height:26px; }
+.check { min-height:2rem; }
 
 /* What the agent said sits on a hairline as dots. */
 .hair { position:absolute; height:1px; background:var(--border); z-index:1; }
-.dot { width:4px; height:4px; border-radius:50%; background:var(--muted); }
+.dot { width:0.31rem; height:0.31rem; border-radius:50%; background:var(--muted); }
 .n:hover .dot { background:var(--text); }
 
 .edge { fill:none; stroke-width:1; opacity:0; transition:opacity 120ms ease; }
@@ -158,7 +164,7 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 #controls { position:fixed; left:0; right:0; bottom:0; height:var(--bar); z-index:20;
   background:var(--surface); border-top:1px solid var(--border); display:flex;
   align-items:center; gap:14px; padding:0 14px; }
-#play { background:var(--accent); color:#fff; border:none; padding:6px 14px; font-size:12px;
+#play { background:var(--accent); color:#fff; border:none; padding:6px 14px; font-size:0.92rem;
   font-weight:500; }
 #play:hover { background:var(--accent-hi); }
 input[type=range] { -webkit-appearance:none; appearance:none; flex:1; height:16px;
@@ -169,63 +175,63 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:10px; h
 input[type=range]::-moz-range-track { height:2px; background:var(--border-hi); }
 input[type=range]::-moz-range-thumb { width:10px; height:10px; border-radius:50%;
   background:var(--text); border:none; }
-#clock { font-size:12px; color:var(--muted); }
-#mode { font-size:11px; color:var(--muted); display:flex; align-items:center; gap:6px;
+#clock { font-size:0.92rem; color:var(--muted); }
+#mode { font-size:0.85rem; color:var(--muted); display:flex; align-items:center; gap:6px;
   border:1px solid var(--border); border-radius:999px; padding:3px 9px; }
 #mode i { width:6px; height:6px; border-radius:50%; background:var(--accent); }
-#count { font-size:12px; color:var(--faint); }
+#count { font-size:0.92rem; color:var(--faint); }
 
 /* --- the story panel, as an issue sidebar --------------------------------------------------- */
-#panel { position:fixed; top:var(--top); right:0; bottom:0; width:380px; z-index:19;
+#panel { position:fixed; top:var(--top); right:0; bottom:0; width:clamp(24rem, 22vw, 26rem); z-index:19;
   background:var(--surface); border-left:1px solid var(--border); overflow-y:auto;
   padding:16px 18px 32px; transform:translateX(100%); transition:transform 120ms ease; }
 #panel.open { transform:none; }
 #panel-close { position:absolute; top:12px; right:14px; background:transparent;
-  border:1px solid var(--border); color:var(--muted); padding:3px 8px; font-size:12px; }
-.p-key { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:500;
+  border:1px solid var(--border); color:var(--muted); padding:3px 8px; font-size:0.92rem; }
+.p-key { display:flex; align-items:center; gap:8px; font-size:0.92rem; font-weight:500;
   color:var(--muted); }
 /* The panel is where the whole title lives; nothing is cut here. */
-.p-title { margin-top:8px; font-size:13px; line-height:1.45; color:var(--text);
+.p-title { margin-top:8px; font-size:1rem; line-height:1.45; color:var(--text);
   overflow-wrap:anywhere; }
-.p-sum { font-size:12px; color:var(--muted); margin-bottom:8px; }
-.p-link, .p-row { background:transparent; border:none; color:var(--accent); font-size:12px;
+.p-sum { font-size:0.92rem; color:var(--muted); margin-bottom:8px; }
+.p-link, .p-row { background:transparent; border:none; color:var(--accent); font-size:0.92rem;
   padding:0; text-align:left; }
 .p-link:hover, .p-row:hover { text-decoration:underline; }
 .p-row { display:block; width:100%; border:1px solid var(--border); border-radius:var(--radius);
   padding:7px 9px; margin-bottom:5px; color:var(--text); line-height:1.4; }
 .p-row:hover { border-color:var(--border-hi); text-decoration:none; }
-.p-head { margin:22px 0 9px; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+.p-head { margin:22px 0 9px; font-size:0.85rem; letter-spacing:.06em; text-transform:uppercase;
   color:var(--faint); }
 .p-fact { display:grid; grid-template-columns:112px 1fr; gap:10px; padding:5px 0;
-  font-size:12px; align-items:center; }
+  font-size:0.92rem; align-items:center; }
 .p-fact b { color:var(--muted); font-weight:400; }
 .p-fact span { color:var(--text); display:flex; align-items:center; gap:6px; }
 .p-story { position:relative; padding-left:16px; }
 .p-story::before { content:""; position:absolute; left:3px; top:8px; bottom:8px; width:1px;
   background:var(--border); }
 .p-line { position:relative; display:flex; gap:10px; align-items:baseline; padding:5px 0;
-  font-size:12px; line-height:1.45; }
+  font-size:0.92rem; line-height:1.45; }
 .p-dot { position:absolute; left:-16px; top:10px; width:6px; height:6px; border-radius:50%;
   background:var(--faint); }
-.p-line em { font-style:normal; color:var(--faint); font-size:11px; margin-left:auto;
+.p-line em { font-style:normal; color:var(--faint); font-size:0.85rem; margin-left:auto;
   white-space:nowrap; padding-left:10px; }
-.p-none { color:var(--faint); font-size:12px; }
+.p-none { color:var(--faint); font-size:0.92rem; }
 .p-open { display:inline-block; margin-top:22px; background:var(--accent); color:#fff;
-  font-size:12px; font-weight:500; padding:7px 13px; border-radius:var(--radius);
+  font-size:0.92rem; font-weight:500; padding:7px 13px; border-radius:var(--radius);
   text-decoration:none; }
 .p-open:hover { background:var(--accent-hi); }
 
 #tooltip { position:fixed; z-index:30; background:var(--surface); border:1px solid var(--border);
-  border-radius:var(--radius); padding:7px 10px; max-width:280px; font-size:12px;
+  border-radius:var(--radius); padding:7px 10px; max-width:280px; font-size:0.92rem;
   pointer-events:none; opacity:0; transition:opacity 120ms ease;
   box-shadow:0 1px 2px rgba(0,0,0,.4); }
 #tooltip.on { opacity:1; }
-.t-kind { font-size:11px; color:var(--muted); }
+.t-kind { font-size:0.85rem; color:var(--muted); }
 .t-label { margin-top:2px; line-height:1.4; }
-.t-meta { margin-top:3px; color:var(--faint); font-size:11px; }
+.t-meta { margin-top:3px; color:var(--faint); font-size:0.85rem; }
 
 #empty { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-  color:var(--faint); font-size:13px; z-index:6; }
+  color:var(--faint); font-size:1rem; z-index:6; }
 """
 
 
@@ -314,6 +320,28 @@ const FACT_LABELS = {
   title: "Call", when: "When", produced: "Produced", evidence: "Learned from",
 };
 
+// Every number in TUNING is expressed at a 13px root. The page scales with the viewport
+// (html { font-size: clamp(...) }), so one measurement turns them all into today's pixels.
+const BASE_REM = 13;
+let rem = BASE_REM;
+
+function measureRem() {
+  const size = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  rem = Number.isFinite(size) && size > 0 ? size : BASE_REM;
+}
+
+function u(value) { return Math.round(value * (rem / BASE_REM)); }
+
+// The share of a tall screen each lane takes when there is height to spare. Mirrors
+// LANE_SHARE in graph_layout.py, which is where the rule is specified and tested.
+const LANE_SHARE = {
+  heard: 0.18, understood: 0.17, did: 0.30, watching: 0.22, learned: 0.13,
+};
+const FUTURE_STRETCH = 1.3;
+const SQUEEZE_LIMIT = 1.2;
+// A lane may take at most half again its content in spare height; past that it is padding.
+const LANE_STRETCH_CAP = 1.5;
+
 const stage = document.getElementById("stage");
 const world = document.getElementById("world");
 const canvas = document.getElementById("canvas");
@@ -340,6 +368,7 @@ let payload = null, nodes = [], edges = [], byId = new Map(), columns = [];
 let cursor = 0, playing = false, lastFrame = 0, selected = null;
 let laneTop = {}, laneHeight = {}, laneLines = {}, diagramHeight = 0, contentHeight = 0;
 let strips = new Map();
+let laneStretch = {}, laneNeed = {};
 let panX = 0, worldWidth = 0, dragging = false, dragFrom = 0, dragPan = 0, moved = false;
 let gutterWidth = 92;
 
@@ -440,11 +469,60 @@ function avatar(name, size) {
 
 // --- geometry ------------------------------------------------------------------------------------
 
+function spread(cols, room) {
+  const mins = cols.map((c) => Math.max(0, c.width | 0));
+  const total = mins.reduce((a, b) => a + b, 0);
+  if (!cols.length) return mins;
+  if (total > room) {
+    // A little too wide is not a reason to scroll: give back the room the columns hold
+    // loosely and only scroll when even the floors do not fit. Mirrors graph_layout.spread.
+    const floors = cols.map((c, i) => Math.max(0, (c.floor | 0) || mins[i]));
+    const floorTotal = floors.reduce((a, b) => a + b, 0);
+    if (total > room * SQUEEZE_LIMIT || floorTotal > room) return mins;
+    const slack = total - floorTotal;
+    const give = total - room;
+    const out = mins.map((m, i) => slack
+      ? m - Math.floor(give * ((m - floors[i]) / slack)) : m);
+    let over = out.reduce((a, b) => a + b, 0) - room;
+    for (const i of out.map((w, j) => j).sort((a, b) =>
+        (out[b] - floors[b]) - (out[a] - floors[a]))) {
+      if (over <= 0) break;
+      const take = Math.min(over, out[i] - floors[i]);
+      out[i] -= take; over -= take;
+    }
+    return out;
+  }
+  if (total === room) return mins;
+
+  const caps = mins.map((m, i) => cols[i].future ? Math.floor(m * FUTURE_STRETCH)
+    : (cols[i].primary ? room : m));
+  const widths = mins.slice();
+  // Settle rather than solve: a column that hits its cap hands back what it refused.
+  for (let pass = 0; pass < 4; pass++) {
+    const spare = room - widths.reduce((a, b) => a + b, 0);
+    if (spare <= 0) break;
+    const growable = widths.map((w, i) => i).filter((i) => widths[i] < caps[i]);
+    if (!growable.length) break;
+    const weight = growable.reduce((sum, i) => sum + mins[i], 0) || growable.length;
+    for (const i of growable) {
+      widths[i] = Math.min(caps[i], widths[i] + Math.floor(spare * (mins[i] || 1) / weight));
+    }
+  }
+  const left = room - widths.reduce((a, b) => a + b, 0);
+  if (left > 0) {
+    const takers = widths.map((w, i) => i).filter((i) => widths[i] < caps[i]);
+    if (takers.length) {
+      widths[takers.reduce((best, i) => widths[i] > widths[best] ? i : best, takers[0])] += left;
+    }
+  }
+  return widths;
+}
+
 function slotWidth(lane, row) {
-  if (row === "secondary") return TUNING.smallSlot;
-  if (lane === "heard") return TUNING.cardSlot;
-  if (lane === "did") return TUNING.issueSlot;
-  return lane === "watching" ? TUNING.checkSlot : TUNING.minSlot;
+  if (row === "secondary") return u(TUNING.smallSlot);
+  if (lane === "heard") return u(TUNING.cardSlot);
+  if (lane === "did") return u(TUNING.issueSlot);
+  return u(lane === "watching" ? TUNING.checkSlot : TUNING.minSlot);
 }
 
 function slotsIn(width, lane, row) {
@@ -452,38 +530,66 @@ function slotsIn(width, lane, row) {
 }
 
 function pitchOf(lane, row) {
-  if (row === "secondary") return TUNING.smallLine;
-  if (lane === "heard") return TUNING.cardPitch;
-  return lane === "did" ? TUNING.rowPitch : TUNING.chipPitch;
+  if (row === "secondary") return u(TUNING.smallLine);
+  if (lane === "heard") return u(TUNING.cardPitch);
+  return u(lane === "did" ? TUNING.rowPitch : TUNING.chipPitch);
+}
+
+function fitRem(data) {
+  // The type scales up on a big monitor, but not past the point where the week stops fitting.
+  // Everything visible at slightly smaller type beats bigger type behind a scrollbar, and it
+  // is a better lever than squeezing the columns: nothing gets narrower than it was designed
+  // to be, the whole page just steps down a size.
+  measureRem();
+  const ceiling = rem;
+  const days = data.days || [];
+  const total = days.reduce((sum, d) => sum + ((data.widths || {})[d.key] || 212), 0);
+  if (!total) return;
+  const room = stage.clientWidth - TUNING.gutter - 20;
+  const fits = room / total;
+  const wanted = Math.max(BASE_REM, Math.min(ceiling, BASE_REM * fits));
+  if (wanted < ceiling - 0.01) {
+    document.documentElement.style.fontSize = wanted.toFixed(2) + "px";
+    measureRem();
+  } else if (document.documentElement.style.fontSize) {
+    document.documentElement.style.fontSize = "";
+    measureRem();
+  }
 }
 
 function layout(data) {
+  // The root font size is the page's unit. Sized to the week before anything is placed, and
+  // again on resize, because the answer changes with the window.
+  fitRem(data);
   // If the whole timeline fits the viewport it is stretched to fill it; only a timeline that
   // genuinely cannot fit is panned.
   const days = data.days || [];
-  const mins = days.map((d) => (data.widths || {})[d.key] || 212);
+  const mins = days.map((d) => u((data.widths || {})[d.key] || 212));
   const total = mins.reduce((a, b) => a + b, 0);
   // The gutter gives up its width before the week gives up a column: the lane names are the
   // one thing on this page that can be read narrower without losing anything.
-  gutterWidth = (total + TUNING.gutter + 20 > stage.clientWidth)
-    ? TUNING.gutterTight : TUNING.gutter;
+  gutterWidth = (total + u(TUNING.gutter) + u(20) > stage.clientWidth)
+    ? u(TUNING.gutterTight) : u(TUNING.gutter);
   document.documentElement.style.setProperty("--gutter", gutterWidth + "px");
-  const room = Math.max(320, stage.clientWidth - gutterWidth - 20);
+  const room = Math.max(u(320), stage.clientWidth - gutterWidth - u(20));
 
   // The widths the server computed are minimums at which everything is still readable, and
-  // nothing here goes below them. A week wider than the screen scrolls; a week narrower than
-  // it is stretched to fill. Cutting "Sprint 1 kickoff sync" into two words to avoid a
-  // scrollbar trades the only thing this page is for.
-  const scale = total > 0 && total < room ? room / total : 1;
+  // nothing goes below them. A week wider than the screen scrolls; one narrower fills the
+  // screen, with the spare width going to the days that have something in them. The rule is
+  // specified and tested as `spread` in graph_layout.py; this is the same rule.
+  const primary = new Set(nodes.filter((n) => n.row !== "secondary").map((n) => n.day));
+  const laid = spread(days.map((d, i) => ({
+    width: mins[i], floor: u((data.floors || {})[d.key] || 0),
+    future: Boolean(d.future), primary: primary.has(d.key),
+  })), room);
 
   columns = [];
   let x = gutterWidth;
   days.forEach((day, i) => {
-    const width = Math.round(mins[i] * scale);
-    columns.push({ ...day, x, width });
-    x += width;
+    columns.push({ ...day, x, width: laid[i] });
+    x += laid[i];
   });
-  worldWidth = x + 16;
+  worldWidth = x + u(16);
 
   const byKey = new Map(columns.map((c) => [c.key, c]));
 
@@ -523,20 +629,47 @@ function layout(data) {
   // A lane is exactly as tall as its rows need. Stretching lanes to fill the viewport left
   // three hundred pixels of empty ground under one row of cards and made a busy week read as
   // an empty one — a page that ends where its content ends is the honest shape.
-  laneTop = {}; laneHeight = {};
-  let y = TUNING.head;
+  // What each lane needs, then what the screen can give it. A 27-inch monitor showing content
+  // in its top third is a page that decided the viewport was somebody else's problem.
+  laneNeed = {};
+  const need = laneNeed;
   for (const lane of LANES) {
     const p = laneLines[lane].primary, sec = laneLines[lane].secondary;
-    laneTop[lane] = y;
-    laneHeight[lane] = (!p && !sec)
-      ? TUNING.laneEmpty
+    need[lane] = (!p && !sec)
+      ? u(TUNING.laneEmpty)
       : p * pitchOf(lane, "primary")
-        + (sec ? TUNING.rowGap + sec * TUNING.smallLine : 0) + TUNING.lanePad;
+        + (sec ? u(TUNING.rowGap) + sec * u(TUNING.smallLine) : 0) + u(TUNING.lanePad);
+  }
+  const headroom = stage.clientHeight - u(TUNING.head);
+  // An empty lane keeps its band and donates its share to the lanes doing the work.
+  const sharing = LANES.filter((lane) => need[lane] > u(TUNING.laneEmpty));
+  const shareTotal = sharing.reduce((sum, lane) => sum + LANE_SHARE[lane], 0) || 1;
+  const spare = Math.max(0, headroom - LANES.reduce((sum, lane) => sum + need[lane], 0));
+
+  laneTop = {}; laneHeight = {};
+  let y = u(TUNING.head);
+  for (const lane of LANES) {
+    laneTop[lane] = y;
+    // Filling the screen with empty ground is not better than ending early, so a lane takes
+    // its share only up to half again what is actually in it. What no lane will take stays
+    // below the grid as plain background.
+    const share = sharing.includes(lane)
+      ? Math.round(spare * (LANE_SHARE[lane] / shareTotal)) : 0;
+    laneHeight[lane] = Math.min(need[lane] + share,
+                                Math.round(need[lane] * LANE_STRETCH_CAP));
     y += laneHeight[lane];
+  }
+  // Rows may breathe into the room they were given, but only so far — past this the lane is
+  // a list of things floating apart rather than a row of work.
+  laneStretch = {};
+  for (const lane of LANES) {
+    const rows = laneLines[lane].primary || 1;
+    const room = laneHeight[lane] - u(TUNING.lanePad);
+    laneStretch[lane] = Math.min(1.25, Math.max(1, room / (rows * pitchOf(lane, "primary"))));
   }
   // The grid ends where the work ends. Stretching the last lane to the bottom of the window
   // drew a lane-height band of nothing under the final row.
-  contentHeight = y + 24;
+  contentHeight = Math.max(y, stage.clientHeight - u(4));
   diagramHeight = Math.max(contentHeight, stage.clientHeight);
 
   for (const [key, members] of groups) {
@@ -550,12 +683,15 @@ function layout(data) {
       const slot = node.seq % slots;
       const step = width / slots;
       node.x = (strip ? strip.x : gutterWidth) + step * (slot + 0.5);
-      node.slotWidth = Math.max(120, Math.round(step) - 20);
-      const below = laneTop[lane] + TUNING.lanePad
-        + (laneLines[lane].primary || 0) * pitchOf(lane, "primary");
+      node.slotWidth = Math.max(u(120), Math.round(step) - u(20));
+      const grown = pitchOf(lane, "primary") * (laneStretch[lane] || 1);
+      // Measured from the last row rather than from the lane's floor: the dots belong to the
+      // work above them, not to the bottom of whatever space the lane was given.
+      const below = laneTop[lane] + u(TUNING.lanePad)
+        + (laneLines[lane].primary || 0) * grown;
       node.y = row === "secondary"
-        ? below + TUNING.rowGap + line * TUNING.smallLine
-        : laneTop[lane] + TUNING.lanePad + line * pitch + pitch / 2;
+        ? below + u(TUNING.rowGap) + line * u(TUNING.smallLine)
+        : laneTop[lane] + u(TUNING.lanePad) + line * grown + grown / 2;
     }
   }
 }
@@ -588,7 +724,7 @@ function drawFrame() {
     layer.appendChild(head);
     if (column.future) {
       const sub = el("div", "col-sub", "Scheduled");
-      sub.style.top = (TUNING.head + 6) + "px";
+      sub.style.top = (u(TUNING.head) + u(6)) + "px";
       column.sub = sub;
       layer.appendChild(sub);
     }
@@ -606,7 +742,7 @@ function drawFrame() {
   }
 
   for (const lane of LANES) {
-    const bare = laneHeight[lane] === TUNING.laneEmpty;
+    const bare = !laneLines[lane].primary && !laneLines[lane].secondary;
     const row = el("div", "lane");
     row.style.top = laneTop[lane] + "px";
     row.style.height = laneHeight[lane] + "px";
@@ -614,7 +750,7 @@ function drawFrame() {
     layer.appendChild(row);
 
     const tag = el("div", "lane-tag");
-    tag.style.top = (laneTop[lane] - TUNING.head + 9) + "px";
+    tag.style.top = (laneTop[lane] - u(TUNING.head) + u(9)) + "px";
     tag.title = LANE_ABOUT[lane];
     tag.appendChild(el("div", "lane-name", LANE_NAME[lane]));
     tag.appendChild(el("div", "lane-about", LANE_ABOUT[lane]));
@@ -623,14 +759,14 @@ function drawFrame() {
     if (bare) {
       const none = el("div", "lane-none", LANE_EMPTY_COPY[lane] || "Nothing yet");
       none.style.left = gutterWidth + "px";
-      none.style.top = (laneTop[lane] + 10) + "px";
+      none.style.top = (laneTop[lane] + u(10)) + "px";
       layer.appendChild(none);
     } else if (laneLines[lane].secondary) {
       // The dots hang on a hairline so a row of them reads as one thing.
-      const below = laneTop[lane] + TUNING.lanePad
-        + laneLines[lane].primary * pitchOf(lane, "primary");
+      const below = laneTop[lane] + u(TUNING.lanePad)
+        + laneLines[lane].primary * pitchOf(lane, "primary") * (laneStretch[lane] || 1);
       const hair = el("div", "hair");
-      hair.style.top = (below + TUNING.rowGap) + "px";
+      hair.style.top = (below + u(TUNING.rowGap)) + "px";
       hair.style.left = gutterWidth + "px";
       hair.style.width = (worldWidth - gutterWidth) + "px";
       layer.appendChild(hair);
@@ -645,12 +781,12 @@ function drawFrame() {
         const strip = strips.get(key);
         // A caption wider than its strip runs into its neighbour's, so a narrow strip gets
         // dots alone — they still name themselves on hover.
-        if (!strip || strip.width < TUNING.labelAt) continue;
+        if (!strip || strip.width < u(TUNING.labelAt)) continue;
         const mark = el("div", "hair-label",
           `Slack \u00b7 ${count} post${count === 1 ? "" : "s"}`);
-        mark.style.left = (strip.x + 6) + "px";
-        mark.style.top = (below + TUNING.rowGap - 13) + "px";
-        mark.style.maxWidth = (strip.width - 12) + "px";
+        mark.style.left = (strip.x + u(6)) + "px";
+        mark.style.top = (below + u(TUNING.rowGap) - u(13)) + "px";
+        mark.style.maxWidth = (strip.width - u(12)) + "px";
         layer.appendChild(mark);
       }
     }
@@ -669,7 +805,7 @@ function stickHeaders() {
     const right = column.x + column.width;
     // A column scrolled down to a sliver has no room for its date. Clamping the label into
     // that sliver used to push it off the left edge entirely, which is worse than no label.
-    const sliver = right - leftEdge < TUNING.labelRoom;
+    const sliver = right - leftEdge < u(TUNING.labelRoom);
     column.head.style.display = sliver ? "none" : "";
     if (column.sub) column.sub.style.display = sliver ? "none" : "";
     if (sliver) continue;
@@ -684,8 +820,9 @@ function nowX() {
   const today = columns.find((c) => c.today);
   const settled = nodes.filter((n) => !n.future_node);
   const last = settled.length ? Math.max(...settled.map((n) => n.x)) : 0;
-  if (!today) return last + 60;
-  return Math.max(today.x + 16, Math.min(last + 60, today.x + today.width - 6));
+  if (!today) return last + u(60);
+  return Math.max(today.x + u(16),
+                  Math.min(last + u(60), today.x + today.width - u(6)));
 }
 
 function drawNowLine() {
@@ -693,11 +830,11 @@ function drawNowLine() {
   const line = svgEl("line");
   line.setAttribute("id", "nowline");
   line.setAttribute("x1", x); line.setAttribute("x2", x);
-  line.setAttribute("y1", TUNING.head); line.setAttribute("y2", contentHeight);
+  line.setAttribute("y1", u(TUNING.head)); line.setAttribute("y2", contentHeight);
   gRules.appendChild(line);
   nowTag.textContent = "Now";
   nowTag.style.left = x + "px";
-  nowTag.style.top = (TUNING.head + 4) + "px";
+  nowTag.style.top = (u(TUNING.head) + u(4)) + "px";
 }
 
 // --- what each thing looks like ---------------------------------------------------------------------
@@ -894,7 +1031,9 @@ function showTip(node, event) {
   const bits = [];
   const facts = node.facts || {};
   if (node.type === "check") {
-    if (node.due_human) bits.push(node.due_human);
+    // A check the work overtook is met, but for a reason worth naming.
+    if (node.moot) bits.push("done before the check was due");
+    else if (node.due_human) bits.push(node.due_human);
     if (facts.assignee) bits.push(`${facts.assignee} owns ${facts.issue || "it"}`);
     if (facts.on_unmet) bits.push(facts.on_unmet);
   }
@@ -1165,9 +1304,24 @@ function frame(now) {
 
 // --- panning -------------------------------------------------------------------------------------------------
 
-function setPan(value) {
+function snapEdges() {
+  // Only real sub-column boundaries. Snapping to the end of the scroll range is what used to
+  // leave a chip sliced down the middle at the left edge.
+  const edges = [0];
+  for (const strip of strips.values()) edges.push(Math.max(0, strip.x - gutterWidth));
+  return [...new Set(edges)].sort((a, b) => a - b);
+}
+
+function setPan(value, snap) {
   const limit = Math.min(0, stage.clientWidth - worldWidth);
-  panX = Math.max(limit, Math.min(0, value));
+  let next = Math.max(limit, Math.min(0, value));
+  if (snap && limit < 0) {
+    const want = -next;
+    const at = snapEdges().reduce(
+      (best, e) => Math.abs(e - want) < Math.abs(best - want) ? e : best, 0);
+    next = Math.max(limit, Math.min(0, -at));
+  }
+  panX = next;
   world.style.transform = `translateX(${panX}px)`;
   stickHeaders();
 }
@@ -1179,7 +1333,18 @@ function openingView() {
   // its right end — the last scheduled day flush to the edge. With compact future columns the
   // now line lands about two thirds across on its own, and every pixel spent on the left is
   // spent on history rather than on empty ground past the last check.
-  setPan(worldWidth <= stage.clientWidth ? 0 : stage.clientWidth - worldWidth);
+  if (worldWidth <= stage.clientWidth) { setPan(0); return; }
+  // Aim at the right end, then step back to the nearest conversation boundary so the view
+  // never opens halfway through a card. The world gains whatever trailing room that needs —
+  // blank ground at the right of a scroller is ordinary; a sliced card is not.
+  const want = worldWidth - stage.clientWidth;
+  // Step back to the last boundary at or before the right anchor, never past it. Rounding to
+  // the *nearest* edge could round forward and slice the final working day in half, which is
+  // the day the reviewer most wants to read.
+  const at = snapEdges().reduce((best, e) => (e <= want && e > best ? e : best), 0);
+  worldWidth = Math.max(worldWidth, at + stage.clientWidth);
+  world.style.width = worldWidth + "px";
+  setPan(-at);
 }
 
 stage.addEventListener("wheel", (event) => {

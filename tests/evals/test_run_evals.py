@@ -231,7 +231,7 @@ async def test_the_runner_answers_every_question_and_prints_the_five_headline_nu
         "fabricated_identifiers": 0,
         "citation_coverage_pct": 100.0,
         "invalid_plans_materialised": 0,
-        "corrections_recurred": "n/a",
+        "brain_reached_the_model": "n/a",
     }
     assert outcome["eval_now"] == "2026-08-28T16:00:00+00:00"
 

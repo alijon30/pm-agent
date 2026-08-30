@@ -528,3 +528,36 @@ async def test_a_classifier_that_hangs_is_not_waited_for(
     assert response.json() == {"ok": True}
     queued = await deps.db.query("tasks", [("kind", "==", "intake")])
     assert len(queued) == 1 and queued[0]["params"] == {"cancel": "INV-26"}
+
+
+# --- being told how to work -------------------------------------------------------------------
+
+def test_a_rule_for_next_time_is_not_a_request_for_a_check() -> None:
+    """"assign billing to Nodir" has nowhere to live in the queue. It belongs in the brain."""
+    for said in ("from now on assign billing to Nodir", "always cc the channel",
+                 "never nudge before ten", "remember that rates allow six decimals",
+                 "don't ping people on Fridays"):
+        got = intent_of(f"<@U1> {said}", "acme") or {}
+        assert got.get("kind") == "intake", said
+        assert (got.get("params") or {}).get("instruct") is True, said
+
+
+def test_stopping_one_watch_is_still_a_cancellation_not_a_rule() -> None:
+    """"stop watching INV-27" is about one ticket; "stop nudging people" is a rule."""
+    cancel = intent_of("<@U1> stop watching INV-27", "acme") or {}
+
+    assert (cancel.get("params") or {}).get("cancel") == "INV-27"
+    assert not (cancel.get("params") or {}).get("instruct")
+
+
+def test_an_ordinary_request_is_untouched() -> None:
+    got = intent_of("<@U1> please look at INV-30 this week", "acme") or {}
+
+    assert got.get("kind") == "intake"
+    assert not (got.get("params") or {}).get("instruct")
+
+
+def test_a_rule_about_reports_is_a_rule_not_a_report_request() -> None:
+    got = intent_of("<@U1> always put the report in the thread", "acme") or {}
+
+    assert (got.get("params") or {}).get("instruct") is True

@@ -338,3 +338,11 @@ def test_a_quiet_day_and_an_early_note_are_each_two_lines_at_most() -> None:
         since={}, unmet=[], overdue=[], next_due="2026-09-03T16:00:00+00:00", now=NOW))
 
     assert len(quiet) == 2
+
+
+def test_a_two_word_verb_drops_whole() -> None:
+    """"Set up a regression test" must not become "the up a regression test"."""
+    assert noun_phrase("Set up a regression test for bulk import CPU time") == (
+        "a regression test for bulk import CPU time"
+    )
+    assert issue_phrase("INV-35", "Set up a regression test") == "INV-35 (a regression test)"

@@ -76,7 +76,16 @@ Then emit one entry per action item with:
 If a tool answers {"status": "unavailable"}, do not infer what it would have said. Leave the
 citation out and note in the description what you could not check.
 
-Prefer fewer, well-supported items over many weak ones."""
+Prefer fewer, well-supported items over many weak ones.
+
+"brain" is what this company has already told me — ownership, preferences, durable facts, and
+corrections somebody made to my earlier work. It is not advisory:
+- ownership decides the owner when the call named nobody for that kind of work, and overrides
+  a guess. Cite the entry's ref alongside your other citations.
+- corrections are mistakes I made before. Do not repeat them.
+- preferences are how this team wants the work done.
+- facts are true unless this call contradicts one — then report it as a conflict, do not pick
+  a winner."""
 
 
 def build_reconciler(

@@ -111,12 +111,30 @@ class PlanTask(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
+class Memory(BaseModel):
+    """Something the team said that should outlive the message. Filled by the intake step when
+    somebody is telling the agent how to work rather than asking it for a check."""
+
+    kind: Literal["ownership", "preference", "fact"]
+    subject: list[str] = Field(
+        default_factory=list,
+        description="The 2-6 words a later message about the same thing would contain.",
+    )
+    person: str | None = Field(
+        default=None, description="A roster name, for ownership. Null when nobody was named."
+    )
+    text: str = Field(description="The rule in their words, trimmed.")
+
+
 class Plan(BaseModel):
     tasks: list[PlanTask] = Field(default_factory=list)
     supersedes: list[str] = Field(
         default_factory=list, description="Keys or task ids made obsolete by this plan."
     )
     notes: str = Field(default="", description="What you observed, in one or two sentences.")
+    memory: Memory | None = Field(
+        default=None, description="Set instead of tasks when told how to work from now on."
+    )
 
 
 # --- report -----------------------------------------------------------------------------------

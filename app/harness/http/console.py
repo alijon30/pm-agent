@@ -54,9 +54,11 @@ from app.harness.http.graph_assets import GRAPH_SCRIPT, GRAPH_STYLE
 from app.harness.http.graph_layout import (
     build_days,
     check_state,
+    column_floors,
     column_widths,
     day_key,
     lane_heights,
+    layout_columns,
     place,
     roster_view,
     short_day,
@@ -95,7 +97,7 @@ HEADLINE_FIELDS = (
     ("fabricated_identifiers", "fabricated identifiers"),
     ("citation_coverage_pct", "citation coverage"),
     ("invalid_plans_materialised", "invalid plans materialised"),
-    ("corrections_recurred", "corrections recurred"),
+    ("brain_reached_the_model", "brain reached the model"),
 )
 
 
@@ -173,6 +175,10 @@ def _check_line(task: Doc, result: dict[str, Any], roster: list[dict[str, Any]])
             f"{identifier} moved ahead of schedule — the check due {due or 'later'} "
             "answered itself"
         )
+    if observed.get("moot"):
+        # Not a success and not a failure: the question stopped applying. Saying "is where it
+        # should be" about finished work reads as the agent not having noticed.
+        return "checked", f"{identifier} is done — nothing left to chase"
     if result.get("met"):
         return "checked", f"{identifier} is where it should be{f' — {state}' if state else ''}"
     if result.get("acted"):
@@ -242,6 +248,9 @@ def _done_line(
                          "spec and the code")
         if held:
             parts.append(f"held {count_in_words(held, 'item')} back as unverified")
+        learned = len(result.get("learned") or [])
+        if learned:
+            parts.append(f"remembered {count_in_words(learned, 'fact')} from the call")
         return "reconciled", sentence_list(parts)
     if kind == "act":
         return _act_line(result, call)
@@ -257,6 +266,15 @@ def _done_line(
             f"\"{_short(str(report.get('headline') or ''), 70)}\"{tail}"
         )
     if kind == "intake":
+        # An instruction is answered with a memory, not a plan, and the journal should say
+        # which happened — "committed to two checks" would be a lie about a rule.
+        remembered = result.get("remembered") or {}
+        if remembered:
+            who = _who(str((task.get("payload") or {}).get("requester") or ""), roster)
+            return "posted", (
+                f"took an instruction from {who or 'the channel'} — "
+                f"{redact(str(remembered.get('text') or ''))}"
+            )
         if result.get("identifier"):
             stopped = len(result.get("cancelled") or [])
             return "cancelled", (
@@ -880,6 +898,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     )
     events = await deps.db.query("events", filters, order_by="received_at", limit=SCAN_LIMIT)
     lessons = await deps.lessons.for_project(project_id) if deps.lessons is not None else []
+    brain = await deps.wiki.pages(project_id) if deps.wiki is not None else []
 
     tz = zone(project)
     today = day_key(deps.clock.now().isoformat(), tz)
@@ -933,6 +952,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
             due_day=day_key(str(task.get("due_at") or ""), tz),
             finished_day=day_key(str(task.get("finished_at") or ""), tz),
             when_note=_when_note(task, tz),
+            moot=bool(((task.get("result") or {}).get("observed") or {}).get("moot")),
             waits_on=[f"task:{d}" for d in task.get("depends_on") or []],
         ))
     # Slack is where the team actually meets the agent, so what it said belongs on the graph
@@ -965,6 +985,21 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     for lesson in lessons:
         nodes.append(_node(f"lesson:{lesson['id']}", "lesson", str(lesson.get("text") or ""),
                            str(lesson.get("created_at") or "")))
+    # What the team told the agent sits beside what the agent worked out for itself: both are
+    # things it knows now and did not know before.
+    for page in brain:
+        for entry in page.get("entries") or []:
+            if entry.get("retired_at"):
+                continue
+            kind = str(page.get("kind") or "fact")
+            said = str(entry.get("text") or "")
+            label = (f"learned: {said}" if kind == "ownership"
+                     else f"remembered: {said}" if kind == "fact" else said)
+            nodes.append(_node(
+                f"lesson:{entry.get('id')}", "lesson", label,
+                str(entry.get("created_at") or ""),
+                owner=str(entry.get("person") or ""), brain=kind,
+            ))
 
     kept = _cap(nodes)
     known = {n["id"] for n in kept}
@@ -1104,6 +1139,8 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     graph = {"nodes": kept, "edges": edges, "truncated": False,
              "days": days, "widths": column_widths(kept, days), "today": today,
              "lanes": lane_heights(kept), "strips": sub_columns(kept, days),
+             "floors": column_floors(kept, days),
+             "columns": layout_columns(kept, days),
              "calls": {str(n["id"]): str(n["label"]) for n in kept if n["type"] == "meeting"},
              "roster": roster_view(roster_list, owns, nudged),
              "now": now_view(tasks, events, deps.clock.now(), deps.settings.lease_minutes),
@@ -1256,6 +1293,9 @@ tr:last-child td { border-bottom:none; }
 tbody tr:hover td { background:var(--surface-2); }
 code { font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted);
   background:var(--border); border-radius:4px; padding:1px 5px; }
+h3 { font-size:12px; font-weight:500; color:var(--muted); margin:16px 0 6px; }
+/* A retired rule is still part of the record: the useful question is often "since when". */
+tr.retired td { color:var(--faint); text-decoration:line-through; }
 .empty { color:var(--faint); font-size:12px; }
 .dep { color:var(--faint); }
 a { color:inherit; text-decoration:none; border-bottom:1px solid var(--border);
@@ -1372,6 +1412,45 @@ def _lessons_html(lessons: list[Doc]) -> str:
     return f"<ul class='j'>{items}</ul>"
 
 
+BRAIN_ORDER = ("ownership", "preferences", "corrections")
+
+
+def _brain_html(pages: list[Doc], tz: ZoneInfo) -> str:
+    """What this company has told the agent, as its own pages.
+
+    Retired entries stay, struck through: the useful question about an ownership rule is often
+    "since when", and a page that silently rewrites itself cannot answer it."""
+    if not pages:
+        return ("<p class='empty'>Nothing yet — tell the agent something in Slack "
+                "(\"from now on…\") and it will remember.</p>")
+    out: list[str] = []
+    ordered = sorted(pages, key=lambda p: (
+        BRAIN_ORDER.index(str(p.get("slug"))) if str(p.get("slug")) in BRAIN_ORDER else 9,
+        str(p.get("slug")),
+    ))
+    for page in ordered:
+        entries = [e for e in (page.get("entries") or [])]
+        if not entries:
+            continue
+        rows = []
+        for entry in sorted(entries, key=lambda e: str(e.get("created_at") or ""), reverse=True):
+            retired = " class='retired'" if entry.get("retired_at") else ""
+            who = str(entry.get("person") or "")
+            rows.append(
+                f"<tr{retired}><td>{esc(str(entry.get('text') or ''))}</td>"
+                f"<td>{esc(who)}</td>"
+                f"<td>{esc(str(entry.get('said_by') or ''))}</td>"
+                f"<td>{esc(stamp_local(str(entry.get('created_at') or ''), tz))}</td>"
+                f"<td><code>{esc(ref_chip(str(entry.get('source') or '')))}</code></td></tr>"
+            )
+        out.append(
+            f"<h3>{esc(str(page.get('title') or page.get('slug')))}</h3>"
+            "<table><thead><tr><th>What</th><th>Who</th><th>Said by</th><th>When</th>"
+            "<th>Source</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        )
+    return "".join(out) or "<p class='empty'>Nothing yet.</p>"
+
+
 def _corrections_html(corrections: list[Doc]) -> str:
     rows = [
         [esc(c.get("wrong", "")), esc(c.get("right", "")), esc(c.get("scope", "")),
@@ -1436,6 +1515,7 @@ def render(
     events: list[Doc] | None = None,
     decisions: list[Doc] | None = None,
     now: datetime | None = None,
+    brain: list[Doc] | None = None,
 ) -> str:
     """The whole page, as a string. Pure, so what a judge sees is unit-testable."""
     if project is None:
@@ -1469,7 +1549,9 @@ def render(
             _next_watch(tasks)))
         + _group("How it works", working_stats(
             tasks, actions, events or [], project, today))
-        + _group("Trust", trust_stats(tasks, actions, corrections))
+        + _group("Trust", trust_stats(tasks, actions, corrections, brain))
+        + "<h2>Brain</h2>"
+        + _brain_html(brain or [], zone(project))
         + "<h2>Decision journal</h2>"
         + _journal_html(
             journal_entries(tasks, actions, project.get("roster") or [])[:JOURNAL_LIMIT],
@@ -1566,7 +1648,8 @@ async def console(request: Request) -> HTMLResponse:
     today = day_key(deps.clock.now().isoformat(), zone(project))
     return HTMLResponse(
         render(project, tasks, actions, corrections, lessons, runs[-1] if runs else None, today,
-               events, decisions, deps.clock.now())
+               events, decisions, deps.clock.now(),
+               await deps.wiki.pages(project["id"]) if deps.wiki is not None else [])
     )
 
 

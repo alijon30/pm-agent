@@ -60,7 +60,10 @@ Hard limits:
 4. **Do not restate a lesson the agent already holds.** Sharpen or contradict one if the day
    gave you reason to; otherwise leave it alone.
 
-Use "notes" for what you observed, in one or two sentences."""
+Use "notes" for what you observed, in one or two sentences.
+"corrections" and "reverts" are the strongest evidence you will ever get that something was
+wrong: somebody took the trouble to say so, or to undo it. A lesson drawn from one must cite
+its ref."""
 
 
 def build_reviewer(model: str) -> AgentSpec:

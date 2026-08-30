@@ -31,6 +31,8 @@ LEADING_VERBS = frozenset({
     "update", "verify", "write",
 })
 
+PARTICLES = frozenset({"up", "out", "off", "on", "in", "down", "over", "away", "back", "together"})
+
 SPELLED = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
 
 CONSEQUENCES = {
@@ -74,6 +76,9 @@ def noun_phrase(title: str) -> str:
         return ""
     if len(words) > 1 and words[0].lower().strip(":") in LEADING_VERBS:
         words = words[1:]
+        # "Set up a test" is one verb in two words; leaving "up" behind reads as nonsense.
+        if len(words) > 1 and words[0].lower() in PARTICLES:
+            words = words[1:]
     head = words[0]
     if not (head.isupper() or ISSUE_KEY.match(head)):
         words[0] = head[:1].lower() + head[1:]

@@ -24,6 +24,7 @@ from typing import Any
 from app.harness.kinds.registry import KINDS, NOT_SCHEDULABLE, UNMET_ACTIONS
 from app.harness.stages.reconcile import RETRY_MINUTES
 from app.harness.stages.runner import STAGES
+from app.harness.store import wiki
 from app.harness.store.lessons import MAX_LESSONS
 from app.harness.store.tasks import BACKOFF_SECONDS
 from app.harness.verify import caps, citations, dates, evidence, ids, lineage, plan, priority
@@ -160,8 +161,34 @@ def gates() -> str:
             ("actions a check may take", ", ".join(f"`{a}`" for a in UNMET_ACTIONS)),
         ]),
         gate_section("Citations — can every claim be re-opened?", citations, []),
+        brain_section(),
     ]
     return "\n".join(sections)
+
+
+def brain_section() -> str:
+    """What the agent is allowed to remember, and what has to be true before it does.
+
+    Generated from the store rather than written by hand, so a kind added without a gate shows
+    up here as an unguarded kind."""
+    return "\n".join([
+        "## Brain — what may it remember, and on whose word?",
+        "",
+        as_markdown(paragraphs(wiki.__doc__)[0]),
+        "",
+        "| | |",
+        "|---|---|",
+        f"| kinds it keeps | {', '.join(f'`{k}`' for k in wiki.KINDS)} |",
+        "| a memory needs a source | an entry with no typed `source` ref is refused outright |",
+        "| ownership needs a real person | the roster gate runs before it is stored; an "
+        "unknown name is answered with a question and nothing is written |",
+        "| facts need a verified source | only facts whose reference survived the identifier "
+        "gate are kept |",
+        f"| handed to a model at most | {wiki.BRAIN_LIMIT} entries, by word overlap |",
+        "| replacing, not erasing | a newer owner retires the older claim and keeps it |",
+        "| idempotent by source | the same message replayed is one memory |",
+        "",
+    ])
 
 
 def failure_posture() -> str:

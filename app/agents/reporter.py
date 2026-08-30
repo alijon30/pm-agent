@@ -59,7 +59,10 @@ Principles:
 - Be specific. "INV-26 merged two days ahead of its due date" beats "good progress on billing".
 - Put anything at risk next to what a person should do about it.
 - Say each thing once. A ticket that shipped belongs in shipped, not also in moved.
-- Say plainly when a section is thin. A quiet sprint reported honestly is useful."""
+- Say plainly when a section is thin. A quiet sprint reported honestly is useful.
+
+"brain" holds durable facts this company has told me. You may cite one as evidence for a
+claim using its ref; you may not restate one as news."""
 
 
 def build_reporter(

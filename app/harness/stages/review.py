@@ -25,6 +25,7 @@ from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.redact import redact
 from app.harness.core.voice import first_name
 from app.harness.deps import Deps
+from app.harness.kinds.phrasing import DONE_STATES
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
 from app.harness.store.tasks import OPEN_STATUSES
@@ -36,7 +37,6 @@ SCAN_LIMIT = 500
 # around, and five lines is as many promises as anyone reads before breakfast.
 WATCH_HOURS = 48
 WATCH_LINES = 5
-DONE_STATES = ("done", "completed", "merged", "closed", "canceled", "cancelled")
 
 
 def keep_evidenced(
@@ -142,6 +142,28 @@ async def gather(task: Doc, deps: Deps) -> dict[str, Any]:
         and a.get("kind") == "slack.post" and (a.get("inputs") or {}).get("template")
     ]
 
+    # A person taking the trouble to say "that was wrong", or to undo something, is the
+    # strongest evidence of a mistake this agent ever gets. It should not have to infer it
+    # from a check that came back unmet.
+    reverted = [
+        {"ref": f"action:{a['id']}", "kind": a.get("kind"),
+         "identifier": (a.get("target_ids") or {}).get("identifier"),
+         "by": a.get("reverted_by"), "at": a.get("reverted_at")}
+        for a in actions
+        if a.get("reverted_at") and str(a.get("reverted_at") or "") >= since
+    ]
+    corrections: list[dict[str, Any]] = []
+    if deps.wiki is not None:
+        for page in await deps.wiki.pages(project_id):
+            if str(page.get("kind")) != "correction":
+                continue
+            corrections.extend(
+                {"ref": f"wiki:{page.get('slug')}#{e.get('id')}", "text": e.get("text"),
+                 "said_by": e.get("said_by"), "at": e.get("created_at")}
+                for e in page.get("entries") or []
+                if str(e.get("created_at") or "") >= since
+            )
+
     return {
         "window": {"from": since, "to": iso(now)},
         "checks": checks,
@@ -149,6 +171,8 @@ async def gather(task: Doc, deps: Deps) -> dict[str, Any]:
         "movements": await _movements(nudges, tasks_by_id, deps),
         "superseded": superseded,
         "failures": failures,
+        "corrections": corrections,
+        "reverts": reverted,
     }
 
 
@@ -156,7 +180,8 @@ def evidence_ids(outcomes: dict[str, Any]) -> set[str]:
     """Every reference the reviewer was shown — the whole of what a lesson may cite."""
     return {
         str(row["ref"])
-        for section in ("checks", "nudges", "movements", "superseded", "failures")
+        for section in ("checks", "nudges", "movements", "superseded", "failures",
+                        "corrections", "reverts")
         for row in outcomes.get(section) or []
         if row.get("ref")
     }

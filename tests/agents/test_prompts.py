@@ -69,3 +69,38 @@ def test_the_phrases_the_prompts_name_are_the_phrases_the_gate_unlocks_on() -> N
                               ESCALATION_PHRASES) is True
     assert has_escalation(["we should probably look at this sometime"],
                           ESCALATION_PHRASES) is False
+
+
+def test_the_extractor_is_not_told_that_fewer_items_is_better() -> None:
+    """"Prefer fewer, well-supported items" read as permission to drop: on a live standup the
+    model returned two action items where a person finds six, all of them ordinary sentences
+    with owners. Support is the bar; brevity is not."""
+    from app.agents.extractor import EXTRACTOR_INSTRUCTION
+
+    flowed = " ".join(EXTRACTOR_INSTRUCTION.split())
+
+    assert "Prefer fewer" not in flowed
+    assert "Prefer well-supported items." in flowed
+    assert "with an owner is its own action item" in flowed
+    assert "do not merge or drop small ones for brevity" in flowed
+    assert "drop only what has no verbatim evidence" in flowed
+
+
+def test_every_stage_that_receives_the_brain_is_told_it_is_not_advisory() -> None:
+    """A memory the model may reinterpret is not a memory. Each prompt that gets "brain" has
+    to say what it is for, or the payload is decoration."""
+    from app.agents.planner import PLANNER_INSTRUCTION
+    from app.agents.reconciler import RECONCILER_INSTRUCTION
+    from app.agents.steward import STEWARD_INSTRUCTION
+
+    reconciler = " ".join(RECONCILER_INSTRUCTION.split())
+    assert "It is not advisory" in reconciler
+    assert "ownership decides the owner when the call named nobody" in reconciler
+    assert "corrections are mistakes I made before" in reconciler
+
+    planner = " ".join(PLANNER_INSTRUCTION.split())
+    assert '"brain" is what this team has told me about how to work' in planner
+
+    steward = " ".join(STEWARD_INSTRUCTION.split())
+    assert '"person" MUST be a name from the roster' in steward
+    assert 'kind "ownership" when it names who should take a kind of work' in steward

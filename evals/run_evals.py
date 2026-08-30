@@ -384,10 +384,33 @@ def headline_numbers(rows: list[dict[str, Any]], run: dict[str, Any]) -> dict[st
         "fabricated_identifiers": len(fabricated_identifiers(run)),
         "citation_coverage_pct": round(100 * cited / len(claims), 1) if claims else 0.0,
         "invalid_plans_materialised": invalid_plans_materialised(run),
-        # The correction loop needs a human pressing "wrong" on a post; one automated run cannot
-        # exercise it, and reporting 0 for something never tested would be a lie.
-        "corrections_recurred": "n/a",
+        # Whether what the team told the agent actually reached the step that would act on it.
+        # A brain nothing reads is the hole this number exists to expose.
+        "brain_reached_the_model": brain_reached(run),
     }
+
+
+def brain_reached(run: dict[str, Any]) -> str:
+    """Of the entries in the brain, how many were handed to a stage that could act on them.
+
+    Not "did the model obey" — that is a judgment question and it has its own row. This is the
+    plumbing question: something stored and never read is worse than not stored, because it
+    looks like memory."""
+    entries = [
+        entry
+        for page in run.get("brain") or []
+        for entry in page.get("entries") or []
+        if not entry.get("retired_at")
+    ]
+    if not entries:
+        return "n/a"
+    handed = {
+        str(item.get("ref"))
+        for payload in run.get("payloads") or []
+        for item in payload.get("brain") or []
+    }
+    seen = sum(1 for e in entries if f"wiki:{e.get('page')}#{e.get('id')}" in handed)
+    return f"{seen}/{len(entries)}"
 
 
 def score_all(questions: list[dict[str, Any]], run: dict[str, Any]) -> list[dict[str, Any]]:

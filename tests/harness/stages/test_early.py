@@ -29,7 +29,8 @@ PR = {"number": 9, "title": "CSV export (INV-26)", "state": "open", "merged": Fa
 
 
 async def schedule_chain(deps: Deps, *, issues: list[dict[str, Any]],
-                         prs: list[dict[str, Any]] | None = None) -> tuple[str, str]:
+                         prs: list[dict[str, Any]] | None = None,
+                         expect: list[str] | None = None) -> tuple[str, str]:
     """The planner's graph as it exists in production: a state check, and a PR check blocked
     behind it, both due days from now."""
     await deps.projects.upsert("acme", {**ACME, "slack_channel_id": "C-product"})
@@ -40,7 +41,7 @@ async def schedule_chain(deps: Deps, *, issues: list[dict[str, Any]],
     from datetime import timedelta
     first = await deps.queue.enqueue(
         kind="check_issue_state", project_id="acme", payload={},
-        params={"issue": "INV-26", "expect": ["In Progress", "Done"]},
+        params={"issue": "INV-26", "expect": expect or ["In Progress", "Done"]},
         reason="underway?", due_at=deps.clock.now() + timedelta(days=4),
         on_unmet="nudge_assignee")
     assert first is not None
@@ -247,3 +248,51 @@ def test_non_issue_webhooks_are_acknowledged_and_ignored(client: TestClient, dep
     response = client.post("/webhooks/linear", content=body,
                            headers={"linear-signature": sign(body), "linear-delivery": "d-2"})
     assert response.json() == {"status": "ignored"}
+
+
+# --- the work finished, so nothing is left to chase ---------------------------------------------
+
+DONE = {**IN_PROGRESS, "state": "Done"}
+
+
+async def test_an_issue_marked_done_clears_every_check_waiting_on_it(deps: Deps) -> None:
+    """Without this the PR check survives the webhook, runs at its due date, finds no branch
+    naming the issue, and nudges an engineer about work they finished last week."""
+    first, second = await schedule_chain(deps, issues=[DONE], prs=[])
+
+    resolved = await resolve_early("INV-26", deps)
+
+    assert set(resolved) == {first, second}
+    assert await status(deps, first) == "done"
+    assert await status(deps, second) == "done"
+    left = [
+        t for t in await deps.db.query("tasks", [("status", "in", ["queued", "blocked"])])
+        if (t.get("params") or {}).get("issue") == "INV-26"
+    ]
+    assert left == [], "a done issue leaves nothing open"
+
+
+async def test_clearing_them_says_so_once_in_the_words_of_the_good_news(deps: Deps) -> None:
+    # The planner's real question is "is it underway by Sep 1?", so a Done issue overtakes
+    # both checks rather than matching either.
+    await schedule_chain(deps, issues=[DONE], prs=[], expect=["In Progress"])
+    await announcement(deps, ts="42.1", created_at="2026-08-27T09:00:00+00:00")
+
+    await resolve_early("INV-26", deps)
+
+    assert len(deps.slack.posts) == 1, "one note, not one per check"
+    said = deps.slack.posts[0]["text"]
+    assert said.startswith("INV-26 is done")
+    assert "cleared 2 remaining checks" in said, said
+    assert "early" not in said, "nothing was early about work that simply finished"
+
+
+async def test_nobody_is_nudged_about_an_issue_that_is_done(deps: Deps) -> None:
+    first, second = await schedule_chain(deps, issues=[DONE], prs=[])
+
+    await resolve_early("INV-26", deps)
+
+    for tid in (first, second):
+        doc = await deps.db.get("tasks", tid)
+        assert doc is not None
+        assert not (doc.get("result") or {}).get("acted")

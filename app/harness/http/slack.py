@@ -33,7 +33,12 @@ ISSUE_KEY = re.compile(r"\b([A-Z][A-Z0-9]*-\d+)\b")
 MENTION_TOKEN = re.compile(r"<@[^>]+>")
 # Below this a mention is a greeting, not a request. "@pm-agent thanks" deserves no task.
 MIN_REQUEST_WORDS = 4
-KNOWN_INTENTS = ("report", "request", "cancel", "noise")
+KNOWN_INTENTS = ("report", "request", "cancel", "instruct", "noise")
+# How a person tells a colleague to work differently from now on. Not a request for a check —
+# a rule that outlives the message, which is why it goes to the brain rather than the queue.
+INSTRUCTS = re.compile(
+    r"\b(from now on|going forward|always|never|stop\s+\w+ing|don't|do not|"
+    r"remember that|assign\s+.+\s+to\b)", re.IGNORECASE)
 # Slack wants a 200 in three seconds. A classifier that has not answered in two is one we do not
 # wait for — the keyword router below was good enough before Gemma existed.
 CLASSIFY_SECONDS = 2.0
@@ -63,6 +68,14 @@ def task_for(intent: str, text: str, project_id: str) -> dict[str, Any] | None:
             return None
         return {"kind": "intake", "params": {"cancel": identifier},
                 "reason": f"asked in Slack to stop watching {identifier}"}
+    if intent == "instruct":
+        rule = request_text(text)
+        if not rule:
+            return None
+        # Same stage as a request — the steward reads both — but flagged, because the answer
+        # to an instruction is a memory rather than a plan.
+        return {"kind": "intake", "params": {"text": rule, "instruct": True},
+                "reason": "a teammate told me how to work from now on"}
     if intent == "request":
         request = request_text(text)
         if not request:
@@ -79,10 +92,14 @@ def intent_of(text: str, project_id: str) -> dict[str, Any] | None:
     Pure, because the routing rule is the part worth reading in a test rather than inferring
     from a Slack fixture."""
     raw = str(text or "")
-    if "report" in raw.lower():
-        return task_for("report", raw, project_id)
+    # Order matters. "stop watching INV-27" is a cancellation about one ticket, not a rule; but
+    # "always put the report in the thread" is a rule about reports, not a request for one.
     if CANCEL.search(raw) is not None:
         return task_for("cancel", raw, project_id)
+    if INSTRUCTS.search(raw) is not None and request_text(raw):
+        return task_for("instruct", raw, project_id)
+    if "report" in raw.lower():
+        return task_for("report", raw, project_id)
     if len(request_text(raw).split()) >= MIN_REQUEST_WORDS:
         return task_for("request", raw, project_id)
     return None

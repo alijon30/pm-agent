@@ -125,6 +125,20 @@ A status report is read, believed and forwarded. Nobody checks it, so nothing in
 
 A source outage is not a fake citation. SourceUnavailable propagates out of this gate so the stage can fail and retry, rather than deleting a real claim because Linear was down.
 
+## Brain — what may it remember, and on whose word?
+
+The company brain: what this team has told the agent, kept so it does not have to be said twice.
+
+| | |
+|---|---|
+| kinds it keeps | `ownership`, `preference`, `fact`, `correction` |
+| a memory needs a source | an entry with no typed `source` ref is refused outright |
+| ownership needs a real person | the roster gate runs before it is stored; an unknown name is answered with a question and nothing is written |
+| facts need a verified source | only facts whose reference survived the identifier gate are kept |
+| handed to a model at most | 8 entries, by word overlap |
+| replacing, not erasing | a newer owner retires the older claim and keeps it |
+| idempotent by source | the same message replayed is one memory |
+
 ## Failure posture
 
 - **One bounce, then an honest drop.** A gate that refuses hands the model the specific

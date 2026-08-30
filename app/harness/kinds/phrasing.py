@@ -1,3 +1,4 @@
+
 """What each kind of scheduled work means, said the way the person waiting for it would say it.
 
 This lives with the kinds rather than with Slack because it is a property of the catalog, not of
@@ -8,6 +9,10 @@ test, so a new capability can never reach a person as a bare slug."""
 from __future__ import annotations
 
 from typing import Any
+
+DONE_STATES = ("done", "completed", "merged", "closed", "canceled", "cancelled")
+"""Tracker states that mean the work is over. One tuple, because a check that nudges about
+finished work and a review that lists it as overdue are the same mistake."""
 
 # What happens if a check comes back unmet — the half of a promise that makes it worth reading.
 UNMET_CONSEQUENCES = {

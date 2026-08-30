@@ -40,7 +40,11 @@ EVIDENCE RULES (these are checked mechanically; items that fail are discarded):
   ordinary one.
 
 Do not invent names, dates or identifiers. If the transcript contains no decisions or action
-items, return empty lists. Prefer fewer, well-supported items over many weak ones."""
+items, return empty lists.
+
+Prefer well-supported items. In a standup, every "can you…", "I'll…", "let's…" with an owner is
+its own action item — do not merge or drop small ones for brevity; drop only what has no
+verbatim evidence."""
 
 
 class GeminiExtractor:

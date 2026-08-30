@@ -19,7 +19,7 @@ from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
 from app.harness.core.voice import first_name, issue_phrase
 from app.harness.deps import Deps
-from app.harness.kinds.phrasing import human_finding
+from app.harness.kinds.phrasing import DONE_STATES, human_finding
 from app.harness.kinds.templates import render
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
@@ -40,11 +40,41 @@ async def check_issue_state(task: Doc, deps: Deps) -> tuple[bool, dict[str, Any]
     if issue is None:
         return False, {"status": "gone", "issue": identifier}
     state = issue.get("state") or ""
-    return state.lower() in expected, {
+    seen = {
         "status": "ok", "issue": identifier, "state": state, "title": issue.get("title", ""),
         "assignee": (issue.get("assignee") or {}).get("name"),
         "due": issue.get("due_date"), "url": issue.get("url", ""),
     }
+    if state.lower() in expected:
+        return True, seen
+    # The team went past the state we were waiting for. That is not a miss — asking whether
+    # finished work has started reads as not having noticed it finished.
+    if state.lower() in DONE_STATES:
+        return True, {**seen, "moot": True, "reason": "issue is done"}
+    return False, seen
+
+
+async def _already_done(task: Doc, deps: Deps) -> dict[str, Any] | None:
+    """The issue this check is about, if the team has already finished it.
+
+    A check exists to chase work that is still open. Once the issue is done there is nothing
+    left to chase, and asking "where is the pull request?" about finished work is the rudest
+    thing this agent can do — it reads as not paying attention. None when the issue is still
+    open, and None when the tracker cannot say, because an outage is not an answer."""
+    identifier = str(task["params"].get("issue") or "")
+    if deps.linear is None or not identifier:
+        return None
+    try:
+        issue = await deps.linear.get_issue(identifier)
+    except SourceUnavailable:
+        return None
+    if issue is None:
+        return None
+    state = str(issue.get("state") or "")
+    if state.lower() not in DONE_STATES:
+        return None
+    return {"status": "ok", "issue": identifier, "state": state, "moot": True,
+            "reason": "issue is done"}
 
 
 async def _newest_pr(task: Doc, deps: Deps) -> tuple[dict[str, Any] | None, dict[str, Any]]:
@@ -66,6 +96,9 @@ async def _newest_pr(task: Doc, deps: Deps) -> tuple[dict[str, Any] | None, dict
 
 async def check_pr_exists(task: Doc, deps: Deps) -> tuple[bool, dict[str, Any]]:
     """Has anyone opened a pull request that references this issue?"""
+    settled = await _already_done(task, deps)
+    if settled is not None:
+        return True, settled
     pr, observed = await _newest_pr(task, deps)
     if pr is None:
         return False, observed
@@ -74,6 +107,9 @@ async def check_pr_exists(task: Doc, deps: Deps) -> tuple[bool, dict[str, Any]]:
 
 async def check_pr_reviewed(task: Doc, deps: Deps) -> tuple[bool, dict[str, Any]]:
     """Has the newest pull request been looked at by a person?"""
+    settled = await _already_done(task, deps)
+    if settled is not None:
+        return True, settled
     pr, observed = await _newest_pr(task, deps)
     if pr is None:
         return False, observed
@@ -84,6 +120,9 @@ async def check_pr_reviewed(task: Doc, deps: Deps) -> tuple[bool, dict[str, Any]
 
 async def check_pr_merged(task: Doc, deps: Deps) -> tuple[bool, dict[str, Any]]:
     """Did the work actually land?"""
+    settled = await _already_done(task, deps)
+    if settled is not None:
+        return True, settled
     pr, observed = await _newest_pr(task, deps)
     if pr is None:
         return False, observed

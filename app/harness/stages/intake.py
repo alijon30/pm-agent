@@ -23,12 +23,14 @@ from app.harness.core.clock import iso
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
+from app.harness.core.voice import first_name
 from app.harness.deps import Deps
 from app.harness.kinds.registry import KINDS, catalog_for_prompt
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
 from app.harness.store.tasks import OPEN_STATUSES
 from app.harness.verify.plan import check_plan, nothing_exists
+from app.harness.verify.roster import resolve_owner
 
 CHECK_KINDS = tuple(kind for kind in KINDS if kind.startswith("check_"))
 
@@ -132,6 +134,60 @@ async def _cancel(task: Doc, identifier: str, deps: Deps) -> StageResult:
     })
 
 
+def _noted(remembered: dict[str, Any] | None) -> str:
+    """What the agent says back when it has been told something.
+
+    Said in the words a colleague would use, and said once — a rule repeated back as a
+    confirmation dialogue is how a helpful bot becomes an annoying one."""
+    if not remembered:
+        return ""
+    kind, text = str(remembered.get("kind")), str(remembered.get("text") or "")
+    person = str(remembered.get("person") or "")
+    if kind == "ownership" and person:
+        subject = ", ".join(str(w) for w in remembered.get("subject") or []) or "that work"
+        return f"Noted — {subject} go to {first_name({'name': person})} from now on."
+    # People type rules without a full stop; the agent still writes sentences.
+    said = text if text.endswith((".", "!", "?")) else f"{text}."
+    if kind == "fact":
+        return f"Noted, I'll remember that: {said}"
+    return f"Noted — from now on: {said}"
+
+
+async def _remember(
+    memory: dict[str, Any] | None, task: Doc, project: Doc, deps: Deps
+) -> tuple[dict[str, Any] | None, str]:
+    """File an instruction in the brain. Returns (what was remembered, what to say instead).
+
+    An owner who is not on the roster is the one thing this refuses: a name the agent invented
+    would be handed back to the team for weeks as though they had chosen it."""
+    if not memory or deps.wiki is None:
+        return None, ""
+    text = redact(str(memory.get("text") or "")).strip()
+    if not text:
+        return None, ""
+
+    person = str(memory.get("person") or "").strip()
+    if person:
+        found = resolve_owner(person, list(project.get("roster") or []))
+        if found is None:
+            return None, (f"I don't know a {person} on this project — who did you mean?")
+        person = str(found.get("name") or person)
+
+    payload = task.get("payload") or {}
+    source = f"slack:{payload.get('channel', '')}:{payload.get('thread_ts', task['id'])}"
+    where = await deps.wiki.add_entry(task["project_id"], str(memory.get("kind")), {
+        "text": text,
+        "subject": list(memory.get("subject") or []),
+        "person": person or None,
+        "source": source,
+        "said_by": await _requester_name(task, deps),
+    })
+    if where is None:
+        return None, ""
+    return {**memory, "text": text, "person": person or None,
+            "ref": f"wiki:{where[0]}#{where[1]}"}, ""
+
+
 async def run(task: Doc, deps: Deps) -> StageResult:
     project = await deps.projects.get(task["project_id"])
     if project is None:
@@ -168,6 +224,8 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         "catalog": catalog_for_prompt(),
         "policy": {k: policy.get(k) for k in ("plan_horizon_days", "max_plan_size")},
         "lessons": await _lessons(deps, task["project_id"]),
+        "brain": (await deps.wiki.for_prompt(task["project_id"], request)
+                  if deps.wiki is not None else []),
         "feedback": None,
     }
 
@@ -195,10 +253,18 @@ async def run(task: Doc, deps: Deps) -> StageResult:
                         "Fix those, keep the rest, and do not promise anything you had to drop.",
         })
 
+    # An instruction is answered with a memory, not a plan. The roster gate applies here for
+    # the same reason it applies to a filed ticket: an owner the agent invented is worse than
+    # no owner, and this one would be repeated back for weeks.
+    remembered, refused = await _remember(proposal.get("memory"), task, project, deps)
+
     children = commission(verdict.tasks, task)
     notes = " ".join(x for x in (interpretation(request, children),
                                  str(proposal.get("notes") or "")) if x)
-    posted = await _reply(task, _fallback_text(children, notes), children, deps, notes=notes)
+    if remembered or refused:
+        notes = refused or _noted(remembered)
+    posted = await _reply(task, notes if (remembered or refused)
+                          else _fallback_text(children, notes), children, deps, notes=notes)
     if posted and children:
         await react_quietly(
             deps.slack, task["payload"].get("channel"), task["payload"].get("thread_ts"),
@@ -213,6 +279,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
             "notes": notes,
             "bounced": bounced,
             "replied": posted,
+            "remembered": remembered,
         },
         children=children,
     )

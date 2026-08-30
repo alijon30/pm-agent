@@ -15,6 +15,7 @@ from app.harness.stages.reconcile import (
     search_words,
     with_call_citation,
 )
+from app.harness.store.wiki import WikiStore
 from app.harness.verify.ids import IdGate
 
 from tests.conftest import ACME
@@ -493,3 +494,107 @@ async def test_a_tracker_outage_never_looks_like_no_such_issue(deps: Deps) -> No
     out = await run(await seed(deps), deps)
 
     assert [i["disposition"] for i in out.result["items"]] == ["new"]
+
+
+# --- what the company has already told it -------------------------------------------------------
+
+FACT_ITEM = {
+    **GOOD_ITEM, "conflicts": [],
+    "facts": [{"text": "Line-item rates allow six decimal places",
+               "source": "code:acme/config.py:6"}],
+}
+# The second fact points at an issue that does not exist, so the item never survives the gate.
+UNVERIFIED_FACT = {
+    **GOOD_ITEM, "conflicts": [],
+    "facts": [{"text": "Statements are generated nightly", "source": "linear:INV-999"}],
+}
+
+
+async def brain(deps: Deps) -> WikiStore:
+    deps.wiki = WikiStore(deps.db, deps.clock)
+    return deps.wiki
+
+
+async def test_the_reconciler_is_shown_what_this_company_has_said(deps: Deps) -> None:
+    """"assign billing to Nodir" has to reach the step that decides owners, or it was never
+    worth storing."""
+    wiki = await brain(deps)
+    await wiki.add_entry("acme", "ownership", {
+        "text": "Billing and statements go to Nodir", "subject": ["billing", "statements"],
+        "person": "Nodir Rahimov", "source": "slack:C1:1", "said_by": "Maya Chen"})
+    fake = FakeReconciler([GOOD])
+    deps.reconciler, deps.ids = fake, make_ids()
+    extracted = {**EXTRACTED, "action_items": [
+        {**EXTRACTED["action_items"][0], "title": "Fix the billing statements page"}]}
+
+    await run(await seed(deps, extracted), deps)
+
+    handed = fake.calls[0]["brain"]
+    assert [e["text"] for e in handed] == ["Billing and statements go to Nodir"]
+    assert handed[0]["person"] == "Nodir Rahimov"
+    assert handed[0]["ref"].startswith("wiki:ownership#")
+    assert handed[0]["said_by"] == "Maya Chen"
+    assert handed[0]["when"], "and when they said it"
+
+
+async def test_a_call_about_something_else_does_not_carry_the_whole_brain(deps: Deps) -> None:
+    wiki = await brain(deps)
+    await wiki.add_entry("acme", "ownership", {
+        "text": "Onboarding emails go to Priya", "subject": ["onboarding", "emails"],
+        "person": "Priya Nair", "source": "slack:C1:1"})
+    fake = FakeReconciler([GOOD])
+    deps.reconciler, deps.ids = fake, make_ids()
+
+    await run(await seed(deps), deps)
+
+    assert fake.calls[0]["brain"] == []
+
+
+async def test_a_verified_fact_from_the_call_becomes_something_it_remembers(deps: Deps) -> None:
+    wiki = await brain(deps)
+    deps.reconciler = FakeReconciler([{"items": [FACT_ITEM], "decision_conflicts": []}])
+    deps.ids = make_ids()
+
+    out = await run(await seed(deps), deps)
+
+    remembered = [e["text"] for p in await wiki.pages("acme") for e in p["entries"]]
+    assert "Line-item rates allow six decimal places" in remembered
+    assert out.result["learned"], "and the journal can say so"
+
+
+async def test_a_fact_whose_source_did_not_survive_the_gate_is_not_remembered(
+    deps: Deps,
+) -> None:
+    """A fact nobody can re-open is exactly the kind of thing that should not be repeated back
+    to the team next week."""
+    wiki = await brain(deps)
+    deps.reconciler = FakeReconciler([
+        {"items": [UNVERIFIED_FACT], "decision_conflicts": []},
+        {"items": [UNVERIFIED_FACT], "decision_conflicts": []}])
+    deps.ids = make_ids()
+
+    await run(await seed(deps), deps)
+
+    remembered = [e["text"] for p in await wiki.pages("acme") for e in p["entries"]]
+    assert "Statements are generated nightly" not in remembered, "INV-999 does not exist"
+
+
+async def test_the_same_fact_from_a_replayed_call_is_remembered_once(deps: Deps) -> None:
+    wiki = await brain(deps)
+    deps.reconciler = FakeReconciler([{"items": [FACT_ITEM], "decision_conflicts": []}])
+    deps.ids = make_ids()
+    first = await seed(deps)
+    await run(first, deps)
+
+    # The same call reconciled again, as a replay would do it.
+    again = await deps.queue.enqueue(
+        kind="reconcile", project_id="acme", payload=first["payload"], reason="replay",
+        root_event_id=first.get("root_event_id"))
+    assert again is not None
+    claimed = await deps.queue.claim(again)
+    assert claimed is not None
+    deps.reconciler = FakeReconciler([{"items": [FACT_ITEM], "decision_conflicts": []}])
+    await run(claimed, deps)
+
+    entries = [e for p in await wiki.pages("acme") for e in p["entries"]]
+    assert len(entries) == 1, "one memory, however many times the call is processed"

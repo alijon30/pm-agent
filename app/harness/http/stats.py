@@ -197,6 +197,7 @@ def working_stats(
 
 def trust_stats(
     tasks: list[Doc], actions: list[Doc], corrections: list[Doc],
+    brain: list[Doc] | None = None,
 ) -> list[dict[str, Any]]:
     """The claims a judge is entitled to check. Every one is a count of something written
     down at the time, not a score computed afterwards."""
@@ -220,4 +221,14 @@ def trust_stats(
     # A tile for a record this project does not keep would be furniture.
     if corrections:
         out.append(tile("Corrections", len(corrections), "taught by a human"))
+    if brain:
+        entries = [e for p in brain for e in (p.get("entries") or []) if not e.get("retired_at")]
+        # "Applied" is deliberately a cheap count: actions whose citations point back at the
+        # brain. It undercounts — a preference the model followed without citing does not show
+        # — and that is the safer direction for a number on a trust panel.
+        applied = sum(
+            1 for a in actions
+            if any(str(c).startswith("wiki:") for c in (a.get("citations") or []))
+        )
+        out.append(tile("Brain", len(entries), f"{applied} applied in later work"))
     return out

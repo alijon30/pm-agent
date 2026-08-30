@@ -37,6 +37,33 @@ def item_refs(item: dict[str, Any]) -> list[str]:
     return [r for r in refs if r]
 
 
+def _situation(action_items: list[dict[str, Any]]) -> str:
+    """The words this call is about, for asking the brain what it knows."""
+    return " ".join(
+        f"{i.get('title', '')} {i.get('description', '')}" for i in action_items
+    )
+
+
+async def _remember_facts(
+    items: list[dict[str, Any]], deps: Deps, project_id: str
+) -> list[dict[str, Any]]:
+    """File each verified fact in the brain. Returns what was learned, for the journal."""
+    if deps.wiki is None:
+        return []
+    learned: list[dict[str, Any]] = []
+    for item in items:
+        for fact in item.get("facts") or []:
+            text, source = str(fact.get("text") or ""), str(fact.get("source") or "")
+            if not text or not source:
+                continue
+            where = await deps.wiki.add_entry(project_id, "fact", {
+                "text": text, "source": source, "said_by": str(item.get("owner") or ""),
+            })
+            if where is not None:
+                learned.append({"text": text, "ref": f"wiki:{where[0]}#{where[1]}"})
+    return learned
+
+
 def call_citation(
     item: dict[str, Any], meeting_id: str, action_items: list[dict[str, Any]]
 ) -> str:
@@ -290,6 +317,8 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         ],
         "meeting": {"id": meeting["meeting_id"], "title": meeting["title"], "url": meeting["url"]},
         "roster": [{"name": m["name"], "role": m.get("role")} for m in project.get("roster", [])],
+        "brain": (await deps.wiki.for_prompt(task["project_id"], _situation(action_items))
+                  if deps.wiki is not None else []),
         "today": iso(deps.clock.now())[:10],
         "feedback": None,
     }
@@ -332,7 +361,13 @@ async def run(task: Doc, deps: Deps) -> StageResult:
     for item in verified:
         item["quotes"] = quotes_for(int(item.get("index", -1)), action_items)
 
+    # Durable facts go into the brain, but only the ones whose source survived the identifier
+    # gate: a fact nobody can re-open is exactly the kind of thing that should not become
+    # something the agent repeats back to the team next week.
+    learned = await _remember_facts(verified, deps, task["project_id"])
+
     result: dict[str, Any] = {
+        "learned": learned,
         "meeting": payload["meeting"],
         "items": verified,
         "unverified": unverified,

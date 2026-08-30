@@ -10,9 +10,11 @@ from app.harness.http.graph_layout import (
     CARD_SLOT,
     CHIP_SLOT,
     FUTURE_COLUMN,
+    FUTURE_STRETCH,
     ISSUE_SLOT,
     LANE_EMPTY,
     LANE_MIN,
+    LANE_SHARE,
     LANES,
     MAX_COLUMN,
     MIN_COLUMN,
@@ -26,10 +28,12 @@ from app.harness.http.graph_layout import (
     lane_heights,
     lane_of,
     place,
+    plan_widths,
     roster_view,
     row_of,
     short_day,
     slot_width,
+    spread,
     stage_strip,
     sub_columns,
     zone,
@@ -650,3 +654,196 @@ def test_a_day_with_real_work_is_not_collapsed() -> None:
     days = build_days([n["day"] for n in busy], TODAY)
 
     assert column_widths(busy, days)["2026-08-29"] >= CARD_SLOT
+
+
+# --- filling the width -----------------------------------------------------------------------------
+
+def col(width: int, *, future: bool = False, primary: bool = True) -> dict[str, Any]:
+    return {"width": width, "future": future, "primary": primary}
+
+
+def test_a_week_that_fits_fills_the_screen_instead_of_huddling_left() -> None:
+    """On a 27-inch monitor the whole timeline fits twice over. Laying it out at its minimum
+    left the content in a third of the screen with a scrollbar it did not need."""
+    widths = spread([col(400), col(600), col(200)], 2400)
+
+    assert sum(widths) == 2400
+    assert all(w >= m for w, m in zip(widths, (400, 600, 200), strict=True))
+
+
+def test_the_spare_width_goes_to_the_days_that_have_something_in_them() -> None:
+    widths = spread([col(400), col(600)], 2000)
+
+    assert widths[1] > widths[0], "the busier day grows more"
+
+
+def test_a_day_with_nothing_but_dots_keeps_its_collapsed_width() -> None:
+    """Its whole point is to give the room back."""
+    widths = spread([col(400), col(110, primary=False), col(400)], 2000)
+
+    assert widths[1] == 110
+
+
+def test_a_scheduled_day_stretches_only_so_far() -> None:
+    widths = spread([col(600), col(190, future=True)], 2000)
+
+    assert widths[1] <= int(190 * FUTURE_STRETCH)
+    assert sum(widths) == 2000
+
+
+def test_a_week_too_wide_for_the_screen_keeps_its_minimums_and_scrolls() -> None:
+    mins = [900, 900, 900]
+
+    assert spread([col(m) for m in mins], 1600) == mins
+
+
+def test_a_week_exactly_the_width_of_the_screen_is_left_alone() -> None:
+    assert spread([col(800), col(800)], 1600) == [800, 800]
+
+
+def test_nothing_to_lay_out_is_not_an_error() -> None:
+    assert spread([], 2560) == []
+
+
+def test_the_lane_shares_of_a_tall_screen_add_up() -> None:
+    """Otherwise a share of the height goes unclaimed and the page ends short again."""
+    assert set(LANE_SHARE) == set(LANES)
+    assert abs(sum(LANE_SHARE.values()) - 1.0) < 1e-9
+    assert LANE_SHARE["did"] == max(LANE_SHARE.values()), "Did is what they came to read"
+
+
+def test_a_little_too_wide_is_squeezed_in_rather_than_scrolled() -> None:
+    """A week 10% over the viewport used to start mid-column with a card cut in half. The
+    columns give back the room they were holding loosely instead."""
+    cols = [{"width": 900, "floor": 700, "primary": True} for _ in range(2)]
+
+    widths = spread(cols, 1600)
+
+    assert sum(widths) == 1600
+    assert all(700 <= w <= 900 for w in widths)
+
+
+def test_squeezing_never_takes_a_column_below_what_it_can_show() -> None:
+    """Past the floor the chips would be narrower than their content, and scrolling is the
+    honest answer."""
+    cols = [{"width": 900, "floor": 800, "primary": True} for _ in range(2)]
+
+    assert spread(cols, 1500) == [900, 900], "floors total 1600 > 1500, so it scrolls"
+
+
+def test_a_week_far_too_wide_still_scrolls() -> None:
+    cols = [{"width": 900, "floor": 500, "primary": True} for _ in range(3)]
+
+    assert spread(cols, 1600) == [900, 900, 900], "70% over is not a squeeze"
+
+
+def test_the_squeeze_takes_most_from_the_column_holding_the_most_slack() -> None:
+    tight = {"width": 600, "floor": 580, "primary": True}
+    loose = {"width": 600, "floor": 300, "primary": True}
+
+    widths = spread([tight, loose], 1000)
+
+    assert widths[0] > widths[1], "the column with room to give gives it"
+    assert sum(widths) == 1000
+
+
+def test_a_scheduled_day_is_narrow_enough_that_four_of_them_leave_room() -> None:
+    """Four future columns eating two thirds of a 1920 screen is the past being pushed off it."""
+    assert FUTURE_COLUMN == 170
+    assert 4 * FUTURE_COLUMN < 0.4 * 1920, "four scheduled days stay under 40% of the width"
+
+
+# --- the width algorithm, all three branches ------------------------------------------------------
+
+def day(minimum: int, *, shrunk: int | None = None, primary: int = 1, future: bool = False,
+        collapsed: bool = False, today: bool = False,
+        strips: list[int] | None = None) -> dict[str, Any]:
+    return {"min": minimum, "shrunk": shrunk if shrunk is not None else minimum,
+            "primary": primary, "future": future, "collapsed": collapsed, "today": today,
+            "strips": strips or [minimum]}
+
+
+def test_a_week_narrower_than_the_screen_fits_and_does_not_scroll() -> None:
+    plan = plan_widths([day(500), day(700), day(170, future=True, primary=0)], 2560, gutter=92)
+
+    assert plan["mode"] == "fit"
+    assert plan["scroll_left"] == 0
+    assert plan["total"] <= 2560
+
+
+def test_the_spare_goes_to_the_days_that_hold_the_work() -> None:
+    plan = plan_widths([day(500, primary=1), day(500, primary=3)], 1300, gutter=0)
+
+    assert plan["mode"] == "fit"
+    assert plan["widths"] == [575, 725], "three times the work, three times the spare"
+    assert sum(plan["widths"]) == 1300
+
+
+def test_no_column_takes_more_than_half_again_its_minimum() -> None:
+    """Past that the page is filling itself with air rather than with work."""
+    plan = plan_widths([day(400, primary=2)], 4000, gutter=0)
+
+    assert plan["widths"] == [600]
+    assert plan["total"] < 4000, "the rest is ground, not a stretched column"
+
+
+def test_a_scheduled_day_and_a_day_of_dots_never_grow() -> None:
+    plan = plan_widths([
+        day(500, primary=2), day(170, future=True, primary=0),
+        day(110, collapsed=True, primary=0),
+    ], 3000, gutter=0)
+
+    assert plan["widths"][1] == 170
+    assert plan["widths"][2] == 110
+
+
+def test_a_week_a_fifth_too_wide_shrinks_onto_the_screen() -> None:
+    plan = plan_widths([day(900, shrunk=740), day(900, shrunk=740)], 1600, gutter=0)
+
+    assert plan["mode"] == "shrink"
+    assert plan["widths"] == [740, 740]
+    assert plan["scroll_left"] == 0
+
+
+def test_shrinking_gets_it_on_screen_and_stops_there() -> None:
+    """Nothing grows on the shrink path; the point is to be visible, not to fill."""
+    plan = plan_widths([day(850, shrunk=600), day(850, shrunk=600)], 1600, gutter=0)
+
+    assert plan["mode"] == "shrink"
+    assert plan["total"] == 1200, "no spare handed out"
+
+
+def test_a_week_that_cannot_fit_even_shrunk_scrolls_at_its_minimums() -> None:
+    plan = plan_widths([day(900, shrunk=880) for _ in range(3)], 1600, gutter=0)
+
+    assert plan["mode"] == "scroll"
+    assert plan["widths"] == [900, 900, 900], "no growing and no shrinking"
+
+
+def test_a_scrolling_week_opens_on_a_sub_column_boundary() -> None:
+    """Never halfway through a card."""
+    columns = [
+        day(600, strips=[300, 300]), day(600, strips=[300, 300]),
+        day(200, today=True, strips=[200]), day(170, future=True, primary=0),
+    ]
+
+    plan = plan_widths(columns, 1000, gutter=0)
+
+    assert plan["mode"] == "scroll"
+    boundaries = {0, 300, 600, 900, 1200}
+    assert plan["scroll_left"] in boundaries
+
+
+def test_a_scrolling_week_puts_today_around_the_middle() -> None:
+    columns = [day(600, strips=[300, 300]), day(600, strips=[300, 300]),
+               day(200, today=True, strips=[200]), day(170, future=True, primary=0)]
+
+    plan = plan_widths(columns, 1000, gutter=0)
+
+    today_left = 1200 - plan["scroll_left"]
+    assert 0 < today_left < 1000, "today is on screen"
+    assert today_left >= 1000 * 0.3, "with history to its left"
+
+
+def test_nothing_to_lay_out_is_not_an_error_either() -> None:
+    assert plan_widths([], 1600)["widths"] == []

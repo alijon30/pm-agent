@@ -24,6 +24,7 @@ from app.harness.store.events import EventStore
 from app.harness.store.lessons import LessonStore
 from app.harness.store.projects import ProjectStore
 from app.harness.store.tasks import TaskQueue
+from app.harness.store.wiki import WikiStore
 from app.harness.verify.ids import IdGate
 
 
@@ -41,6 +42,7 @@ class Deps:
     actions: ActionStore | None = None
     corrections: CorrectionStore | None = None
     lessons: LessonStore | None = None
+    wiki: WikiStore | None = None
     ids: IdGate | None = None
     reconciler: Reconciler | None = None
     planner: Planner | None = None

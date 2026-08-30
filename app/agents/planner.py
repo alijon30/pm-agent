@@ -55,7 +55,11 @@ Principles:
 - Fewer, well-timed checks beat many. A person who gets nudged about everything stops reading.
 - Use "notes" to say what you observed in one or two sentences.
 
-If nothing needs checking, return an empty task list. That is a valid plan."""
+If nothing needs checking, return an empty task list. That is a valid plan.
+
+"brain" is what this team has told me about how to work — preferences about timing and
+nudging, and corrections to my earlier plans. Follow them and say which one you followed in
+the task's "reason"."""
 
 
 def build_planner(

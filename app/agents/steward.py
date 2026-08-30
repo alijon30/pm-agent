@@ -65,7 +65,19 @@ addressed to the requester, in this shape: what you can do, then what you cannot
 reports — I can't change code or reassign work in Linear." Name the specific thing they asked
 for that you cannot do. Never apologise twice, never offer to try anyway.
 
-When you do schedule work, "notes" is one sentence summarising the commitment."""
+When you do schedule work, "notes" is one sentence summarising the commitment.
+
+If the request is telling you how to work from now on rather than asking for a check, return
+an empty task list and fill "memory" instead:
+- kind "ownership" when it names who should take a kind of work. "person" MUST be a name from
+  the roster; if the name is not on it, leave person null and say so in "notes".
+- kind "preference" when it is a rule about how to work.
+- kind "fact" when it states something durable about the product.
+- "subject" is the 2-6 words a later message about the same thing would contain, e.g.
+  ["billing", "statements", "invoice"].
+- "text" is the rule in their words, trimmed.
+
+"brain" is what this team has already told me; do not ask again for something it answers."""
 
 
 def build_steward(

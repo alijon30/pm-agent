@@ -6,6 +6,8 @@ is that a correction, once given, does not have to be given again."""
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.harness.core.clock import Clock, iso
 from app.harness.core.keys import new_id
 from app.harness.store.db import Db, Doc
@@ -53,6 +55,22 @@ class CorrectionStore:
             "created_at": iso(self._clock.now()),
         })
         return correction_id
+
+    async def remember(
+        self, wiki: Any, project_id: str, *, wrong: str, right: str, source: str, author: str
+    ) -> None:
+        """Also file it in the brain, so one reader answers "what have I been told".
+
+        The correction row keeps the stage it belongs to; the brain keeps the sentence. Both
+        point at the same source, so neither is a second version of the truth."""
+        if wiki is None:
+            return
+        await wiki.add_entry(project_id, "correction", {
+            "text": f"wrong: {wrong}; right: {right}" if wrong else right,
+            "subject": matcher_for(wrong, right),
+            "source": source,
+            "said_by": author,
+        })
 
     async def for_stage(self, project_id: str, stage: str) -> list[Doc]:
         """Everything that could apply to this stage of this project, newest last so a later

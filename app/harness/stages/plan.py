@@ -92,6 +92,13 @@ async def _context_for(task: Doc, deps: Deps) -> dict[str, Any]:
     return {}
 
 
+def _about(context: dict[str, Any], open_tasks: list[dict[str, Any]]) -> str:
+    """The words this plan is about, for asking the brain what it knows."""
+    issues = [str(i.get("identifier") or "") for i in context.get("items") or []]
+    reasons = [str(t.get("reason") or "") for t in open_tasks]
+    return " ".join([*issues, *reasons, str(context.get("meeting", {}).get("title") or "")])
+
+
 async def run(task: Doc, deps: Deps) -> StageResult:
     project = await deps.projects.get(task["project_id"])
     if project is None:
@@ -120,6 +127,11 @@ async def run(task: Doc, deps: Deps) -> StageResult:
                    ("plan_horizon_days", "max_plan_size", "default_followup_offsets")},
         "now": iso(now),
         "lessons": await lessons_for(deps, task["project_id"]),
+        # Preferences about timing and nudging, and corrections to earlier plans. Facts and
+        # ownership are not the planner's business — it schedules checks, it does not assign.
+        "brain": (await deps.wiki.for_prompt(
+            task["project_id"], _about(context, open_tasks), ("preference", "correction"))
+            if deps.wiki is not None else []),
         "feedback": None,
     }
 
