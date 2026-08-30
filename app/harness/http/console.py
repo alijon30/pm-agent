@@ -992,7 +992,7 @@ h2 { font-size:9.5px; text-transform:uppercase; letter-spacing:.14em; color:var(
   border-bottom:1px solid var(--line); }
 .j li:last-child { border-bottom:none; }
 .j time { color:var(--muted); font-variant-numeric:tabular-nums; font-size:11.5px;
-  white-space:nowrap; margin-left:auto; padding-left:10px; }
+  white-space:nowrap; flex:none; min-width:78px; }
 
 /* Category chips carry the graph's tints, so "filed" is the same green in both places. */
 .tag { font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:2px 9px;

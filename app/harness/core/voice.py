@@ -25,8 +25,10 @@ ISSUE_KEY = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
 # the thing, not the instruction. Dropping a leading imperative is the whole transformation;
 # anything cleverer would start inventing words nobody wrote.
 LEADING_VERBS = frozenset({
-    "add", "build", "check", "confirm", "create", "draft", "fix", "handle", "investigate",
-    "make", "move", "put", "remove", "ship", "set", "update", "write",
+    "add", "audit", "build", "check", "confirm", "create", "draft", "fix", "handle",
+    "implement", "investigate", "make", "move", "open", "pause", "plan", "prepare", "put",
+    "remove", "review", "run", "schedule", "send", "set", "ship", "take", "test", "unblock",
+    "update", "verify", "write",
 })
 
 SPELLED = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
