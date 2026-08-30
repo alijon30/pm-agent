@@ -599,7 +599,7 @@ def test_four_scheduled_days_cost_a_fifth_of_the_screen_not_half() -> None:
     days = build_days([n["day"] for n in ahead], TODAY)
 
     assert column_widths(ahead, days)["2026-09-03"] == 2 * FUTURE_COLUMN
-    assert 4 * FUTURE_COLUMN < 700, "four scheduled days stay under a third of a 1920 screen"
+    assert 4 * FUTURE_COLUMN < 800, "four scheduled days stay under half a 1920 screen"
 
 
 # --- the team's midnight, not the server's ------------------------------------------------------

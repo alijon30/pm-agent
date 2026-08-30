@@ -30,6 +30,8 @@ def ref_chip(ref: str) -> str:
     if kind == "fathom":
         _meeting, _, timestamp = target.partition("@")
         stamp = timestamp.removeprefix("00:") if timestamp.startswith("00:") else timestamp
+        if stamp and ":" not in stamp:
+            stamp = f"0:{stamp}"  # "00:22" is twenty-two seconds in, not minute twenty-two
         return f"call @ {stamp}" if stamp else "call"
     if kind == "code":
         path, _, line = target.rpartition(":")

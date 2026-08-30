@@ -115,8 +115,8 @@ def test_the_journal_says_whether_the_summary_was_posted_or_filled_in() -> None:
     fresh = journal_entries([], [action(
         kind="slack.post", inputs={"meeting": "Q3 Billing planning", "edited": False})])
 
-    assert edited[0]["text"].startswith("filled in the summary of 'Q3 Billing planning'")
-    assert fresh[0]["text"].startswith("posted the summary of 'Q3 Billing planning'")
+    assert edited[0]["text"].startswith("filled in the call summary for 'Q3 Billing planning'")
+    assert fresh[0]["text"].startswith("posted the call summary for 'Q3 Billing planning'")
 
 
 def test_a_revert_names_who_undid_what() -> None:
@@ -458,3 +458,43 @@ def test_the_console_page_asks_the_network_for_nothing_still(client: TestClient)
     assert "<script" not in body
     assert "@import" not in body
     assert "http://" not in body.replace("http://www.w3.org", "")
+
+
+def test_the_journal_writes_a_time_the_team_recognises() -> None:
+    """A standup posted at 9am in California read as 16:00 while this wrote UTC, which makes
+    a correctly-timed agent look mistimed."""
+    from zoneinfo import ZoneInfo
+
+    from app.harness.core.clock import stamp_local
+
+    assert stamp_local("2026-08-29T16:00:00+00:00", ZoneInfo("America/Los_Angeles")) == (
+        "Aug 29 09:00")
+    from app.harness.http.console import _journal_html
+
+    row = _journal_html(
+        [{"ts": "2026-08-29T16:00:00+00:00", "category": "posted",
+          "text": "posted the morning standup"}],
+        ZoneInfo("America/Los_Angeles"),
+    )
+
+    assert ">Aug 29 09:00</time>" in row
+    assert "title='2026-08-29T16:00:00+00:00'" in row, "the exact moment is one hover away"
+
+
+def test_the_act_summary_does_not_repeat_the_lines_beneath_it() -> None:
+    """Every ticket gets its own line directly underneath; naming them twice reads like a
+    stutter."""
+    from app.harness.http.console import _act_line
+
+    assert _act_line({"created": [{"identifier": "INV-32"}]}, "PDF incident huddle") == (
+        "filed", "filed one ticket from 'PDF incident huddle'")
+    assert _act_line(
+        {"created": [{}] * 5, "updated": [{}]}, "Sprint 1 kickoff sync",
+    ) == ("filed", "filed five tickets and updated one issue from 'Sprint 1 kickoff sync'")
+    assert _act_line({}, "PDF incident huddle") == (
+        "filed", "read 'PDF incident huddle' and found nothing new to file")
+    assert "INV-" not in _act_line({"created": [{"identifier": "INV-32"}]}, "a call")[1]
+    # The call is named against what was filed. Tacked onto the end it says the wrong thing:
+    # "flagged two disagreements for a human from 'Q3 planning'".
+    assert _act_line({"created": [{}], "conflicts": [{}, {}]}, "Q3 planning")[1] == (
+        "filed one ticket from 'Q3 planning' and flagged two disagreements for a human")

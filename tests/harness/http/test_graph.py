@@ -891,7 +891,8 @@ def test_a_half_scrolled_day_still_shows_its_date(client: TestClient) -> None:
     page = client.get("/console/graph").text
 
     assert "function stickHeaders(" in page
-    assert "Math.min(Math.max(column.x, leftEdge), right - 96)" in page
+    assert "const at = Math.max(column.x, leftEdge);" in page
+    assert "labelRoom:" in page, "a sliver too narrow for a date does not get one"
     assert "stickHeaders();" in page
 
 

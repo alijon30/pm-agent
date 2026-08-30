@@ -15,6 +15,7 @@ from typing import Any
 
 from app.harness.core.clock import readable
 from app.harness.core.dedupe import collapse
+from app.harness.core.keys import origin
 
 Doc = dict[str, Any]
 
@@ -133,7 +134,12 @@ def sprint_stats(
     sprint = project.get("sprint") or {}
     start, end = str(sprint.get("start") or ""), str(sprint.get("end") or "")
 
-    heard = len(_done(tasks, "extract", start, end))
+    # Distinct conversations, not extract runs: a call replayed after a flake ran extract
+    # twice and is still one call.
+    heard = len({
+        origin(str(t.get("root_event_id") or "")) or str(t["id"])
+        for t in _done(tasks, "extract", start, end)
+    })
     said = len(collapse(
         [d for d in decisions if in_window(d.get("created_at"), start, end)],
         lambda row: str(row.get("statement") or ""),
@@ -154,13 +160,15 @@ def sprint_stats(
     watching = sum(1 for t in checks if t.get("status") in ("queued", "blocked"))
 
     return [
+        # What it is holding right now comes first: on a narrow screen the tile that wraps
+        # should be the least urgent, not the most.
+        tile("Open watches", watching, f"next: {next_check}" if next_check else ""),
         tile("Calls heard", heard),
         tile("Decisions recorded", said),
         tile("Issues filed", filed, f"{updated} updated instead of re-filed"),
         tile("Checks run", len(settled),
              f"{met} met · {early} early · {unmet} unmet"),
         tile("Nudges sent", nudges, "within the daily cap"),
-        tile("Open watches", watching, f"next: {next_check}" if next_check else ""),
     ]
 
 

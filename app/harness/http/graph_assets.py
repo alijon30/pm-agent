@@ -246,6 +246,7 @@ const TUNING = {
   gutter: 92,           // the left strip the lane names live in
   gutterTight: 80,      // ...and what it shrinks to when the week is close to fitting
   labelAt: 140,         // a strip narrower than this gets dots without a caption
+  labelRoom: 96,        // the room a day label needs before it is worth drawing
   anchor: 0.65,         // where the now line sits when the week is wider than the screen
   laneMin: 64,          // a lane with something in it
   laneEmpty: 36,        // a lane with nothing in it yet
@@ -666,7 +667,13 @@ function stickHeaders() {
   for (const column of columns) {
     if (!column.head) continue;
     const right = column.x + column.width;
-    const at = Math.min(Math.max(column.x, leftEdge), right - 96);
+    // A column scrolled down to a sliver has no room for its date. Clamping the label into
+    // that sliver used to push it off the left edge entirely, which is worse than no label.
+    const sliver = right - leftEdge < TUNING.labelRoom;
+    column.head.style.display = sliver ? "none" : "";
+    if (column.sub) column.sub.style.display = sliver ? "none" : "";
+    if (sliver) continue;
+    const at = Math.max(column.x, leftEdge);
     column.head.style.left = at + "px";
     column.head.style.width = (right - at) + "px";
     if (column.sub) column.sub.style.left = at + "px";

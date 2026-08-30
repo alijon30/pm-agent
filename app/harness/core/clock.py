@@ -102,6 +102,19 @@ def when_phrase(value: str, now: datetime) -> str:
     return human_date(value)
 
 
+
+def stamp_local(value: str, tz: Any) -> str:
+    """"Aug 29 09:00" in the team's own timezone — the same shape the graph draws.
+
+    A standup posted at 9am in California read as "16:00" when the console wrote UTC, which
+    makes the agent look like it ran at the wrong time."""
+    moment = readable(value)
+    if moment is None:
+        return ""
+    here = moment.astimezone(tz)
+    return f"{MONTHS[here.month - 1]} {here.day} {here:%H:%M}"
+
+
 def sprint_day(sprint: dict[str, Any], today: str) -> str:
     """"day 3 of Sprint 1", or nothing at all. A sprint is a shared sense of where in the week
     everyone is, and it is the one number that makes a standup feel situated.

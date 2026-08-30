@@ -184,3 +184,26 @@ def test_a_record_this_project_does_not_keep_gets_no_tile() -> None:
     agent and not before."""
     assert "Corrections" not in by_label(trust_stats(TASKS, ACTIONS, []))
     assert by_label(trust_stats(TASKS, ACTIONS, [{"id": "c1"}]))["Corrections"]["value"] == "1"
+
+
+def test_a_call_replayed_after_a_flake_is_still_one_call() -> None:
+    """The Aug 27 call ran extract twice — once as itself, once as #retry1. Counting extract
+    runs reported five calls where a reader can see three."""
+    retried = [
+        *TASKS,
+        {"kind": "extract", "status": "done", "finished_at": "2026-08-28T17:40:00+00:00",
+         "root_event_id": "ev-1#retry1", "result": {}},
+        {"kind": "extract", "status": "done", "finished_at": "2026-08-29T17:40:00+00:00",
+         "root_event_id": "ev-2#retry2", "result": {}},
+    ]
+
+    tiles = by_label(sprint_stats(retried, ACTIONS, EVENTS, DECISIONS, PROJECT, NOW))
+
+    assert tiles["Calls heard"]["value"] == "2", "four extract runs, two conversations"
+
+
+def test_what_it_is_holding_now_is_the_first_tile() -> None:
+    """On a narrow screen the tile that wraps should be the least urgent, not the most."""
+    tiles = sprint_stats(TASKS, ACTIONS, EVENTS, DECISIONS, PROJECT, NOW)
+
+    assert tiles[0]["label"] == "Open watches"

@@ -36,8 +36,10 @@ from app.harness.core.clock import (
     iso,
     readable,
     sprint_day,
+    stamp_local,
 )
 from app.harness.core.dedupe import collapse
+from app.harness.core.keys import origin
 from app.harness.core.redact import redact
 from app.harness.core.refs import ref_chip
 from app.harness.core.voice import (
@@ -180,30 +182,40 @@ def _check_line(task: Doc, result: dict[str, Any], roster: list[dict[str, Any]])
     return "checked", f"{identifier} hadn't moved — stayed quiet ({reason})"
 
 
-def _act_line(result: dict[str, Any]) -> tuple[str, str]:
-    """What one call actually produced. A line that reports three zeroes has said nothing, so
-    only the parts that happened get named — and when nothing did, it says that outright."""
-    created = _named([str(c.get("identifier") or "") for c in result.get("created") or []],
-                     "ticket")
-    updated = _named([str(u.get("identifier") or "") for u in result.get("updated") or []],
-                     "issue")
+def _act_line(result: dict[str, Any], call: str = "") -> tuple[str, str]:
+    """What one call produced, as a total.
+
+    Deliberately no identifiers: every ticket gets its own line directly underneath, and
+    naming them twice made the journal read like a stutter. This line is the headline — how
+    much, and which conversation it came out of."""
+    created, updated = len(result.get("created") or []), len(result.get("updated") or [])
     skipped, conflicts = len(result.get("skipped") or []), len(result.get("conflicts") or [])
-    parts: list[str] = []
+    made: list[str] = []
     if created:
-        parts.append(f"filed {created}")
+        made.append(f"filed {count_in_words(created, 'ticket')}")
     if updated:
-        parts.append(f"updated {updated}")
+        made.append(f"updated {count_in_words(updated, 'issue')}")
+    # The call is named against what was filed, not tacked onto the end of the sentence —
+    # "flagged two disagreements for a human from 'Q3 planning'" says the wrong thing.
+    parts: list[str] = []
+    if made:
+        parts.append(sentence_list(made) + (f" from {_quoted(call)}" if call else ""))
     if skipped:
         parts.append(f"left {count_in_words(skipped, 'item')} out on purpose")
     if conflicts:
         parts.append(f"flagged {count_in_words(conflicts, 'disagreement')} for a human")
     if not parts:
-        return "filed", "read the call and found nothing new to file"
+        subject = _quoted(call) if call else "the call"
+        return "filed", f"read {subject} and found nothing new to file"
     return "filed", sentence_list(parts)
 
 
+def _quoted(title: str) -> str:
+    return f"'{title}'"
+
+
 def _done_line(
-    task: Doc, children: list[Doc], roster: list[dict[str, Any]]
+    task: Doc, children: list[Doc], roster: list[dict[str, Any]], call: str = ""
 ) -> tuple[str, str]:
     """One sentence for a finished task, in the words a person would use — and never a zero."""
     result: dict[str, Any] = task.get("result") or {}
@@ -232,7 +244,7 @@ def _done_line(
             parts.append(f"held {count_in_words(held, 'item')} back as unverified")
         return "reconciled", sentence_list(parts)
     if kind == "act":
-        return _act_line(result)
+        return _act_line(result, call)
     if kind == "plan":
         return _plan_line(task, children)
     if kind == "report":
@@ -313,14 +325,14 @@ def action_refs(action: Doc) -> list[str]:
 
 
 def _task_entries(
-    task: Doc, children: list[Doc], roster: list[dict[str, Any]]
+    task: Doc, children: list[Doc], roster: list[dict[str, Any]], call: str = ""
 ) -> list[dict[str, Any]]:
     ts, kind, status = _ts_of(task), str(task["kind"]), str(task["status"])
     refs = task_refs(task, children)
     entries: list[dict[str, Any]] = []
 
     if status == "done":
-        category, text = _done_line(task, children, roster)
+        category, text = _done_line(task, children, roster, call)
         entries.append(_entry(ts, category, text, refs))
     elif status == "deferred":
         entries.append(_entry(ts, "deferred", (
@@ -374,11 +386,11 @@ def _slack_line(
     if inputs.get("sprint"):
         return "posted", f"posted the {inputs['sprint']} report"
     meeting = inputs.get("meeting")
-    subject = f" of '{meeting}'" if meeting else ""
+    subject = f" for '{meeting}'" if meeting else ""
     # The summary usually replaces the "reading the call…" message rather than arriving as a new
     # one, and the journal should say which happened — an edit notified nobody.
-    verb = "filled in the summary" if inputs.get("edited") else "posted the summary"
-    return "posted", f"{verb}{subject}, with a revert button on every action"
+    verb = "filled in the call summary" if inputs.get("edited") else "posted the call summary"
+    return "posted", f"{verb}{subject} — a revert button on every action"
 
 
 def _action_entries(
@@ -439,10 +451,21 @@ def journal_entries(
         if parent:
             children.setdefault(parent, []).append(task)
     by_id = {str(t["id"]): t for t in tasks}
+    # Which call each task came out of. Only reconcile writes the meeting down, and every task
+    # in a chain shares its root event, so one pass over the reconciles names them all.
+    calls: dict[str, str] = {}
+    for task in tasks:
+        meeting = ((task.get("result") or {}).get("meeting") or {}).get("title")
+        root = origin(str(task.get("root_event_id") or ""))
+        if meeting and root:
+            calls[root] = str(meeting)
 
     entries: list[dict[str, Any]] = []
     for task in tasks:
-        entries.extend(_task_entries(task, children.get(str(task["id"]), []), people))
+        entries.extend(_task_entries(
+            task, children.get(str(task["id"]), []), people,
+            calls.get(origin(str(task.get("root_event_id") or "")), ""),
+        ))
     for action in actions:
         owner = by_id.get(str(action.get("task_id") or ""))
         entries.extend(_action_entries(
@@ -1152,7 +1175,7 @@ STYLE = """
 body { margin:0; background:var(--bg); color:var(--text);
   font:13px/1.55 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;
   font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased; }
-main { max-width:1080px; margin:0 auto; padding:26px 20px 72px; }
+main { max-width:1160px; margin:0 auto; padding:26px 20px 72px; }
 
 /* The toolbar is the graph's, to the pixel. */
 #top { position:sticky; top:0; z-index:20; height:40px; background:var(--surface);
@@ -1187,7 +1210,8 @@ h2 { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(-
 .sub { color:var(--muted); margin:0 0 20px; font-size:12px; }
 
 /* Property tiles, the way Linear draws a field. */
-.tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(184px,1fr)); gap:8px; }
+/* Six tiles across at 1160px, so a group of six never leaves one stranded on its own row. */
+.tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(176px,1fr)); gap:8px; }
 .tile { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
   padding:11px 13px 12px; }
 .t-label { display:block; font-size:12px; color:var(--muted); }
@@ -1202,7 +1226,8 @@ h2 { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(-
   border-bottom:1px solid var(--border); }
 .j li:last-child { border-bottom:none; }
 .j li:hover { background:var(--surface-2); }
-.j time { color:var(--faint); font-size:11px; white-space:nowrap; order:-1; min-width:88px; }
+.j time { color:var(--faint); font-size:11px; white-space:nowrap; order:-1; min-width:92px;
+  font-variant-numeric:tabular-nums; }
 
 /* A status chip carries its colour at 15% behind full-strength text. */
 .tag { font-size:10px; letter-spacing:.06em; text-transform:uppercase; padding:2px 8px;
@@ -1259,11 +1284,14 @@ def _table(headers: list[str], rows: list[list[str]], empty: str) -> str:
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
-def _journal_html(entries: list[dict[str, str]]) -> str:
+def _journal_html(entries: list[dict[str, str]], tz: ZoneInfo | None = None) -> str:
+    """The journal as a table. Times are the team's own — a standup posted at 9am in
+    California read as 16:00 when this wrote UTC, which makes the agent look mistimed."""
     if not entries:
         return "<p class='empty'>The agent has not done anything yet.</p>"
+    here = tz or ZoneInfo("UTC")
     items = "".join(
-        f"<li><time>{esc(e['ts'][5:16].replace('T', ' '))}</time>"
+        f"<li><time title='{esc(e['ts'])}'>{esc(stamp_local(e['ts'], here))}</time>"
         f"<span class='tag {esc(e['category'])}'>{esc(e['category'])}</span>"
         f"<span>{esc(e['text'])}</span></li>"
         for e in entries
@@ -1444,7 +1472,8 @@ def render(
         + _group("Trust", trust_stats(tasks, actions, corrections))
         + "<h2>Decision journal</h2>"
         + _journal_html(
-            journal_entries(tasks, actions, project.get("roster") or [])[:JOURNAL_LIMIT]
+            journal_entries(tasks, actions, project.get("roster") or [])[:JOURNAL_LIMIT],
+            zone(project),
         )
         + "<h2>Task graph</h2>"
         + _graph_html(plan_groups(sorted(

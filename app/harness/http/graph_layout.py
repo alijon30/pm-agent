@@ -59,7 +59,7 @@ LABEL_SLOT = CHIP_SLOT
 MAX_COLUMN = ISSUE_SLOT * 2
 # A day still ahead holds one pill per row and nothing else: a 150px pill with padding round
 # it. Four scheduled days should cost a fifth of the screen, not half of it.
-FUTURE_COLUMN = 170
+FUTURE_COLUMN = 190
 # A day whose whole record is a standup post has nothing to lay out. Giving it a working day's
 # width pushes the days that do have content off the screen.
 QUIET_COLUMN = 110
