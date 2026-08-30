@@ -896,16 +896,12 @@ def test_a_half_scrolled_day_still_shows_its_date(client: TestClient) -> None:
     assert "stickHeaders();" in page
 
 
-def test_the_week_opens_at_its_right_end(client: TestClient) -> None:
-    """The last scheduled day flush to the edge: every pixel on the left is then spent on
-    history rather than on empty ground past the last check."""
+def test_the_week_opens_where_the_plan_says(client: TestClient) -> None:
+    """One function decides the whole horizontal layout; the page is a reading of it."""
     page = client.get("/console/graph").text
 
-    assert "const want = worldWidth - stage.clientWidth;" in page
-    assert "function snapEdges()" in page, "a scroll never starts halfway through a card"
-    assert "worldWidth = Math.max(worldWidth, at + stage.clientWidth);" in page
+    assert "setPan(-(layoutPlan.scrollLeft || 0));" in page
     assert 'nowButton.addEventListener("click", openingView);' in page
-
 
 def test_the_grid_fills_the_screen_it_is_given(client: TestClient) -> None:
     """Content in the top third of a 27-inch monitor is a page that decided the viewport was
@@ -951,28 +947,20 @@ def test_the_page_scales_with_the_monitor_it_is_shown_on(client: TestClient) -> 
     assert "function measureRem()" in page
 
 
-def test_the_width_rule_on_the_page_is_the_one_that_was_tested(client: TestClient) -> None:
-    """The rule is specified and tested as `spread` in graph_layout.py; the page mirrors it,
-    so the two constants that decide it have to agree."""
-    from app.harness.http.graph_layout import FUTURE_STRETCH, LANE_SHARE
+
+def test_the_width_rule_on_the_page_is_the_one_that_was_tested(
+    client: TestClient,
+) -> None:
+    """Specified and tested as `plan_widths` in graph_layout.py; the page mirrors it, so the
+    constants that decide it have to agree."""
+    from app.harness.http.graph_layout import SPARE_CAP, SQUEEZE_LIMIT, TODAY_AT
 
     page = client.get("/console/graph").text
 
-    assert f"const FUTURE_STRETCH = {FUTURE_STRETCH};" in page
-    for lane, share in LANE_SHARE.items():
-        assert f"{lane}: {share}" in page, f"{lane} share differs from graph_layout"
-
-
-def test_a_week_a_little_too_wide_is_squeezed_before_it_is_scrolled(client: TestClient) -> None:
-    """The rule is specified and tested as `spread` in graph_layout.py; the page mirrors it,
-    so the constant that decides how far it will squeeze has to agree."""
-    from app.harness.http.graph_layout import SQUEEZE_LIMIT
-
-    page = client.get("/console/graph").text
-
+    assert f"const SPARE_CAP = {SPARE_CAP};" in page
+    assert f"const TODAY_AT = {TODAY_AT};" in page
     assert f"const SQUEEZE_LIMIT = {SQUEEZE_LIMIT};" in page
-    assert "floor: u((data.floors || {})[d.key] || 0)" in page
-
+    assert "function planWidths(cols, viewport, gutter)" in page
 
 def test_a_lane_does_not_grow_into_empty_ground(client: TestClient) -> None:
     """Filling the screen with nothing is not better than ending early."""
@@ -1001,14 +989,13 @@ def test_the_dots_hang_off_the_last_row_not_the_bottom_of_the_lane(client: TestC
     assert "rowGap: 12," in page
 
 
-def test_the_opening_view_never_starts_inside_a_conversation(client: TestClient) -> None:
-    """Rounding to the nearest boundary could round forward and slice the last working day in
-    half — the day the reviewer most wants to read."""
+def test_the_layout_reports_its_own_numbers(client: TestClient) -> None:
+    """So the result can be checked with a DOM dump instead of an eye."""
     page = client.get("/console/graph").text
 
-    assert "const at = snapEdges().reduce((best, e) => (e <= want && e > best ? e : best), 0);" \
-        in page
-
+    assert 'document.body.setAttribute("data-layout"' in page
+    for field in ("mode=", "total=", "viewport=", "scrollLeft=", "lanes="):
+        assert field in page, field
 
 async def test_what_the_team_told_it_appears_beside_what_it_worked_out(deps: Deps) -> None:
     """Both are things the agent knows now and did not know before, so both are Learned."""

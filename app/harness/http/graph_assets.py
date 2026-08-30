@@ -369,6 +369,7 @@ let cursor = 0, playing = false, lastFrame = 0, selected = null;
 let laneTop = {}, laneHeight = {}, laneLines = {}, diagramHeight = 0, contentHeight = 0;
 let strips = new Map();
 let laneStretch = {}, laneNeed = {};
+let layoutPlan = { mode: 'fit', scrollLeft: 0, total: 0 };
 let panX = 0, worldWidth = 0, dragging = false, dragFrom = 0, dragPan = 0, moved = false;
 let gutterWidth = 92;
 
@@ -469,53 +470,65 @@ function avatar(name, size) {
 
 // --- geometry ------------------------------------------------------------------------------------
 
-function spread(cols, room) {
-  const mins = cols.map((c) => Math.max(0, c.width | 0));
-  const total = mins.reduce((a, b) => a + b, 0);
-  if (!cols.length) return mins;
-  if (total > room) {
-    // A little too wide is not a reason to scroll: give back the room the columns hold
-    // loosely and only scroll when even the floors do not fit. Mirrors graph_layout.spread.
-    const floors = cols.map((c, i) => Math.max(0, (c.floor | 0) || mins[i]));
-    const floorTotal = floors.reduce((a, b) => a + b, 0);
-    if (total > room * SQUEEZE_LIMIT || floorTotal > room) return mins;
-    const slack = total - floorTotal;
-    const give = total - room;
-    const out = mins.map((m, i) => slack
-      ? m - Math.floor(give * ((m - floors[i]) / slack)) : m);
-    let over = out.reduce((a, b) => a + b, 0) - room;
-    for (const i of out.map((w, j) => j).sort((a, b) =>
-        (out[b] - floors[b]) - (out[a] - floors[a]))) {
-      if (over <= 0) break;
-      const take = Math.min(over, out[i] - floors[i]);
-      out[i] -= take; over -= take;
-    }
-    return out;
-  }
-  if (total === room) return mins;
+// The width algorithm. Specified and tested as `plan_widths` in graph_layout.py; this is the
+// same three branches, and `data-layout` on <body> reports which one ran so the result can be
+// checked without a screenshot.
+const SPARE_CAP = 1.5;
+const TODAY_AT = 0.45;
 
-  const caps = mins.map((m, i) => cols[i].future ? Math.floor(m * FUTURE_STRETCH)
-    : (cols[i].primary ? room : m));
+function planWidths(cols, viewport, gutter) {
+  const mins = cols.map((c) => Math.max(0, c.min | 0));
+  const total = gutter + mins.reduce((a, b) => a + b, 0);
+  if (!cols.length) return { mode: "fit", widths: [], scrollLeft: 0, total: gutter };
+
+  if (total <= viewport) return fitWidths(cols, mins, viewport, gutter, "fit");
+
+  const tight = cols.map((c) => Math.max(0, (c.shrunk | 0) || (c.min | 0)));
+  const tightTotal = gutter + tight.reduce((a, b) => a + b, 0);
+  if (total <= viewport * SQUEEZE_LIMIT && tightTotal <= viewport) {
+    // Shrinking is for getting on screen, not for filling it: nothing grows.
+    return { mode: "shrink", widths: tight, scrollLeft: 0, total: tightTotal };
+  }
+  return { mode: "scroll", widths: mins, total, tightTotal, viewportUsed: viewport,
+           scrollLeft: openingAt(cols, mins, viewport, gutter) };
+}
+
+function fitWidths(cols, mins, viewport, gutter, mode) {
   const widths = mins.slice();
-  // Settle rather than solve: a column that hits its cap hands back what it refused.
-  for (let pass = 0; pass < 4; pass++) {
-    const spare = room - widths.reduce((a, b) => a + b, 0);
-    if (spare <= 0) break;
-    const growable = widths.map((w, i) => i).filter((i) => widths[i] < caps[i]);
-    if (!growable.length) break;
-    const weight = growable.reduce((sum, i) => sum + mins[i], 0) || growable.length;
+  const spare = viewport - gutter - mins.reduce((a, b) => a + b, 0);
+  // Only a past day holding real work grows; a scheduled column and a day of dots are the
+  // size they are on purpose.
+  const growable = cols.map((c, i) => i).filter(
+    (i) => !cols[i].future && !cols[i].collapsed && (cols[i].primary | 0) > 0);
+  const weight = growable.reduce((sum, i) => sum + (cols[i].primary | 0), 0);
+  if (spare > 0 && weight) {
     for (const i of growable) {
-      widths[i] = Math.min(caps[i], widths[i] + Math.floor(spare * (mins[i] || 1) / weight));
+      const share = spare * ((cols[i].primary | 0) / weight);
+      widths[i] = Math.min(Math.floor(mins[i] * SPARE_CAP), mins[i] + Math.floor(share));
     }
   }
-  const left = room - widths.reduce((a, b) => a + b, 0);
-  if (left > 0) {
-    const takers = widths.map((w, i) => i).filter((i) => widths[i] < caps[i]);
-    if (takers.length) {
-      widths[takers.reduce((best, i) => widths[i] > widths[best] ? i : best, takers[0])] += left;
+  return { mode, widths, scrollLeft: 0,
+           total: gutter + widths.reduce((a, b) => a + b, 0) };
+}
+
+function openingAt(cols, mins, viewport, gutter) {
+  const edges = [0];
+  let at = gutter, todayLeft = 0;
+  cols.forEach((c, i) => {
+    if (c.today) todayLeft = at;
+    const strips = (c.strips || []).filter((w) => w > 0);
+    let span = at;
+    for (const strip of (strips.length ? strips : [mins[i]])) {
+      edges.push(Math.max(0, span - gutter));
+      span += strip;
     }
-  }
-  return widths;
+    at += mins[i];
+  });
+  const want = todayLeft - Math.floor(viewport * TODAY_AT);
+  const limit = Math.max(0, gutter + mins.reduce((a, b) => a + b, 0) - viewport);
+  const reachable = [...new Set(edges)].sort((a, b) => a - b)
+    .filter((e) => e <= Math.min(want, limit));
+  return reachable.length ? reachable[reachable.length - 1] : 0;
 }
 
 function slotWidth(lane, row) {
@@ -540,6 +553,11 @@ function fitRem(data) {
   // Everything visible at slightly smaller type beats bigger type behind a scrollbar, and it
   // is a better lever than squeezing the columns: nothing gets narrower than it was designed
   // to be, the whole page just steps down a size.
+  // The ceiling is what the stylesheet wants, not what a previous pass left behind: measure
+  // with the inline override cleared, or a second layout reads its own 13px as the ceiling,
+  // decides nothing needs doing, clears the override, and the page snaps to 17px around a
+  // plan drawn at 13.
+  document.documentElement.style.fontSize = "";
   measureRem();
   const ceiling = rem;
   const days = data.days || [];
@@ -564,30 +582,29 @@ function layout(data) {
   // If the whole timeline fits the viewport it is stretched to fill it; only a timeline that
   // genuinely cannot fit is panned.
   const days = data.days || [];
-  const mins = days.map((d) => u((data.widths || {})[d.key] || 212));
-  const total = mins.reduce((a, b) => a + b, 0);
+  const spec = (data.columns || []).length === days.length
+    ? data.columns
+    : days.map((d) => ({ key: d.key, min: (data.widths || {})[d.key] || 212,
+                         shrunk: (data.floors || data.widths || {})[d.key] || 212, future: Boolean(d.future),
+                         collapsed: false, today: Boolean(d.today), primary: 1, strips: [] }));
+  const scaled = spec.map((c) => ({
+    ...c, min: u(c.min), shrunk: u(c.shrunk), strips: (c.strips || []).map(u),
+  }));
+  const rough = scaled.reduce((sum, c) => sum + c.min, 0);
   // The gutter gives up its width before the week gives up a column: the lane names are the
   // one thing on this page that can be read narrower without losing anything.
-  gutterWidth = (total + u(TUNING.gutter) + u(20) > stage.clientWidth)
+  gutterWidth = (rough + u(TUNING.gutter) + u(20) > stage.clientWidth)
     ? u(TUNING.gutterTight) : u(TUNING.gutter);
   document.documentElement.style.setProperty("--gutter", gutterWidth + "px");
-  const room = Math.max(u(320), stage.clientWidth - gutterWidth - u(20));
 
-  // The widths the server computed are minimums at which everything is still readable, and
-  // nothing goes below them. A week wider than the screen scrolls; one narrower fills the
-  // screen, with the spare width going to the days that have something in them. The rule is
-  // specified and tested as `spread` in graph_layout.py; this is the same rule.
-  const primary = new Set(nodes.filter((n) => n.row !== "secondary").map((n) => n.day));
-  const laid = spread(days.map((d, i) => ({
-    width: mins[i], floor: u((data.floors || {})[d.key] || 0),
-    future: Boolean(d.future), primary: primary.has(d.key),
-  })), room);
+  const plan = planWidths(scaled, stage.clientWidth - u(16), gutterWidth);
+  layoutPlan = plan;
 
   columns = [];
   let x = gutterWidth;
   days.forEach((day, i) => {
-    columns.push({ ...day, x, width: laid[i] });
-    x += laid[i];
+    columns.push({ ...day, x, width: plan.widths[i] });
+    x += plan.widths[i];
   });
   worldWidth = x + u(16);
 
@@ -994,7 +1011,7 @@ function light(node) {
   // Selecting a call lights everything that call produced — the strip is the story, so the
   // strip is what comes forward.
   if (node.type === "meeting" || node.type === "intake") {
-    for (const other of nodes) if (other.group === node.id) near.add(other.id);
+    for (const other of nodes) if (other.group === node.id || other.origin === node.id) near.add(other.id);
   }
   for (const edge of edges) {
     if (edge.source === node.id) near.add(edge.target);
@@ -1160,7 +1177,7 @@ function linkRow(label, target) {
 }
 
 function producedRows(call) {
-  const mine = nodes.filter((n) => n.group === call.id && n.id !== call.id);
+  const mine = nodes.filter((n) => (n.group === call.id || n.origin === call.id) && n.id !== call.id);
   const kinds = [["issue", "issues"], ["decision", "decisions"], ["check", "checks"]];
   const counts = kinds
     .map(([kind, plural]) => [mine.filter((n) => n.type === kind).length, plural])
@@ -1185,7 +1202,8 @@ function openPanel(node) {
 
   const facts = node.facts || {};
   const keys = Object.keys(facts).filter((k) => k !== "filed_from_call");
-  const origin = node.group && node.group !== "day" ? byId.get(node.group) : null;
+  const originId = node.origin || node.group;
+  const origin = originId && originId !== "day" ? byId.get(originId) : null;
   if (keys.length || node.when_note || origin) {
     panelBody.appendChild(el("div", "p-head", "Properties"));
     if (node.when_note) panelBody.appendChild(factRow("when", node.when_note));
@@ -1304,47 +1322,34 @@ function frame(now) {
 
 // --- panning -------------------------------------------------------------------------------------------------
 
-function snapEdges() {
-  // Only real sub-column boundaries. Snapping to the end of the scroll range is what used to
-  // leave a chip sliced down the middle at the left edge.
-  const edges = [0];
-  for (const strip of strips.values()) edges.push(Math.max(0, strip.x - gutterWidth));
-  return [...new Set(edges)].sort((a, b) => a - b);
-}
-
-function setPan(value, snap) {
+function setPan(value) {
   const limit = Math.min(0, stage.clientWidth - worldWidth);
-  let next = Math.max(limit, Math.min(0, value));
-  if (snap && limit < 0) {
-    const want = -next;
-    const at = snapEdges().reduce(
-      (best, e) => Math.abs(e - want) < Math.abs(best - want) ? e : best, 0);
-    next = Math.max(limit, Math.min(0, -at));
-  }
+  const next = Math.max(limit, Math.min(0, value));
   panX = next;
   world.style.transform = `translateX(${panX}px)`;
   stickHeaders();
+  if (layoutPlan.mode) report();
 }
 
 function centreOn(x) { setPan(stage.clientWidth * TUNING.anchor - x); }
 
 function openingView() {
-  // A week that fits starts at the left with all of it on screen. One that does not opens at
-  // its right end — the last scheduled day flush to the edge. With compact future columns the
-  // now line lands about two thirds across on its own, and every pixel spent on the left is
-  // spent on history rather than on empty ground past the last check.
-  if (worldWidth <= stage.clientWidth) { setPan(0); return; }
-  // Aim at the right end, then step back to the nearest conversation boundary so the view
-  // never opens halfway through a card. The world gains whatever trailing room that needs —
-  // blank ground at the right of a scroller is ordinary; a sliced card is not.
-  const want = worldWidth - stage.clientWidth;
-  // Step back to the last boundary at or before the right anchor, never past it. Rounding to
-  // the *nearest* edge could round forward and slice the final working day in half, which is
-  // the day the reviewer most wants to read.
-  const at = snapEdges().reduce((best, e) => (e <= want && e > best ? e : best), 0);
-  worldWidth = Math.max(worldWidth, at + stage.clientWidth);
-  world.style.width = worldWidth + "px";
-  setPan(-at);
+  // Where the plan said to open. A fitting week starts at nought; a scrolling one starts on a
+  // sub-column boundary chosen so today sits around the middle with its history to the left.
+  setPan(-(layoutPlan.scrollLeft || 0));
+  report();
+}
+
+function report() {
+  // The numbers, on the document, so the layout can be checked with a DOM dump instead of an
+  // eye. Anything that moves the view rewrites this.
+  document.body.setAttribute("data-layout", [
+    `mode=${layoutPlan.mode}`, `tight=${Math.round(layoutPlan.tightTotal || 0)}`, `vp=${Math.round(layoutPlan.viewportUsed || 0)}`,
+    `total=${Math.round(layoutPlan.total || 0)}`,
+    `viewport=${stage.clientWidth}`,
+    `scrollLeft=${Math.round(-panX)}`,
+    `lanes=${LANES.map((l) => Math.round(laneHeight[l] || 0)).join(",")}`,
+  ].join(";"));
 }
 
 stage.addEventListener("wheel", (event) => {

@@ -16,7 +16,6 @@ from app.harness.http.graph_layout import (
     LANE_MIN,
     LANE_SHARE,
     LANES,
-    MAX_COLUMN,
     MIN_COLUMN,
     QUIET_COLUMN,
     SMALL_SLOT,
@@ -27,6 +26,7 @@ from app.harness.http.graph_layout import (
     day_label,
     lane_heights,
     lane_of,
+    layout_columns,
     place,
     plan_widths,
     roster_view,
@@ -367,19 +367,18 @@ def test_one_very_busy_lane_cannot_push_every_other_day_off_the_screen() -> None
 
     width = column_widths(busy, build_days([TODAY], TODAY))[TODAY]
 
-    assert width == MAX_COLUMN, "one conversation's strip stops widening at the bound"
-    assert width // ISSUE_SLOT == 2, "twenty issues wrap into rows two wide, not one wide strip"
+    assert width == ISSUE_SLOT, "twenty issues stack down under one conversation, one chip wide"
 
 
 def test_a_column_is_wide_enough_for_the_calls_it_has_to_hold() -> None:
     """Three calls in a day used to stack on top of each other, because a card was being
     measured at a mark's slot. A card is counted at the width it is actually drawn."""
-    calls = place([node(f"m{n}", "meeting", f"2026-08-30T1{n}:00:00+00:00") for n in range(2)],
-                  LA, TODAY)
+    calls = place([node(f"m{n}", "meeting", f"2026-08-30T1{n}:00:00+00:00", group=f"m{n}")
+                   for n in range(2)], LA, TODAY)
 
     width = column_widths(calls, build_days([TODAY], TODAY))[TODAY]
 
-    assert width >= 2 * CARD_SLOT or width == MAX_COLUMN
+    assert width >= 2 * CARD_SLOT, "two conversations are two strips side by side"
     one = place([node("m1", "meeting", "2026-08-30T10:00:00+00:00")], LA, TODAY)
     assert column_widths(one, build_days([TODAY], TODAY))[TODAY] >= CARD_SLOT, (
         "one card always fits without being cut"
@@ -390,7 +389,9 @@ def test_a_labelled_mark_is_counted_at_the_width_its_title_wraps_to() -> None:
     marks = place([node(f"d{n}", "decision", f"2026-08-30T1{n}:00:00+00:00") for n in range(2)],
                   LA, TODAY)
 
-    assert column_widths(marks, build_days([TODAY], TODAY))[TODAY] == 2 * CHIP_SLOT
+    assert column_widths(marks, build_days([TODAY], TODAY))[TODAY] == CHIP_SLOT, (
+        "two decisions from one conversation stack; the strip is one chip wide"
+    )
 
 
 def test_a_row_of_dots_does_not_demand_a_labels_worth_of_room_each() -> None:
@@ -569,7 +570,7 @@ def test_a_strip_is_as_wide_as_its_widest_row() -> None:
 
     strips = sub_columns(nodes, build_days([TODAY], TODAY))[TODAY]
 
-    assert strips[0]["width"] == 2 * ISSUE_SLOT
+    assert strips[0]["width"] == ISSUE_SLOT, "the widest single thing, not the sum — rows stack"
 
 
 def test_a_day_is_as_wide_as_its_strips_together() -> None:
@@ -595,14 +596,14 @@ def test_seq_restarts_inside_each_strip() -> None:
 
 
 def test_four_scheduled_days_cost_a_fifth_of_the_screen_not_half() -> None:
-    """A column of pills is sized by how many conversations put work there, not by what a
-    working day needs."""
+    """A scheduled day is one column of pills, stacked, whoever put them there — never a
+    working day's width."""
     ahead = place([node(f"t{n}", "check", "2026-08-30T00:00:00+00:00", state="queued",
                         due_day="2026-09-03", group=f"meeting:{n}") for n in range(2)],
                   LA, TODAY)
     days = build_days([n["day"] for n in ahead], TODAY)
 
-    assert column_widths(ahead, days)["2026-09-03"] == 2 * FUTURE_COLUMN
+    assert column_widths(ahead, days)["2026-09-03"] == FUTURE_COLUMN
     assert 4 * FUTURE_COLUMN < 800, "four scheduled days stay under half a 1920 screen"
 
 
@@ -847,3 +848,39 @@ def test_a_scrolling_week_puts_today_around_the_middle() -> None:
 
 def test_nothing_to_lay_out_is_not_an_error_either() -> None:
     assert plan_widths([], 1600)["widths"] == []
+
+
+def test_the_server_hands_the_browser_everything_the_plan_needs() -> None:
+    """The browser knows the viewport and nothing else; this is the rest."""
+    nodes = place([
+        node("meeting:a", "meeting", "2026-08-28T09:00:00-07:00", group="meeting:a"),
+        node("issue:1", "issue", "2026-08-28T10:00:00-07:00", group="meeting:a"),
+        node("post:p", "post", "2026-08-29T09:00:00-07:00", group="day"),
+        node("t1", "check", "2026-08-28T10:00:00-07:00", state="queued",
+             due_day="2026-09-03", group="meeting:a"),
+    ], LA, "2026-08-30")
+    days = build_days([n["day"] for n in nodes], "2026-08-30")
+
+    spec = layout_columns(nodes, days)
+    by_key = {c["key"]: c for c in spec}
+
+    assert by_key["2026-08-28"]["primary"] == 2, "a card and an issue"
+    assert by_key["2026-08-29"]["collapsed"] is True, "posts only"
+    assert by_key["2026-09-03"]["future"] is True
+    assert by_key["2026-08-30"]["today"] is True
+    for column in spec:
+        assert column["shrunk"] <= column["min"], column["key"]
+        assert column["strips"], "every day names its sub-columns"
+
+
+def test_the_plan_a_browser_runs_is_the_plan_that_was_tested() -> None:
+    """plan_widths consumes exactly what layout_columns produces."""
+    nodes = place([node("meeting:a", "meeting", "2026-08-28T09:00:00-07:00",
+                        group="meeting:a")], LA, "2026-08-30")
+    days = build_days([n["day"] for n in nodes], "2026-08-30")
+
+    plan = plan_widths(layout_columns(nodes, days), 2560, gutter=92)
+
+    assert plan["mode"] == "fit"
+    assert plan["scroll_left"] == 0
+    assert len(plan["widths"]) == len(days)

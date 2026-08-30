@@ -67,6 +67,10 @@ FUTURE_COLUMN = 170
 # A day whose whole record is a standup post has nothing to lay out. Giving it a working day's
 # width pushes the days that do have content off the screen.
 QUIET_COLUMN = 110
+# A strip inside a working day that holds only posts — dots on a hairline.
+POSTS_COLUMN = 64
+# What the compact columns may be squeezed to when the week is a little too wide.
+FUTURE_FLOOR, QUIET_FLOOR, POSTS_FLOOR = 140, 80, 40
 OPEN_STATUSES = ("queued", "blocked", "leased", "deferred")
 
 # Two baselines per lane. The primary row carries the things a reviewer came to see; the
@@ -208,7 +212,13 @@ def place(nodes: list[dict[str, Any]], tz: ZoneInfo, today: str) -> list[dict[st
         kind = str(node.get("type"))
         key = (check_day(node, today, tz) if kind == "check"
                else day_key(str(node.get("ts") or ""), tz))
-        placed.append({**node, "lane": lane_of(kind), "row": row_of(kind), "day": key})
+        entry = {**node, "lane": lane_of(kind), "row": row_of(kind), "day": key}
+        if key > today:
+            # A scheduled day is one column of pills whoever scheduled them; the call it came
+            # from stays on the node as `origin` for the "from:" chip and the story panel.
+            entry["origin"] = str(node.get("group") or "")
+            entry["group"] = "day"
+        placed.append(entry)
 
     counters: dict[tuple[str, str, str, str], int] = {}
     for node in sorted(placed, key=lambda n: (str(n["day"]), str(n["ts"]), str(n["id"]))):
@@ -245,17 +255,31 @@ def sub_columns(nodes: list[dict[str, Any]], days: list[dict[str, Any]]) -> dict
             )
         lane, row = str(node.get("lane")), str(node.get("row"))
         slot = (day, group, lane, row)
-        needed[slot] = needed.get(slot, 0) + slot_width(lane, row)
-        tight[slot] = tight.get(slot, 0) + slot_floor(lane, row)
+        # One node wide. Inside a strip, things stack DOWN — a call with five issues is five
+        # rows under one card, not five chips marching off to the right. Summing here is what
+        # made the week twice as wide as any monitor.
+        needed[slot] = max(needed.get(slot, 0), slot_width(lane, row))
+        tight[slot] = max(tight.get(slot, 0), slot_floor(lane, row))
 
     out: dict[str, Any] = {}
     for column in days:
         day = str(column["key"])
+        if column.get("future"):
+            # One strip: the pills stack down, whoever scheduled them.
+            out[day] = [{"group": "day", "width": FUTURE_COLUMN, "floor": FUTURE_FLOOR}]
+            continue
         here = [(g, first_seen[(d, g)]) for (d, g) in first_seen if d == day]
         # "day" trails the conversations whatever time its contents carry.
         here.sort(key=lambda pair: (pair[0] == "day", pair[1], pair[0]))
         strips = []
         for group, _ in here:
+            # A strip that holds nothing but Slack dots is a hairline, not a column.
+            if not any(
+                d == day and g == group and row == PRIMARY
+                for (d, g, _lane, row) in needed
+            ):
+                strips.append({"group": group, "width": POSTS_COLUMN, "floor": POSTS_FLOOR})
+                continue
             widest = max(
                 (v for (d, g, _lane, _row), v in needed.items() if d == day and g == group),
                 default=MIN_COLUMN,
@@ -528,9 +552,9 @@ def column_widths(nodes: list[dict[str, Any]], days: list[dict[str, Any]]) -> di
             floors[key] = widths[key]
             continue
         if column.get("future"):
-            # A scheduled day is a column of pills, so it is sized by how many conversations
-            # put work there rather than by what a working day needs.
-            widths[key] = FUTURE_COLUMN * max(1, len(here))
+            # A scheduled day is ONE column of pills, stacked, whichever conversations put
+            # them there: four scheduled days should cost a fifth of the screen, not half.
+            widths[key] = FUTURE_COLUMN
             floors[key] = widths[key]
             continue
         # A working day is as wide as its conversations laid side by side.
@@ -546,8 +570,11 @@ def column_floors(nodes: list[dict[str, Any]], days: list[dict[str, Any]]) -> di
     for column in days:
         key = str(column["key"])
         here = strips.get(key) or []
-        if key not in has_primary or column.get("future"):
-            out[key] = column_widths(nodes, days)[key]
+        if column.get("future"):
+            out[key] = FUTURE_FLOOR
+            continue
+        if key not in has_primary:
+            out[key] = FUTURE_FLOOR if column.get("today") else QUIET_FLOOR
             continue
         out[key] = max(FUTURE_COLUMN, sum(int(x["floor"]) for x in here))
     return out
