@@ -34,7 +34,7 @@ against real services on camera; this file is the flight plan and the parachutes
 | 1:10–1:50 | **The plan.** Show the follow-up announcement: the dependency chain in words ("check underway Sep 1 → then look for a PR Sep 3"), each with its if-unmet promise | Slack thread |
 | 1:50–2:30 | **The reaction.** Move an issue to In Progress in Linear on camera → seconds later the check resolves early, the dependent unblocks, the thread gets the good-news note | Linear + Slack |
 | 2:30–3:20 | **The graph.** Open `/console/graph`: hit Replay and narrate the timeline building column by column; pause on INV-26, open its story panel and read the agent's reasoning aloud; point at the toolbar status ("this is what it's doing right now") and at the Scheduled columns ("this is its plan") | The graph, full screen |
-| 3:20–3:50 | **The proof.** GCP console flash (Cloud Run, Firestore, Scheduler); eval numbers: 0 fabricated identifiers, 100% citation coverage, invalid plans 0, across 5 runs | GCP console + README table |
+| 3:20–3:50 | **The proof.** GCP console flash (Cloud Run, Firestore, Scheduler); eval numbers: 0 fabricated identifiers, 100% citation coverage, invalid plans 0, across six runs | GCP console + README table |
 | 3:50–4:00 | Close: stack recap (Gemini 3.5 + ADK + Gemma + Cloud Run) and the URL | README |
 
 ## Parachutes
