@@ -13,7 +13,7 @@ against real services on camera; this file is the flight plan and the parachutes
   must ship on recording day, remember: if the deploy hangs after "Uploading sources… done",
   the us-central1 build queue is jammed — the us-east1 detour is in `deploy/secrets.md`.
 - [ ] **Verify the service is healthy**: `/health` returns ok; `/console` and `/console/graph`
-  render; the Now dock shows the queue honestly.
+  render; the toolbar status shows the queue honestly.
 - [ ] **Verify integrations**: Slack posts arrive in the channel (reinstall done, reactions
   working); Linear webhook fires (move any archive-probe issue and watch the event doc);
   Fathom webhook destination is set.
@@ -33,13 +33,13 @@ against real services on camera; this file is the flight plan and the parachutes
 | 0:25–1:10 | **The call.** End the (pre-recorded) Fathom call → webhook fires → Slack: extract summary posts with revert buttons; Linear: cited issues appear with owners and priorities | Slack + Linear split |
 | 1:10–1:50 | **The plan.** Show the follow-up announcement: the dependency chain in words ("check underway Sep 1 → then look for a PR Sep 3"), each with its if-unmet promise | Slack thread |
 | 1:50–2:30 | **The reaction.** Move an issue to In Progress in Linear on camera → seconds later the check resolves early, the dependent unblocks, the thread gets the good-news note | Linear + Slack |
-| 2:30–3:20 | **The graph.** Open `/console/graph`: hit Replay, narrate the story building; pause on the issue node, open its story panel and read the agent's reasoning aloud; point at the Now dock ("this is what it's doing right now") | The graph, full screen |
+| 2:30–3:20 | **The graph.** Open `/console/graph`: hit Replay and narrate the timeline building column by column; pause on INV-26, open its story panel and read the agent's reasoning aloud; point at the toolbar status ("this is what it's doing right now") and at the Scheduled columns ("this is its plan") | The graph, full screen |
 | 3:20–3:50 | **The proof.** GCP console flash (Cloud Run, Firestore, Scheduler); eval numbers: 0 fabricated identifiers, 100% citation coverage, invalid plans 0, across 5 runs | GCP console + README table |
 | 3:50–4:00 | Close: stack recap (Gemini 3.5 + ADK + Gemma + Cloud Run) and the URL | README |
 
 ## Parachutes
 
-- **The webhook doesn't fire** → the tick will drain it within a minute; narrate the Now dock
+- **The webhook doesn't fire** → the tick will drain it within a minute; narrate the toolbar status
   while waiting ("it wakes every minute"). If two minutes pass, replay the event: re-send from
   Fathom's webhook log, or `X-Tick` manually.
 - **Rate limited on camera** → the status message edits in place with the retry state; that IS

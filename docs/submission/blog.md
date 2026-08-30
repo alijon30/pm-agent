@@ -65,9 +65,12 @@ could schedule its own intakes could talk to itself.
 
 ## The part judges (and teammates) actually look at
 
-The agent's whole world is a live knowledge graph: calls, decisions, issues, people, checks,
-lessons — with a replay scrubber that plays the story from the first webhook, a **Now dock**
-showing what it's doing this second, and a story panel on every node: click INV-26 and read
+The agent's work is a live timeline — time across, work down. Each column is a day, each row
+a kind of work: heard, understood, did, watching, learned. Every call is a card with a
+five-stage strip (read · triaged · reconciled · filed · planned) and everything it produced
+lines up beneath it, so reading down a column is reading one call's story. A now line splits
+what happened from what's scheduled; a replay scrubber plays it all from the first webhook; the
+toolbar says what it's doing this second; and everything opens a story panel: click INV-26 and read
 what the agent did about it and why, in plain sentences with timestamps. It's the audit log
 wearing a good suit — and it's a self-contained page, no CDN, renders with the network down.
 
@@ -94,7 +97,7 @@ without me.
 **X/LinkedIn:**
 > I built a product manager that never asks permission — and that's why you can trust it.
 > Gemini 3.5 + ADK + a Firestore task graph that schedules its own follow-ups, deterministic
-> gates instead of approval fatigue, and a knowledge graph that replays its whole life.
+> gates instead of approval fatigue, and a timeline of its work that replays from the first call.
 > #AllThingsAgenticHackathon
 > [video/blog link]
 

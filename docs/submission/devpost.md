@@ -33,9 +33,11 @@ each with a declared consequence if unmet. Good news resolves early: an engineer
 ticket unblocks the chain within seconds via webhook. It posts a morning standup, answers
 Slack requests (commits to watches, pings on blockers), writes the sprint report with 100%
 cited claims, and runs a daily review that turns evidence into next-day lessons. Every action
-carries a one-click revert. Its whole world is visible as a live knowledge graph with time
-replay, a "Now" dock showing what it's doing this second, and a story panel on every node —
-what the agent did about that thing, and why.
+carries a one-click revert. Its work is visible as a live timeline — time across, work down: each column a day, each row
+a kind of work (heard · understood · did · watching · learned), every call a card with a
+five-stage strip, everything it produced aligned beneath, a now line between what happened and
+what is scheduled, replay from the first event, and a story panel on everything — what the
+agent did about that thing, and why.
 
 ## How we built it
 
@@ -50,8 +52,8 @@ bands with escalation quotes, date rules, daily caps and quiet hours, plan linea
 report citation coverage (see GATES.md — generated from the code so it cannot drift). Writes
 are intent-before-effect with idempotency keys and stored revert payloads. Stack: Cloud Run,
 Firestore, Cloud Scheduler, Secret Manager; connectors for Linear, Slack, Notion, GitHub,
-Fathom. The knowledge graph is a self-contained vanilla-JS force simulation — no CDN, renders
-with the network down.
+Fathom. The timeline is self-contained vanilla JS with a deterministic, unit-tested layout — no CDN,
+renders with the network down.
 
 ## Challenges we ran into
 

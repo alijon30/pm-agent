@@ -61,9 +61,9 @@ Back to Slack; open the follow-through post.
 In Linear, drag INV-26 (or the new ticket) to **In Progress**. Switch to the graph tab
 immediately.
 
-> An engineer just moved a ticket. Good news travels fast — watch the Now dock.
+> An engineer just moved a ticket. Good news travels fast — watch the Watching lane.
 
-Within seconds the check resolves; the thread note posts; the Now dock updates.
+Within seconds the check pill flips to a check mark with the early ↗; the thread note posts.
 
 > The Sep 1 check just resolved itself four days early off the Linear webhook, and the PR check
 > behind it unblocked. Bad news waits for its deadline; good news doesn't wait at all.
@@ -72,18 +72,20 @@ Within seconds the check resolves; the thread note posts; the Now dock updates.
 
 Hit **Replay**.
 
-> This is the agent's world — every call, decision, ticket, person, check and lesson, replayed
-> from the first event.
+> This is the agent's work as a timeline — time across, work down. Each column is a day, each
+> row a kind of work: what it heard, what it understood, what it did, what it's watching, what
+> it learned. Everything a call produced lines up under that call. Replayed from the first event.
 
-Let it run ~15 seconds; click the INV-26 node mid-replay (replay pauses).
+Let it run ~15 seconds; click INV-26 mid-replay (replay pauses).
 
 > Click anything and it tells you what it did about it and why, in plain sentences, with
 > timestamps. This is the audit log — it just dresses well.
 
-Point at the Now dock.
+Point at the toolbar status line.
 
-> And this is what it's doing right now, what wakes next, and what it's waiting on. Nothing on
-> this page is a second source of truth; it's all derived from the same records.
+> And this line is what it's doing right now and what wakes next. The Scheduled columns are its
+> plan — checks placed on the days they're due. Nothing on this page is a second source of truth;
+> it's all derived from the same records.
 
 ## 3:20 — The proof (GCP console + README)
 
@@ -111,7 +113,7 @@ Hold on the graph for two seconds. Stop.
 
 ## If something goes wrong on camera
 
-- **Webhook slow:** narrate the Now dock — "it wakes every minute" — and let the clock run; it
+- **Webhook slow:** narrate the toolbar status — "it wakes every minute" — and let the clock run; it
   is more honest than a cut.
 - **Rate limited:** the status message shows the retry; say "this is the honesty story — it
   tells you when it's waiting." Let it land.

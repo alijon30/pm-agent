@@ -8,7 +8,7 @@ action. Nobody prompted it. Nobody approved each step. That is the point.
 Built solo for the **All Things Agentic Hackathon 2026** (Taskmaster track) on Gemini 3.5,
 Google ADK, and Google Cloud.
 
-![The agent's world as a living knowledge graph](docs/media/graph.png)
+![Time across, work down: what the agent heard, understood, did, is watching, and learned](docs/media/graph.png)
 
 ## The loop
 
@@ -36,12 +36,18 @@ pm-agent runs 24/7 on Cloud Run, driven by a Cloud Scheduler tick and webhooks:
 
 All of it is visible live: the **[console](https://pm-agent-999960779013.us-central1.run.app/console)**
 is the agent's decision journal, and the
-**[graph](https://pm-agent-999960779013.us-central1.run.app/console/graph)** is its world — every
-call, decision, issue, person, check, and lesson, with a replay scrubber that plays the story
-back from the first event, a **Now dock** showing what it is doing this second, and a story
-panel on every node.
+**[graph](https://pm-agent-999960779013.us-central1.run.app/console/graph)** is its work laid
+out like a timeline: **time across, work down**. Each column is a day (future days are marked
+*scheduled*), each row a kind of work — *Heard* (calls, asks), *Understood* (decisions,
+disagreements), *Did* (issues filed, messages sent), *Watching* (checks, past and scheduled),
+*Learned*. Every call is a card with a five-stage strip — read · triaged · reconciled · filed ·
+planned — and everything it produced lines up beneath it, so reading down a column is reading
+the story of one call. A **now line** separates what happened from what is scheduled; the
+toolbar says what the agent is doing this second; Replay rebuilds the page from the first event;
+and clicking anything opens its story — properties, then the agent's reasoning as an activity
+feed.
 
-![Click any node for what the agent did about it, and why](docs/media/panel.png)
+![Click anything for what the agent did about it, and why](docs/media/panel.png)
 
 ## The autonomy stance
 
