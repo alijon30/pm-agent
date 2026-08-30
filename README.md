@@ -49,6 +49,14 @@ feed.
 
 ![Click anything for what the agent did about it, and why](docs/media/panel.png)
 
+The **console** is the PM dashboard: every number computed from the agent's own records —
+calls heard, decisions, issues filed (and how many were updated instead of re-filed), checks met
+and resolved early, the median time from call to tickets, days saved by early resolution,
+writes and pings against their caps, citation coverage, references verified, gates passed,
+reverts — above the decision journal.
+
+![The console: a PM's numbers, derived, never typed](docs/media/console.png)
+
 ## The autonomy stance
 
 Most agent products put a human approval in front of every action. The evidence says that
