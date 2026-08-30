@@ -239,13 +239,13 @@ async def test_the_console_tells_the_story_of_what_the_agent_did(
 
     page = client.get("/console").text
 
-    assert "Q3 Billing" in page and "Sprint 1 · 2026-08-20 → 2026-09-03" in page
+    assert "Q3 Billing" in page and "of Sprint 1" in page
     assert "filed INV-143 (the payment reminders)" in page
     assert "cited call @ 01:58" in page
     assert "reminder window" in page and "code:acme/config.py:6" in page
     assert "design goes to Priya" in page
     assert "fabricated identifiers" in page and "95.8" in page
-    assert "writes today" in page and "1/40" in page
+    assert "Writes today" in page and "1 / 40" in page
 
 
 async def test_the_console_escapes_everything_a_document_carried_in(
@@ -346,36 +346,72 @@ def test_a_plan_line_belongs_to_the_issues_it_scheduled_work_about() -> None:
 
 # --- the console and the graph are one surface -------------------------------------------------
 
+# Which family each status belongs to. The console tints a chip's background at 15% and
+# lightens the text for contrast, so the two pages share the meaning rather than the hex.
+FAMILIES = {
+    "5e6ad2": "indigo", "8b95e8": "indigo",
+    "4cb782": "green", "f2c94c": "yellow", "eb5757": "red", "8a8f98": "grey",
+}
+# The console reaches its colours through tokens and tints, so a family has several spellings.
+SPELLINGS = {
+    "indigo": ("5e6ad2", "8b95e8", "94,106,210", "--accent", "--done"),
+    "green": ("4cb782", "76,183,130", "--spark"),
+    "yellow": ("f2c94c", "242,201,76", "--progress"),
+    "red": ("eb5757", "235,87,87", "--failed"),
+    "grey": ("8a8f98", "138,143,152", "--muted"),
+}
+
+
 def _graph_tints() -> dict[str, str]:
-    """CATEGORY_TINT as the graph's script declares it."""
+    """CATEGORY_TINT as the graph's script declares it, resolved to a colour family."""
     block = re.search(r"const CATEGORY_TINT = \{(.+?)\};", GRAPH_SCRIPT, re.S)
     assert block is not None
-    return dict(re.findall(r"(\w+):\s*\"(#[0-9a-f]{6})\"", block.group(1)))
+    names = {"DONE": "#5e6ad2", "SPARK": "#4cb782", "PROGRESS": "#f2c94c",
+             "FAILED": "#eb5757", "MUTED": "#8a8f98"}
+    found: dict[str, str] = {}
+    for key, value in re.findall(r"(\w+):\s*(\"#[0-9a-f]{6}\"|[A-Z]+)", block.group(1)):
+        found[key] = FAMILIES[names.get(value, value.strip('"')).lstrip("#")]
+    return found
 
 
-def test_a_category_is_the_same_colour_on_the_console_as_on_the_graph() -> None:
+def _console_family(category: str) -> str:
+    rule = re.search(rf"\.tag\.{category}\b[^{{]*\{{([^}}]+)\}}", STYLE)
+    used = rule.group(1) if rule else STYLE[STYLE.index(".tag {"):]
+    for family, spellings in SPELLINGS.items():
+        if any(word in used for word in spellings):
+            return family
+    return "grey"
+
+
+def test_a_category_means_the_same_thing_on_the_console_as_on_the_graph() -> None:
     """The two pages show the same journal. A judge clicking between them must not have to
-    relearn what green means."""
-    neutral = "#8892a4"
-
-    for category, tint in _graph_tints().items():
-        rule = re.search(rf"\.tag\.{category}\b[^{{]*\{{([^}}]+)\}}", STYLE)
-        used = rule.group(1) if rule else STYLE[STYLE.index(".tag {"):]
-        assert tint in used or (tint == neutral and neutral in used), (
-            f"{category} is {tint} on the graph but not on the console"
+    relearn what green means — and on this palette green means exactly one thing."""
+    for category, family in _graph_tints().items():
+        assert _console_family(category) == family, (
+            f"{category} is {family} on the graph and {_console_family(category)} here"
         )
 
 
 def test_every_category_the_journal_emits_has_a_chip_colour() -> None:
     for category in _graph_tints():
-        assert f".tag.{category}" in STYLE or category in ("checked", "pending", "done"), (
-            f"no chip style for {category}"
-        )
+        assert f".tag.{category}" in STYLE, f"no chip style for {category}"
+
+
+def test_green_means_one_thing_across_the_product() -> None:
+    """Done is indigo, like Linear's. Green is reserved for work that came back early, so a
+    reviewer who sees green anywhere knows what it is without a legend."""
+    assert _console_family("early") == "green"
+    assert _console_family("filed") == "indigo"
+    assert _graph_tints()["early"] == "green"
+    assert _graph_tints()["filed"] == "indigo"
 
 
 def test_the_console_wears_the_same_palette_as_the_graph() -> None:
-    for token in ("--bg:#06080d", "--fg:#e8ecf4", "--accent:#7dd3e0", "--panel:rgba(15,19,29,.78)"):
-        assert token in STYLE and token in GRAPH_STYLE
+    """Clicking between the two pages should feel like two views of one tracker."""
+    for token in ("--bg:#08090a", "--surface:#141516", "--border:#1f2023", "--text:#f7f8f8",
+                  "--muted:#8a8f98", "--accent:#5e6ad2", "--faint:#5c5f66"):
+        assert token in STYLE, f"the console is missing {token}"
+        assert token in GRAPH_STYLE, f"the graph is missing {token}"
 
 
 def test_the_console_page_still_asks_the_network_for_nothing(client: TestClient) -> None:
@@ -384,3 +420,41 @@ def test_the_console_page_still_asks_the_network_for_nothing(client: TestClient)
     assert "http://" not in body.replace("http://www.w3.org", "")
     assert "<script" not in body
     assert "@import" not in body
+
+
+# --- the dashboard ------------------------------------------------------------------------------
+
+def test_the_console_wears_the_graphs_toolbar(client: TestClient) -> None:
+    """One product, two views. The bar, the status line and the avatars are the same."""
+    page = client.get("/console").text
+
+    for element_id in ("top", "title", "nav", "status", "tools", "avatars"):
+        assert f"id='{element_id}'" in page
+    assert "class='on'" in page, "the current view is marked in the segmented control"
+    assert ">Graph</a>" in page and ">Console</a>" in page
+
+
+def test_the_dashboard_groups_its_numbers_under_what_they_answer(client: TestClient) -> None:
+    page = client.get("/console").text
+
+    for header in ("This sprint", "How it works", "Trust"):
+        assert f">{header}</h2>" in page
+    for piece in (".tiles", ".tile", ".t-label", ".t-value", ".t-note"):
+        assert piece in page, f"the dashboard needs {piece}"
+
+
+def test_a_dashboard_tile_may_say_zero(client: TestClient) -> None:
+    """The journal must never print a zero; a tile reporting no calls this sprint is simply
+    telling the truth."""
+    page = client.get("/console").text
+
+    assert "Calls heard" in page
+    assert "Citation coverage" in page and "References verified" in page
+
+
+def test_the_console_page_asks_the_network_for_nothing_still(client: TestClient) -> None:
+    body = client.get("/console").text
+
+    assert "<script" not in body
+    assert "@import" not in body
+    assert "http://" not in body.replace("http://www.w3.org", "")

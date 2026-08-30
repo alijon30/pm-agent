@@ -87,6 +87,10 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         "decision_ids": decision_ids,
         "dropped": dropped,
         "bounced": bounced,
+        # What the model was actually shown. Triage decides what the agent could possibly have
+        # heard, so the number is worth keeping: without it the console can only say the call
+        # was read, not how much of it.
+        "triage": {"kept": len(selected), "total": len(meeting["transcript"])},
     }
     children: list[dict[str, Any]] = []
     if kept["action_items"] or kept["decisions"]:

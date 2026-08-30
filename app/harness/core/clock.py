@@ -7,7 +7,7 @@ write the same date the same way."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -100,3 +100,17 @@ def when_phrase(value: str, now: datetime) -> str:
     if 2 <= days <= 6:
         return f"{there:%A}"
     return human_date(value)
+
+
+def sprint_day(sprint: dict[str, Any], today: str) -> str:
+    """"day 3 of Sprint 1", or nothing at all. A sprint is a shared sense of where in the week
+    everyone is, and it is the one number that makes a standup feel situated.
+
+    Lives here rather than beside the Slack blocks because the console says it too, and the
+    console may not reach a connector."""
+    start, name = str(sprint.get("start") or ""), str(sprint.get("name") or "")
+    first, now = readable(start), readable(today)
+    if not name or first is None or now is None:
+        return ""
+    day = (now.date() - first.date()).days + 1
+    return f"day {day} of {name}" if day >= 1 else f"{name} starts {human_date(start)}"

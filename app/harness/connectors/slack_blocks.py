@@ -14,7 +14,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from app.harness.core.clock import human_date, human_due, readable, when_phrase
+from app.harness.core.clock import (
+    human_date,
+    human_due,
+    sprint_day,
+    when_phrase,
+)
 from app.harness.core.refs import ref_chip, ref_chips
 from app.harness.core.voice import (
     consequence_phrase,
@@ -274,17 +279,6 @@ def report_blocks(report: dict[str, Any], sprint: dict[str, Any]) -> list[dict[s
     if len(blocks) == 1:
         blocks.append(_context("_Nothing I can back up with a source yet — see the console._"))
     return _truncate(blocks, keep_last=0)
-
-
-def sprint_day(sprint: dict[str, Any], today: str) -> str:
-    """"day 3 of Sprint 1", or nothing at all. A sprint is a shared sense of where in the week
-    everyone is, and it is the one number that makes a standup feel situated."""
-    start, name = str(sprint.get("start") or ""), str(sprint.get("name") or "")
-    first, now = readable(start), readable(today)
-    if not name or first is None or now is None:
-        return ""
-    day = (now.date() - first.date()).days + 1
-    return f"day {day} of {name}" if day >= 1 else f"{name} starts {human_date(start)}"
 
 
 def _since_yesterday(since: dict[str, Any]) -> str:

@@ -21,13 +21,22 @@ from __future__ import annotations
 
 import html
 import json
-from datetime import datetime, timedelta
+import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from app.harness.core.clock import human_date, human_delta, human_due, iso, readable
+from app.harness.core.clock import (
+    human_date,
+    human_delta,
+    human_due,
+    iso,
+    readable,
+    sprint_day,
+)
 from app.harness.core.dedupe import collapse
 from app.harness.core.redact import redact
 from app.harness.core.refs import ref_chip
@@ -40,6 +49,20 @@ from app.harness.core.voice import (
 from app.harness.core.words import count_of
 from app.harness.deps import Deps
 from app.harness.http.graph_assets import GRAPH_SCRIPT, GRAPH_STYLE
+from app.harness.http.graph_layout import (
+    build_days,
+    check_state,
+    column_widths,
+    day_key,
+    lane_heights,
+    place,
+    roster_view,
+    short_day,
+    stage_strip,
+    sub_columns,
+    zone,
+)
+from app.harness.http.stats import sprint_stats, trust_stats, working_stats
 from app.harness.kinds.phrasing import UNMET_CONSEQUENCES, human_check, human_working
 from app.harness.store.db import Doc
 from app.harness.store.tasks import OPEN_STATUSES
@@ -477,6 +500,88 @@ def _node(node_id: str, kind: str, label: str, ts: str, **extra: Any) -> dict[st
     return {"id": node_id, "type": kind, "label": redact(_short(label, 60)), "ts": ts, **extra}
 
 
+TEMPLATE_LABELS = {
+    "standup": "the morning standup",
+    "first_look": "the first check reporting in",
+    "blocked": "a blocker it could not clear",
+}
+
+
+RETRY_SUFFIX = re.compile(r"#retry\d+$")
+
+
+def _origin(event_id: str) -> str:
+    """The call an event belongs to, with a replay's suffix taken off.
+
+    A webhook replayed through the replay script carries `#retry2` on its root event id. It is
+    the same call, and leaving the suffix on split its work into a second nameless strip beside
+    the card that produced it."""
+    return RETRY_SUFFIX.sub("", str(event_id or "").strip())
+
+
+def _group_of(
+    node: dict[str, Any], task_root: dict[str, str], issue_event: dict[str, str],
+    tasks_by_id: dict[str, Doc], actions_by_id: dict[str, Doc],
+) -> str:
+    """The call this node came out of, as that call's node id.
+
+    "day" for the things no single conversation produced — a standup, a lesson from the daily
+    review, an early resolution off a webhook. Those are the agent's own initiative, and
+    pretending they belong to a call would be the one kind of lie this view can tell."""
+    kind, node_id = str(node.get("type")), str(node.get("id"))
+    if kind in ("meeting", "intake"):
+        return f"{kind}:{_origin(node_id.split(':', 1)[1])}"
+    if kind == "issue":
+        root = _origin(issue_event.get(node_id, ""))
+        return f"meeting:{root}" if root else "day"
+    if kind == "conflict":
+        root = _origin(str(node.get("root") or ""))
+        return f"meeting:{root}" if root else "day"
+    if kind == "check":
+        root = _origin(task_root.get(node_id.split(":", 1)[1], ""))
+        return f"meeting:{root}" if root else "day"
+    if kind == "post":
+        action = actions_by_id.get(node_id.split(":", 1)[1]) or {}
+        root = _origin(task_root.get(str(action.get("task_id") or ""), ""))
+        return f"meeting:{root}" if root else "day"
+    if kind == "decision":
+        root = _origin(str(node.get("event_id") or ""))
+        return f"meeting:{root}" if root else "day"
+    return "day"
+
+
+def _when_note(task: Doc, tz: ZoneInfo) -> str:
+    """When a check was due against when it actually landed.
+
+    Only said when the two differ: a check that resolved on its own day needs no explanation,
+    and a check that came back early is the sentence the demo is about."""
+    due = day_key(str(task.get("due_at") or ""), tz)
+    done = day_key(str(task.get("finished_at") or ""), tz)
+    if not due or not done or due == done:
+        return ""
+    settled = "resolved" if (task.get("result") or {}).get("met") else "answered"
+    return f"due {short_day(due)}, {settled} {short_day(done)}"
+
+
+def _post_label(inputs: dict[str, Any]) -> str:
+    """What a Slack post was, told apart by what the action carries.
+
+    The same signals the journal reads, so a post on the graph and the same post in the feed
+    can never describe themselves differently."""
+    template = str(inputs.get("template") or "")
+    if template:
+        return TEMPLATE_LABELS.get(template, f"a nudge about {template.replace('_', ' ')}")
+    if inputs.get("meeting"):
+        return f"the summary of '{_short(str(inputs['meeting']), 40)}'"
+    if inputs.get("sprint"):
+        return f"the {inputs['sprint']} report"
+    if "tasks" in inputs:
+        return "the follow-through plan"
+    if "committed" in inputs:
+        return "what it committed to watch"
+    return "a post to the channel"
+
+
 def _issue_nodes(actions: list[Doc]) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """One node per issue the agent touched, however many times it touched it, plus the root
     event each one came from — which is how a decision gets connected to the ticket it caused."""
@@ -495,6 +600,7 @@ def _issue_nodes(actions: list[Doc]) -> tuple[list[dict[str, Any]], dict[str, st
         issues[identifier] = {
             "id": f"issue:{identifier}",
             "type": "issue",
+            "identifier": identifier,
             "label": redact(_short(str(inputs.get("title") or identifier), 60)),
             "ts": str((existing or {}).get("ts") or action.get("created_at") or ""),
             "url": str((existing or {}).get("url") or targets.get("url") or ""),
@@ -505,12 +611,9 @@ def _issue_nodes(actions: list[Doc]) -> tuple[list[dict[str, Any]], dict[str, st
 
 
 def _cap(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The newest GRAPH_NODES, except that people are always kept: a roster is small, and a
-    graph of work with the people removed is a graph of the wrong thing."""
-    people = [n for n in nodes if n["type"] == "person"]
-    rest = sorted((n for n in nodes if n["type"] != "person"), key=lambda n: str(n["ts"]))
-    room = max(0, GRAPH_NODES - len(people))
-    return [*people, *rest[-room:]]
+    """The newest GRAPH_NODES. Oldest go first: the far left of the timeline is the part a
+    reviewer scrolls away from, and today is what they came to see."""
+    return sorted(nodes, key=lambda n: str(n["ts"]))[-GRAPH_NODES:]
 
 
 def attribute(
@@ -561,12 +664,15 @@ def issue_facts(node: dict[str, Any], created: Doc | None, observed: dict[str, A
     }
 
 
-def check_facts(task: Doc) -> dict[str, Any]:
+def check_facts(task: Doc, owners: dict[str, str] | None = None) -> dict[str, Any]:
+    """What a check is, in the four things somebody asks about one: when, whose, what happens
+    if it is not met, and what it has seen so far."""
     result: dict[str, Any] = task.get("result") or {}
     observed: dict[str, Any] = result.get("observed") or {}
     summary = observed.get("state") or observed.get("reason") or (
         "a pull request" if observed.get("prs") else "")
-    return {
+    issue = str((task.get("params") or {}).get("issue") or "")
+    facts = {
         "reason": redact(str(task.get("reason") or "")),
         "due": human_due(str(task.get("due_at") or "")),
         "status": str(task.get("status") or ""),
@@ -574,6 +680,14 @@ def check_facts(task: Doc) -> dict[str, Any]:
         "observed": redact(str(summary)) if summary else "nothing yet",
         "early": bool(result.get("early")),
     }
+    # A check with no owner is a check nobody will answer, so the person is part of what it is.
+    if issue:
+        facts["issue"] = issue
+        # The owner map is keyed by node id, not by bare identifier.
+        owner = (owners or {}).get(f"issue:{issue}", "")
+        if owner and owner != "nobody":
+            facts["assignee"] = owner
+    return facts
 
 
 def _capped(items: list[dict[str, Any]]) -> dict[str, Any]:
@@ -669,7 +783,7 @@ def _facts_for(
                            observed.get(identifier, {}), bool(issue_event.get(node_id)))
     if kind == "check":
         task = tasks_by_id.get(identifier)
-        return check_facts(task) if task else {}
+        return check_facts(task, owners) if task else {}
     if kind == "decision":
         found = next((d for d in decisions if str(d["id"]) == identifier), {})
         return {
@@ -744,33 +858,87 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     events = await deps.db.query("events", filters, order_by="received_at", limit=SCAN_LIMIT)
     lessons = await deps.lessons.for_project(project_id) if deps.lessons is not None else []
 
+    tz = zone(project)
+    today = day_key(deps.clock.now().isoformat(), tz)
+
     nodes: list[dict[str, Any]] = []
     # The only thing this page ever takes from an event payload is the call's title. The
     # transcript inside it is exactly what the console must never render.
+    # The only things this page takes from an event payload are the call's title and how many
+    # lines the transcript had. The transcript text itself is what the console must never
+    # render; a count of it is not the thing being protected.
+    lines_in: dict[str, int] = {}
     for event in events:
         if event.get("provider") != "fathom":
             continue
-        title = str((event.get("payload") or {}).get("title") or "Call")
+        payload = event.get("payload") or {}
+        title = str(payload.get("title") or "Call")
+        lines_in[str(event["id"])] = len(payload.get("transcript") or [])
         nodes.append(_node(f"meeting:{event['id']}", "meeting", title,
                            str(event.get("received_at") or "")))
     for decision in decisions:
         nodes.append(_node(f"decision:{decision['id']}", "decision",
                            str(decision.get("statement") or ""),
-                           str(decision.get("created_at") or "")))
+                           str(decision.get("created_at") or ""),
+                           event_id=str(decision.get("event_id") or "")))
     issue_nodes, owners = _issue_nodes(actions)
     nodes.extend(issue_nodes)
-    for member in project.get("roster") or []:
-        name = str(member.get("name") or "")
-        if name:
-            nodes.append(_node(f"person:{name}", "person", name, ""))
+    roster_list = list(project.get("roster") or [])
+    # People are no longer nodes. They do not happen on a day, so a timeline had to invent a
+    # position for them, and the invented positions pushed the actual work off the screen.
+    # They come back as badges on what they own and as the roster strip.
     for task in tasks:
-        if not str(task["kind"]).startswith("check_"):
+        kind = str(task["kind"])
+        if kind == "intake":
+            params = task.get("params") or {}
+            ask = str(params.get("text") or "")
+            if not ask and params.get("cancel"):
+                ask = f"stop watching {params['cancel']}"
+            nodes.append(_node(
+                f"task:{task['id']}", "intake", ask or "asked for something",
+                str(task.get("created_at") or ""),
+                who=_who(str((task.get("payload") or {}).get("requester") or ""), roster_list),
+            ))
+            continue
+        if not kind.startswith("check_"):
             continue
         nodes.append(_node(
             f"task:{task['id']}", "check", human_check(task),
             str(task.get("created_at") or ""), status=str(task.get("status") or ""),
             early=bool((task.get("result") or {}).get("early")),
+            state=check_state(task),
+            due_day=day_key(str(task.get("due_at") or ""), tz),
+            finished_day=day_key(str(task.get("finished_at") or ""), tz),
+            when_note=_when_note(task, tz),
+            waits_on=[f"task:{d}" for d in task.get("depends_on") or []],
         ))
+    # Slack is where the team actually meets the agent, so what it said belongs on the graph
+    # beside what it changed.
+    for action in actions:
+        if not str(action.get("kind") or "").startswith("slack.") or action.get(
+            "status"
+        ) != "done":
+            continue
+        inputs = action.get("inputs") or {}
+        nodes.append(_node(
+            f"post:{action['id']}", "post", _post_label(inputs),
+            str(action.get("created_at") or ""),
+            template=str(inputs.get("template") or ""),
+        ))
+    # A disagreement the agent refused to resolve is the most reviewable thing it produces.
+    for task in tasks:
+        if str(task["kind"]) != "act":
+            continue
+        for i, conflict in enumerate((task.get("result") or {}).get("conflicts") or []):
+            nodes.append(_node(
+                f"conflict:{task['id']}:{i}", "conflict",
+                str(conflict.get("about") or "sources disagree"),
+                str(task.get("finished_at") or task.get("created_at") or ""),
+                sides=[{"claim": redact(_short(str(side.get("claim") or ""), 40)),
+                        "source": str(side.get("source") or "")}
+                       for side in conflict.get("sides") or []],
+                root=str(task.get("root_event_id") or ""),
+            ))
     for lesson in lessons:
         nodes.append(_node(f"lesson:{lesson['id']}", "lesson", str(lesson.get("text") or ""),
                            str(lesson.get("created_at") or "")))
@@ -782,6 +950,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     # issue that share a root event came out of the same conversation.
     task_root = {str(t["id"]): str(t.get("root_event_id") or "") for t in tasks}
     tasks_by_id = {str(t["id"]): t for t in tasks}
+    actions_by_id = {str(a["id"]): a for a in actions}
     issue_event: dict[str, str] = {}
     for action in actions:
         if action.get("kind") not in ISSUE_ACTIONS or action.get("status") != "done":
@@ -812,9 +981,6 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
             for issue_id, root in issue_event.items():
                 if root and root == event_id:
                     link(node_id, issue_id, "led to", created)
-
-    for issue_id, owner in owners.items():
-        link(issue_id, f"person:{owner}", "owned by", "")
 
     for task in tasks:
         if not str(task["kind"]).startswith("check_"):
@@ -878,7 +1044,45 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     # the clock: a burst of activity inside one second is the normal case, and a cursor moving
     # over milliseconds would show all of it in a single frame and then sit still all night.
     kept.sort(key=lambda n: (str(n["ts"]), GRAPH_ORDER.get(str(n["type"]), 9), str(n["id"])))
+
+    # Which call each thing came out of. Provenance is the question a reviewer asks first —
+    # "which conversation produced this ticket?" — and the page answers it by alignment, so
+    # every node has to name its origin before anything is positioned.
+    call_names = {f"meeting:{_origin(str(e['id']))}":
+                  str((e.get("payload") or {}).get("title") or "Call")
+                  for e in events if e.get("provider") == "fathom"}
+    for node in kept:
+        node["group"] = _group_of(node, task_root, issue_event, tasks_by_id, actions_by_id)
+        # A check sits in the column of the day it is due, which is usually not the day of the
+        # call that asked for it — so it has to name that call in words.
+        if node["type"] == "check" and node["group"] in call_names:
+            node["from_call"] = _short(call_names[node["group"]], 34)
+            scheduled = tasks_by_id.get(str(node["id"]).split(":", 1)[1])
+            if scheduled is not None:
+                node["due_human"] = human_due(str(scheduled.get("due_at") or ""))
+
+    # Position is decided here, not in the browser: the layout is a claim about the agent's
+    # week, and a claim belongs somewhere it can be tested without a screenshot.
+    kept = place(kept, tz, today)
+    chains: dict[str, list[Doc]] = {}
+    for task in tasks:
+        root = str(task.get("root_event_id") or "")
+        if root:
+            chains.setdefault(root, []).append(task)
+    for node in kept:
+        if node["type"] == "meeting":
+            event_id = str(node["id"]).split(":", 1)[1]
+            node["stages"] = stage_strip(chains.get(event_id, []), lines_in.get(event_id, 0))
+    days = build_days([str(n.get("day") or "") for n in kept], today)
+    owns: dict[str, list[str]] = {}
+    for issue_id, owner in owners.items():
+        owns.setdefault(owner, []).append(issue_id)
+
     graph = {"nodes": kept, "edges": edges, "truncated": False,
+             "days": days, "widths": column_widths(kept, days), "today": today,
+             "lanes": lane_heights(kept), "strips": sub_columns(kept, days),
+             "calls": {str(n["id"]): str(n["label"]) for n in kept if n["type"] == "meeting"},
+             "roster": roster_view(roster_list, owns, nudged),
              "now": now_view(tasks, events, deps.clock.now(), deps.settings.lease_minutes),
              "generated_at": iso_now(deps), "project": str(project.get("name") or project_id)}
     return _within_budget(graph)
@@ -888,57 +1092,46 @@ def iso_now(deps: Deps) -> str:
     return deps.clock.now().isoformat()
 
 
-# The legend is the key to the glyphs, so it has to carry them. Kept beside the page rather
-# than in the script because it is markup, and the script's copy of these colours is the one the
-# nodes are drawn with — a mismatch here would be visible immediately.
-GRAPH_LEGEND = (
-    ("call", "#b48ead", "☎"),
-    ("decision", "#ebcb8b", "◆"),
-    ("issue", "#5e81ac", "▣"),
-    # Drawn by the page from the same silhouette the node uses, so the key cannot drift from
-    # the thing it is a key to.
-    ("person", "#a3be8c", ""),
-    ("check", "#4c566a", "○"),
-    ("lesson", "#d08770", "✦"),
-)
 
 
 def graph_page(project_name: str) -> str:
     """One self-contained document: no script src, no stylesheet link, no font, no CDN. It
-    fetches its own data from /console/graph.json and draws everything itself — the glows, the
-    arrowheads and the glyphs are all defined by the page at load."""
+    fetches its own data from /console/graph.json and draws everything itself — the grid, the
+    status marks and the avatars are all built by the page at load."""
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>{esc(project_name)} — the agent's world</title>"
         f"<style>{GRAPH_STYLE}</style></head><body>"
-        "<div id='stage'><svg id='canvas'><defs id='defs'></defs>"
-        "<g id='edges'></g><g id='nodes'></g></svg></div>"
-        f"<header><h1>{esc(project_name)}</h1>"
-        "<p>the agent's world, as it learned it · <a href='/console'>← console</a></p></header>"
-        "<div id='rail'>"
-        "<div id='now'><div id='now-head'><span id='pulse'></span>"
-        "<span id='now-line'>waking up…</span><span class='caret'>▾</span></div>"
-        "<div id='now-body'></div>"
-        "<div id='now-hint' class='now-past-hint' style='display:none'>"
-        "viewing the past — scrub to the end for now</div></div></div>"
-        # The legend anchors the bottom-left corner on its own: a colour key is furniture, and
-        # it should not sit above the fold pretending to be status.
-        "<div id='legend'>"
-        + "".join(
-            f"<span><i id='legend-{esc(name)}' style='background:{colour}'>{esc(glyph)}</i>"
-            f"{esc(name)}</span>"
-            for name, colour, glyph in GRAPH_LEGEND
-        )
-        + "</div>"
+        # The toolbar carries what the agent is doing right now, so the status is a line of
+        # text in the chrome rather than a card floating over the work.
+        "<div id='top'>"
+        f"<span id='title'>{esc(project_name)}</span>"
+        "<span id='tagline'>Each column is a day · each row a kind of work · "
+        "click anything for its story</span>"
+        "<span id='status'><i id='status-dot'></i><b id='status-text'>waking up…</b></span>"
+        "<span id='tools'>"
+        "<button id='now-btn' class='flat'>Now</button>"
+        "<span id='avatars'></span>"
+        "<a id='link' href='/console'>Console</a>"
+        "</span></div>"
+        "<div id='stage'><div id='world'>"
+        "<svg id='canvas'><defs id='defs'>"
+        "<marker id='arrow' viewBox='0 0 8 8' refX='7' refY='4' markerWidth='5'"
+        " markerHeight='5' orient='auto-start-reverse'>"
+        "<path d='M0,1 L7,4 L0,7' fill='none' stroke='#8a8f98' stroke-width='1'></path>"
+        "</marker></defs>"
+        "<g id='rules'></g><g id='edges'></g></svg>"
+        "<div id='layer'></div></div><div id='nowtag'></div></div>"
+        "<div id='gutter'></div>"
         "<div id='tooltip'></div>"
-        "<aside id='panel'><button id='panel-close' title='Close'>✕</button>"
+        "<aside id='panel'><button id='panel-close'>Close</button>"
         "<div id='panel-body'></div></aside>"
         "<div id='empty' style='display:none'>Nothing has happened yet.</div>"
         "<div id='controls'>"
-        "<button id='play'>▶ Replay</button>"
+        "<button id='play'>Replay</button>"
         "<input type='range' id='scrubber' min='0' max='1' value='1'>"
-        "<span id='clock'>—</span><span id='mode'>LIVE</span>"
+        "<span id='clock'>—</span><span id='mode'></span>"
         "<span id='count'>0 / 0</span>"
         "</div>"
         f"<script>{GRAPH_SCRIPT}</script></body></html>"
@@ -948,86 +1141,100 @@ def graph_page(project_name: str) -> str:
 # --- rendering --------------------------------------------------------------------------------
 
 STYLE = """
-/* The console and the graph are one surface seen two ways, so they share a palette, a material
-   and a typeface. Tokens, gradient and glass are lifted from GRAPH_STYLE deliberately: a judge
-   clicking between the two pages should never feel they left the product. */
-:root { --bg:#06080d; --fg:#e8ecf4; --muted:#7e899c; --line:rgba(148,163,184,.14);
-        --panel:rgba(15,19,29,.78); --accent:#7dd3e0; --good:#a3be8c; --warm:#ebcb8b;
-        --warn:#bf616a; color-scheme: dark; }
-* { box-sizing: border-box; }
-body { margin:0; padding:30px 20px 72px; color:var(--fg); min-height:100%;
-  font:14.5px/1.6 ui-sans-serif,-apple-system,"SF Pro Text","Segoe UI",Roboto,sans-serif;
-  background:
-    radial-gradient(ellipse 110% 60% at 50% 0%, rgba(56,78,118,.20) 0%, rgba(10,14,22,0) 62%),
-    radial-gradient(circle at 50% 20%, #0c111d 0%, #080b12 55%, #05070b 100%);
-  background-attachment:fixed; }
-/* The same faint dot grid the graph hangs its void on, fading out before the fold. */
-body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  background-image:radial-gradient(circle, rgba(148,163,184,.06) 1px, transparent 1.4px);
-  background-size:26px 26px;
-  -webkit-mask-image:linear-gradient(#000 0%, transparent 70%);
-  mask-image:linear-gradient(#000 0%, transparent 70%); }
-main { max-width:960px; margin:0 auto; position:relative; z-index:1; }
+/* The console and the graph are one product seen two ways: same palette, same typeface, same
+   property tiles and tables. Clicking between them should feel like changing view, not app. */
+:root { --bg:#08090a; --surface:#141516; --surface-2:#1a1b1e; --border:#1f2023;
+        --border-hi:#2a2b2f; --text:#f7f8f8; --text-2:#d0d6e0; --muted:#8a8f98;
+        --faint:#5c5f66; --accent:#5e6ad2; --accent-hi:#6b76dd;
+        --done:#5e6ad2; --progress:#f2c94c; --failed:#eb5757; --spark:#4cb782;
+        --radius:6px; color-scheme:dark; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text);
+  font:13px/1.55 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;
+  font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased; }
+main { max-width:1080px; margin:0 auto; padding:26px 20px 72px; }
 
-h1 { font-size:22px; margin:0 0 3px; font-weight:700; letter-spacing:-.015em;
-  background:linear-gradient(135deg, #f2f5fa 30%, #9fb2cc);
-  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-h2 { font-size:9.5px; text-transform:uppercase; letter-spacing:.14em; color:var(--muted);
-  margin:38px 0 12px; font-weight:600; }
-.sub { color:var(--muted); margin:0 0 20px; font-size:12.5px; letter-spacing:.01em; }
+/* The toolbar is the graph's, to the pixel. */
+#top { position:sticky; top:0; z-index:20; height:40px; background:var(--surface);
+  border-bottom:1px solid var(--border); display:flex; align-items:center; gap:14px;
+  padding:0 14px; }
+#title { font-size:15px; font-weight:500; letter-spacing:-.01em; }
+#nav { display:flex; gap:2px; background:var(--bg); border:1px solid var(--border);
+  border-radius:var(--radius); padding:2px; }
+#nav a { font-size:12px; color:var(--muted); text-decoration:none; padding:3px 10px;
+  border-radius:4px; border:none; }
+#nav a.on { background:var(--surface-2); color:var(--text); }
+#nav a:hover { color:var(--text); }
+#status { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:7px;
+  min-width:0; }
+#status b { font-weight:400; color:var(--text); overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+#status i { width:6px; height:6px; border-radius:50%; background:var(--faint); flex:none; }
+#status i.busy { background:var(--progress); animation:soft 1.8s ease-in-out infinite; }
+@keyframes soft { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+#tools { margin-left:auto; display:flex; align-items:center; gap:12px; }
+#avatars { display:flex; }
+.disc { width:22px; height:22px; border-radius:50%; background:var(--border-hi);
+  color:var(--text); font-size:10px; font-weight:500; display:flex; align-items:center;
+  justify-content:center; border:1.5px solid var(--surface); margin-left:-6px; }
+.disc:first-child { margin-left:0; }
+#link { color:var(--muted); font-size:12px; text-decoration:none; border:none; }
+#link:hover { color:var(--text); }
 
-/* Every panel is the same glass as the graph's floating chrome. */
-.card, .j li, table { background:var(--panel);
-  -webkit-backdrop-filter:blur(18px) saturate(1.4); backdrop-filter:blur(18px) saturate(1.4); }
-.cards { display:flex; flex-wrap:wrap; gap:11px; }
-.card { border:1px solid var(--line); border-radius:14px; padding:12px 16px; min-width:112px;
-  box-shadow:0 14px 40px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.05); }
-.card b { display:block; font-size:22px; font-weight:700; letter-spacing:-.02em;
-  font-variant-numeric:tabular-nums; }
-.card span { color:var(--muted); font-size:11.5px; }
+h1 { font-size:15px; margin:0 0 3px; font-weight:500; letter-spacing:-.01em; }
+h2 { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint);
+  margin:30px 0 10px; font-weight:500; }
+.sub { color:var(--muted); margin:0 0 20px; font-size:12px; }
 
-.j { list-style:none; margin:0; padding:0; border:1px solid var(--line); border-radius:14px;
-  overflow:hidden; box-shadow:0 14px 40px rgba(0,0,0,.42); }
-.j li { display:flex; gap:11px; padding:9px 15px; align-items:baseline; line-height:1.5;
-  border-bottom:1px solid var(--line); }
+/* Property tiles, the way Linear draws a field. */
+.tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(184px,1fr)); gap:8px; }
+.tile { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:11px 13px 12px; }
+.t-label { display:block; font-size:12px; color:var(--muted); }
+.t-value { display:block; margin-top:5px; font-size:22px; font-weight:500;
+  letter-spacing:-.02em; line-height:1.15; }
+.t-note { display:block; margin-top:4px; font-size:11px; color:var(--faint); line-height:1.35; }
+
+/* One table language for the journal and everything under it. */
+.j { list-style:none; margin:0; padding:0; border:1px solid var(--border);
+  border-radius:var(--radius); overflow:hidden; background:var(--surface); }
+.j li { display:flex; gap:12px; padding:8px 13px; align-items:baseline; line-height:1.5;
+  border-bottom:1px solid var(--border); }
 .j li:last-child { border-bottom:none; }
-.j time { color:var(--muted); font-variant-numeric:tabular-nums; font-size:11.5px;
-  white-space:nowrap; flex:none; min-width:78px; }
+.j li:hover { background:var(--surface-2); }
+.j time { color:var(--faint); font-size:11px; white-space:nowrap; order:-1; min-width:88px; }
 
-/* Category chips carry the graph's tints, so "filed" is the same green in both places. */
-.tag { font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:2px 9px;
-  border-radius:999px; white-space:nowrap; font-weight:600; flex:none; min-width:74px;
-  text-align:center; color:#8892a4; border:1px solid rgba(136,146,164,.3);
-  background:rgba(136,146,164,.1); }
-.tag.filed, .tag.reported, .tag.early { color:#a3be8c; border-color:rgba(163,190,140,.34);
-  background:rgba(163,190,140,.11); }
-.tag.planned, .tag.posted { color:#88c0d0; border-color:rgba(136,192,208,.34);
-  background:rgba(136,192,208,.11); }
-.tag.nudged { color:#ebcb8b; border-color:rgba(235,203,139,.34);
-  background:rgba(235,203,139,.11); }
-.tag.extracted, .tag.reconciled { color:#b48ead; border-color:rgba(180,142,173,.34);
-  background:rgba(180,142,173,.11); }
-.tag.deferred, .tag.reverted { color:#d08770; border-color:rgba(208,135,112,.34);
-  background:rgba(208,135,112,.11); }
-.tag.refused, .tag.failed, .tag.cancelled { color:#bf616a; border-color:rgba(191,97,106,.34);
-  background:rgba(191,97,106,.11); }
+/* A status chip carries its colour at 15% behind full-strength text. */
+.tag { font-size:10px; letter-spacing:.06em; text-transform:uppercase; padding:2px 8px;
+  border-radius:999px; white-space:nowrap; font-weight:500; flex:none; min-width:78px;
+  text-align:center; color:var(--muted); background:rgba(138,143,152,.15); }
+.tag.filed, .tag.reported, .tag.planned, .tag.posted { color:#8b95e8;
+  background:rgba(94,106,210,.15); }
+/* Reading and reconciling are the quiet half of the loop; they wear the muted chip. */
+.tag.extracted, .tag.reconciled, .tag.checked, .tag.pending, .tag.done { color:var(--muted);
+  background:rgba(138,143,152,.15); }
+.tag.early { color:var(--spark); background:rgba(76,183,130,.15); }
+.tag.nudged, .tag.deferred, .tag.reverted { color:var(--progress);
+  background:rgba(242,201,76,.15); }
+.tag.refused, .tag.failed, .tag.cancelled { color:var(--failed);
+  background:rgba(235,87,87,.15); }
+.j li > span:last-child { color:var(--text-2); }
 
-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px;
-  border:1px solid var(--line); border-radius:14px; overflow:hidden;
-  box-shadow:0 14px 40px rgba(0,0,0,.42); }
-th { text-align:left; color:var(--muted); font-weight:600; font-size:9.5px;
-  text-transform:uppercase; letter-spacing:.12em; padding:10px 14px;
-  border-bottom:1px solid var(--line); background:rgba(148,163,184,.05); }
-td { padding:9px 14px; border-bottom:1px solid var(--line); vertical-align:top;
-  color:#c6cede; }
+table { width:100%; border-collapse:separate; border-spacing:0; font-size:12px;
+  border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;
+  background:var(--surface); }
+th { text-align:left; color:var(--muted); font-weight:400; font-size:11px;
+  padding:9px 13px; border-bottom:1px solid var(--border); }
+td { padding:8px 13px; border-bottom:1px solid var(--border); vertical-align:top;
+  color:var(--text-2); }
 tr:last-child td { border-bottom:none; }
-code { font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--accent);
-  background:rgba(125,211,224,.09); border:1px solid rgba(125,211,224,.18);
-  border-radius:5px; padding:1px 6px; }
-.empty { color:var(--muted); font-style:italic; font-size:13px; }
-.dep { color:var(--muted); }
-a { color:inherit; text-decoration:none; border-bottom:1px solid var(--line);
-  transition:border-color 140ms ease, color 140ms ease; }
+tbody tr:hover td { background:var(--surface-2); }
+code { font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted);
+  background:var(--border); border-radius:4px; padding:1px 5px; }
+.empty { color:var(--faint); font-size:12px; }
+.dep { color:var(--faint); }
+a { color:inherit; text-decoration:none; border-bottom:1px solid var(--border);
+  transition:color 120ms ease, border-color 120ms ease; }
 a:hover { color:var(--accent); border-color:var(--accent); }
 """
 
@@ -1159,6 +1366,37 @@ def _evals_html(doc: Doc | None) -> str:
     )
 
 
+def _tiles(tiles: list[dict[str, Any]]) -> str:
+    """A row of Linear property tiles. Zeros are allowed here: a dashboard saying the agent
+    heard no calls this sprint is telling the truth, where a journal line saying so is not."""
+    cells = "".join(
+        f"<div class='tile'><span class='t-label'>{esc(t['label'])}</span>"
+        f"<b class='t-value'>{esc(t['value'])}</b>"
+        + (f"<span class='t-note'>{esc(t['footnote'])}</span>" if t["footnote"] else "")
+        + "</div>"
+        for t in tiles
+    )
+    return f"<div class='tiles'>{cells}</div>"
+
+
+def _group(title: str, tiles: list[dict[str, Any]]) -> str:
+    return f"<h2>{esc(title)}</h2>{_tiles(tiles)}"
+
+
+def _next_watch(tasks: list[Doc]) -> str:
+    """The next check that will run, named the way the agent would say it."""
+    upcoming = sorted(
+        (t for t in tasks
+         if str(t["kind"]).startswith("check_") and t.get("status") == "queued"
+         and t.get("due_at")),
+        key=lambda t: str(t["due_at"]),
+    )
+    if not upcoming:
+        return ""
+    first = upcoming[0]
+    return f"{human_check(first)}, {human_due(str(first.get('due_at') or ''))}"
+
+
 def render(
     project: Doc | None,
     tasks: list[Doc],
@@ -1167,45 +1405,43 @@ def render(
     lessons: list[Doc],
     evals: Doc | None,
     today: str,
+    events: list[Doc] | None = None,
+    decisions: list[Doc] | None = None,
+    now: datetime | None = None,
 ) -> str:
     """The whole page, as a string. Pure, so what a judge sees is unit-testable."""
     if project is None:
         return _page(
-            "pm-agent", "<h1>pm-agent</h1><p class='sub'>No project is seeded yet — run "
-                        "scripts/seed_project.py. Everything else is up.</p>"
+            "pm-agent", "<main><h1>pm-agent</h1><p class='sub'>No project is seeded yet — run "
+                        "scripts/seed_project.py. Everything else is up.</p></main>"
         )
 
-    policy: dict[str, Any] = project.get("policy") or {}
     sprint: dict[str, Any] = project.get("sprint") or {}
-    statuses: dict[str, int] = {}
-    for task in tasks:
-        key = str(task["status"])
-        statuses[key] = statuses.get(key, 0) + 1
-    today_actions = [a for a in actions if a.get("day") == today and a.get("status") != "failed"]
-    writes = sum(1 for a in today_actions if a.get("cap_kind") != "ping")
-    pings = len(today_actions) - writes
-
     latest_act = max(
         (t for t in tasks if t["kind"] == "act" and t["status"] == "done"),
         key=lambda t: str(t.get("created_at") or ""), default=None,
     )
     conflicts = ((latest_act or {}).get("result") or {}).get("conflicts") or []
-
     newest_first = sorted(actions, key=lambda a: str(a.get("created_at") or ""), reverse=True)
-    window = (
-        f"{sprint.get('name', '')} · {sprint.get('start', '')} → {sprint.get('end', '')}"
-        if sprint else "no sprint configured"
+    moment = now or datetime.now(UTC)
+
+    day_of = sprint_day(sprint, today)
+    chip = (
+        f"{day_of} of {human_date(str(sprint.get('end') or ''))}"
+        if day_of and sprint.get("end") else (day_of or "no sprint configured")
     )
-    counts = [(status, str(n)) for status, n in sorted(statuses.items())] + [
-        ("writes today", f"{writes}/{policy.get('daily_write_cap', 40)}"),
-        ("pings today", f"{pings}/{policy.get('daily_ping_cap', 10)}"),
-    ]
 
     body = (
-        f"<h1>{esc(project.get('name') or project.get('slug') or 'project')}</h1>"
-        f"<p class='sub'>{esc(window)} · read-only console · "
-        "<a href='/console/graph'>◉ Graph</a></p>"
-        + _cards(counts)
+        _toolbar(project, tasks, actions, "console")
+        + "<main>"
+        + f"<h1>{esc(project.get('name') or project.get('slug') or 'project')}</h1>"
+        + f"<p class='sub'>{esc(chip)}</p>"
+        + _group("This sprint", sprint_stats(
+            tasks, actions, events or [], decisions or [], project, moment,
+            _next_watch(tasks)))
+        + _group("How it works", working_stats(
+            tasks, actions, events or [], project, today))
+        + _group("Trust", trust_stats(tasks, actions, corrections))
         + "<h2>Decision journal</h2>"
         + _journal_html(
             journal_entries(tasks, actions, project.get("roster") or [])[:JOURNAL_LIMIT]
@@ -1223,8 +1459,47 @@ def render(
         + _corrections_html(corrections)
         + "<h2>Evals</h2>"
         + _evals_html(evals)
+        + "</main>"
     )
     return _page(str(project.get("name") or "pm-agent"), body)
+
+
+def _toolbar(project: Doc, tasks: list[Doc], actions: list[Doc], here: str) -> str:
+    """The same 40px bar the graph wears, so the two pages are one product.
+
+    The status line is the graph's dock, folded flat: what the agent is doing this second, or
+    what it is waiting for."""
+    working = [t for t in tasks if t.get("status") == "leased"]
+    if working:
+        status, busy = redact(human_working(working[0])), True
+    else:
+        upcoming = _next_watch(tasks)
+        status, busy = (f"idle — next: {upcoming}" if upcoming
+                        else "idle — nothing scheduled"), False
+    discs = "".join(
+        f"<span class='disc' title='{esc(str(m.get('name') or ''))}'>"
+        f"{esc(_initials(str(m.get('name') or '')))}</span>"
+        for m in (project.get("roster") or [])
+    )
+    link = str(project.get("linear_project_url") or "")
+    return (
+        "<div id='top'>"
+        f"<span id='title'>{esc(project.get('name') or 'pm-agent')}</span>"
+        "<span id='nav'>"
+        f"<a href='/console/graph' class='{'on' if here == 'graph' else ''}'>Graph</a>"
+        f"<a href='/console' class='{'on' if here == 'console' else ''}'>Console</a>"
+        "</span>"
+        f"<span id='status'><i class='{'busy' if busy else ''}'></i>"
+        f"<b>{esc(status)}</b></span>"
+        f"<span id='tools'><span id='avatars'>{discs}</span>"
+        + (f"<a id='link' href='{esc(link)}' target='_blank' rel='noreferrer'>Linear</a>"
+           if link else "")
+        + "</span></div>"
+    )
+
+
+def _initials(name: str) -> str:
+    return "".join(w[0].upper() for w in name.split()[:2])
 
 
 def _page(title: str, body: str) -> str:
@@ -1232,7 +1507,7 @@ def _page(title: str, body: str) -> str:
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>{esc(title)} — pm-agent</title><style>{STYLE}</style></head>"
-        f"<body><main>{body}</main></body></html>"
+        f"<body>{body}</body></html>"
     )
 
 
@@ -1253,9 +1528,16 @@ async def console(request: Request) -> HTMLResponse:
         await deps.lessons.for_project(project["id"]) if deps.lessons is not None else []
     )
     runs = await deps.db.query("evals", [], order_by="created_at", limit=50)
-    today = deps.clock.now().date().isoformat()
+    # The dashboard reads the same documents the journal does — no extra query for a number.
+    events = await deps.db.query("events", filters, order_by="received_at", limit=SCAN_LIMIT)
+    decisions = await deps.db.query("decisions", filters, order_by="created_at",
+                                    limit=SCAN_LIMIT)
+    # The team's midnight, not the server's. At 22:30 in California the UTC date is already
+    # tomorrow, and "writes today" would be counting a day the team has not started.
+    today = day_key(deps.clock.now().isoformat(), zone(project))
     return HTMLResponse(
-        render(project, tasks, actions, corrections, lessons, runs[-1] if runs else None, today)
+        render(project, tasks, actions, corrections, lessons, runs[-1] if runs else None, today,
+               events, decisions, deps.clock.now())
     )
 
 
