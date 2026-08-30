@@ -128,6 +128,33 @@ classification where the failure posture matters more than brilliance: triage fa
 **Google Cloud.** Cloud Run (the service), Firestore (tasks, events, actions, decisions,
 lessons, wiki), Cloud Scheduler (tick + daily review), Secret Manager (every credential).
 
+## What it remembers
+
+The **company brain** (`wiki_pages`) is where the team's standing knowledge lives — and the
+agent's memory across calls. Tell it in Slack and it keeps it, with the source:
+
+- *"@pm-agent from now on, assign billing and statement tasks to Nodir"* → an **ownership**
+  entry. When a later call describes billing work and names nobody, the reconciler proposes
+  Nodir and cites `wiki:ownership` on the ticket. A spoken owner still wins over a standing
+  rule; the roster gate still checks whoever is proposed.
+- *"never nudge on Fridays"* → a **preference** the planner reads.
+- *"remember that rates are stored to six decimals"* → a **fact** the reporter can cite; the
+  reconciler also files the durable facts it verifies from calls.
+- The **Something's wrong** button → a **correction**, injected into the stage it applies to as
+  not-advisory, and the strongest evidence the daily review has for a lesson.
+
+Every entry needs a source and, for ownership, a roster person — "I don't know a Sam on this
+project — who did you mean?" is the reply otherwise. Entries are cited like everything else
+(`wiki:<slug>#<entry>`), shown on the console's Brain section, and appear in the graph's
+*Learned* lane. The daily review still writes evidence-gated **lessons** about how to plan and
+nudge; none of this modifies prompts or code — the agent improves what it *knows* and how it
+*schedules*, never what it *is*.
+
+Two more rules that fell out of running real calls: a check about an issue that is already done
+resolves as **moot** — the agent never chases finished work — and the extractor has a **recall
+backstop**: commitment language it skipped ("can you…", "I'll…", "let's…") comes back as one
+bounce with the exact lines, so it says more without ever being allowed to say anything unquoted.
+
 ## How it talks
 
 Everything the agent says in Slack goes through one voice layer (`app/harness/core/voice.py`)

@@ -32,7 +32,8 @@ a dependency-ordered graph of checks ("issue underway by Sep 1 → then a PR exi
 each with a declared consequence if unmet. Good news resolves early: an engineer moving a
 ticket unblocks the chain within seconds via webhook. It posts a morning standup, answers
 Slack requests (commits to watches, pings on blockers), writes the sprint report with 100%
-cited claims, and runs a daily review that turns evidence into next-day lessons. Every action
+cited claims, and runs a daily review that turns evidence into next-day lessons. It remembers what the team tells it — "from now on, billing tasks go to Nodir" becomes a cited
+standing rule it applies and shows its source for. Every action
 carries a one-click revert. Its work is visible as a live timeline — time across, work down: each column a day, each row
 a kind of work (heard · understood · did · watching · learned), every call a card with a
 five-stage strip, everything it produced aligned beneath, a now line between what happened and
