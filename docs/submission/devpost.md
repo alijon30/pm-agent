@@ -162,9 +162,10 @@ action where a revert isn't enough.
 
 ## Built with
 
-`gemini-3.5` · `gemma` · `google-adk` · `genai-sdk` · `cloud-run` · `firestore` ·
-`cloud-scheduler` · `secret-manager` · `python` · `fastapi` · `linear` · `slack` · `notion` ·
-`fathom` · `svg`
+Paste into the tag field, comma-separated:
+
+python, javascript, gemini, gemma, google-adk, genai-sdk, vertex-ai, cloud-run, firestore,
+cloud-scheduler, secret-manager, fastapi, pydantic, slack-api, linear, notion, fathom, svg
 
 ## Links
 
