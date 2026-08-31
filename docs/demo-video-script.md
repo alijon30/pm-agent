@@ -1,132 +1,142 @@
 # Demo video — script
 
-Four minutes, one take, unedited. Two screens: the browser (tabs pre-opened in order: Slack ·
-Linear board · graph · console · GCP console) and a terminal for the one command. Narration is
-written to be spoken, not read — keep the rhythm, change the words if yours are better.
+About four minutes, one take, unedited. Two screens: the browser (tabs in order: Slack ·
+Linear board · graph · console · GCP console) and a terminal for the one command. The
+narration below is written the way you'd actually say it — don't read it, tell it. If your
+words are better, use yours.
 
-Pre-flight is in `docs/demo-runbook.md`. The clock on screen is the point: every "seconds later"
-below must be visible as seconds.
+Pre-flight is in `docs/demo-runbook.md`. One rule: the clock stays on screen. Everything
+this agent does in "about a minute" has to be *visibly* about a minute.
 
 ---
 
-## 0:00 — The claim (Slack channel, quiet)
+## 0:00 — Why I built this (Linear board, or any real half-empty ticket)
 
-> This is the Autonomous PM Agent. It runs around the clock on Cloud Run, and
-> it never asks permission. That sounds reckless, so let me show you why it's the safest design
-> in the room.
+> Quick story before the demo. I'm an engineer. Most mornings I open a ticket that says
+> something like "fix the news page" — and that's it. No context, no acceptance criteria,
+> nobody remembers what was decided on the call. I burn an hour reconstructing what the
+> ticket means before I write a single line of code. And when I put on the lead hat I get
+> the opposite problem — I can't tell where the team actually is without pinging everyone.
+>
+> Here's the annoying part: all of that information existed. Someone said it out loud in a
+> meeting. It just evaporated before it reached the ticket.
+>
+> So I built an agent that catches it at the source. This is the Autonomous PM Agent. It
+> listens to our calls and does the PM work itself. And one weird design choice up front:
+> it never asks for approval. I know how that sounds — stay with me, that's kind of the
+> whole demo.
 
-## 0:20 — The call ends (terminal, then Slack)
+## 0:40 — The world (Slack channel + Linear board)
+
+> Real quick, the setup. This is InterviewPrepPro — an actual product of mine. Real
+> codebase, real backlog in Linear. The team talks here in Slack, and the agent lives in
+> the channel too. It runs on Cloud Run with a one-minute heartbeat, and right now it's
+> idle — you can see that on its status.
+
+## 0:55 — A call just ended (terminal, then Slack)
+
+> So — the team just finished a two-minute huddle. Tom found that the "related articles"
+> section recommends the wrong articles, and the partner demo is tomorrow morning. In real
+> life Fathom fires a webhook the moment a call ends. I'm going to send that exact payload
+> by hand, so you can watch it happen live.
 
 Run: `uv run --env-file .env python scripts/send_call.py fixtures/transcripts/08-ipp-related-news-huddle.md --title "Related articles huddle" --recording-id demo_<date>`
 
-> A product call just ended. In real life this is Fathom's webhook; today I'm firing the same
-> payload by hand so you can see the clock.
+Switch to Slack. The status line appears: *Reading "Related articles huddle"…*
 
-Switch to Slack. The status line appears: *Reading "Related articles huddle"…* — then edits in
-place within a minute or so.
+> There it is. And watch this message — it keeps editing itself as the agent works. Reading
+> the transcript, checking Linear so it doesn't file something we already have, digging
+> through the codebase.
 
-> Watch that message. It's editing itself as the agent works — reading, reconciling against
-> Linear and the codebase, filing.
+## 1:20 — Teach it something while it works (Slack)
 
-While it works, talk to it — type in the channel:
-
-`@pm-agent from now on, assign frontend bugs to Priya`
+Type in the channel: `@pm-agent from now on, assign frontend bugs to Priya`
 
 It replies: *"Noted — frontend bugs go to Priya from now on."*
 
-> I just taught it something. That's not a setting — it stored the rule with my name and this
-> message as the source, and the next time a call mentions a frontend bug with no owner, it
-> proposes Priya and cites this exact moment. Slack is how you talk to it; the record is how
-> it proves it listened.
+> While it's busy — you can just talk to it. "From now on, assign frontend bugs to Priya."
+> …and, "Noted." That's not a settings page. It stored who said that and where, and the
+> next time a call mentions a frontend bug with no owner, it proposes Priya and cites this
+> exact message as its reason.
 
-When the summary lands, read it aloud, slowly:
+## 1:40 — The ticket (Slack summary → Linear)
 
-> "One new ticket, marked urgent — Tom said so on the call." Every claim you're reading
-> was checked before it was allowed to be said: the quote exists in the transcript, the owner
-> exists on the roster, the priority needed an escalation word — and there's a revert button.
+The summary lands. Open the new ticket in Linear and take your time with it.
 
-## 1:10 — The ticket (Linear)
+> Summary's in — one new ticket, marked urgent. Let's open it, because honestly, this is
+> the ticket I always wished someone had written for me.
+>
+> Look what's in here. Why this matters — partner demo tomorrow, news section is the first
+> thing we show. What was actually said — real quotes, timestamped, linked back into the
+> call. Acceptance criteria as checkboxes — pulled from what Priya committed to, not made
+> up. And my favorite part — the Investigation. The agent searched the actual codebase, and
+> it's pointing at the exact filter causing this bug. File and line. With an honest
+> confidence label.
+>
+> And the stuff you *can't* see is my favorite-favorite part: the gates. The owner has to
+> exist on the roster — it can't invent people. The priority only got raised because Tom
+> literally said "this is urgent" — no escalation words in the transcript, no escalation in
+> the ticket. The due date exists because Priya said "by tomorrow." If the agent can't
+> prove a claim, the claim doesn't ship.
 
-Switch to Linear, open the new ticket.
+## 2:30 — It schedules its own future (Slack thread)
 
-> Here's the ticket. Owner from the roster — never invented. Priority raised because Tom said
-> "this is urgent" — the gate found those words; without them it would have been clamped to
-> normal and the message would have said so. Due from "by tomorrow" — the agent only sets
-> dates someone actually spoke. And the Investigation section: the agent searched our real
-> code and is pointing at the exact filter, with the file and line.
+Open the follow-through post in the thread.
 
-Scroll to the description footer.
+> Then it did something I haven't seen an orchestrator do — it planned its own follow-up.
+> Tomorrow: is the ticket underway? If not, it checks in with Priya. After that: is there a
+> PR? Then: did it land? Every check has a date and a consequence, and they wait on each
+> other — it won't look for a PR on a ticket nobody started.
 
-> And the citation back to the moment in the call. The agent cannot write a reference it didn't
-> re-fetch. Zero fabricated identifiers across every eval run — that's a gate, not a hope.
+Ask for one yourself: `@pm-agent keep an eye on INV-50 until Wednesday`
 
-## 1:45 — The plan, and asking for something (Slack)
+It answers in-thread with dated checks.
 
-Back to Slack; open the follow-through post.
+> And you can just ask for your own. "Keep an eye on INV-50 until Wednesday." There —
+> dated checks, in the thread, with what it'll do if they fail.
 
-> Now the part no orchestrator I know of does: it scheduled its own future. "Tomorrow — check
-> the ticket is underway; if not, I'll check in with Priya." A dependency graph of checks, each
-> with a declared consequence. A lineage gate caps how much work it can give itself.
+Point at a revert button on the summary.
 
-Then ask it for something yourself:
+> One more thing. See this revert button? Every action it takes carries one. That's the
+> deal behind "never asks permission" — it doesn't have to ask, because undo is one click.
 
-`@pm-agent keep an eye on INV-46 until Wednesday`
+## 2:55 — Good news travels fast (Linear → graph)
 
-It replies in the thread: *"Got it — I'll watch INV-46 for you:"* with the dated checks and
-their if-unmet promises. Point at the revert button on the earlier summary:
+Drag the new ticket to **In Progress**, then jump to the graph tab.
 
-> Every action it takes carries this. Undo is one click — that's why it doesn't have to ask.
+> Now watch what happens when reality moves. I'm the engineer, I just started the work —
+> drag it to In Progress. Over on the timeline… there. The check it had scheduled for
+> tomorrow just resolved itself early, off the webhook, and the PR check behind it
+> unblocked. Bad news waits for its deadline. Good news doesn't wait at all.
 
-## 2:05 — The reaction (Linear → Slack → graph)
+## 3:15 — The timeline (graph, full screen)
 
-In Linear, drag the new ticket to **In Progress**. Switch to the graph tab
-immediately.
+Hit **Replay**, let it build ~10 seconds, click the new ticket (replay pauses).
 
-> An engineer just moved a ticket. Good news travels fast — watch the Watching lane.
+> This page is the agent's whole memory, live. Time goes across, the kind of work goes
+> down — what it heard, what it understood, what it did, what it's watching, what it
+> learned. Hit replay and it rebuilds the project from the first event. And you can click
+> anything — it tells you what it did about that thing and why, in plain sentences. It's an
+> audit log, it's just one you'd actually read.
 
-Within seconds the check pill flips to a check mark with the early ↗; the thread note posts.
+## 3:35 — The stack (GCP console, five seconds per tab)
 
-> The Sep 1 check just resolved itself four days early off the Linear webhook, and the PR check
-> behind it unblocked. Bad news waits for its deadline; good news doesn't wait at all.
+Cloud Run service → Firestore collections → Scheduler jobs → Vertex AI.
 
-## 2:35 — The graph (full screen)
+> Under the hood it's all Google Cloud. Cloud Run — scales to zero between ticks. Firestore
+> is the orchestrator — the task graph lives there, not in some framework. Cloud Scheduler
+> is the heartbeat. Five ADK agents on Gemini 3.5 through Vertex, plus Gemma for triage.
+>
+> And some numbers, because "trust me" isn't a demo: across every eval run — zero fabricated
+> identifiers, one hundred percent citation coverage, zero invalid plans. On its worst,
+> quota-starved runs it wrote nothing at all. It degrades to silence — never to lies.
 
-Hit **Replay**.
+## 3:55 — Close (graph)
 
-> This is the agent's work as a timeline — time across, work down. Each column is a day, each
-> row a kind of work: what it heard, what it understood, what it did, what it's watching, what
-> it learned. Everything a call produced lines up under that call. Replayed from the first event.
-
-Let it run ~15 seconds; click the news-lookup ticket mid-replay (replay pauses).
-
-> Click anything and it tells you what it did about it and why, in plain sentences, with
-> timestamps. This is the audit log — it just dresses well.
-
-Point at the toolbar status line.
-
-> And this line is what it's doing right now and what wakes next. The Scheduled columns are its
-> plan — checks placed on the days they're due. Nothing on this page is a second source of truth;
-> it's all derived from the same records.
-
-## 3:20 — The proof (GCP console + README)
-
-GCP tab: Cloud Run service → Firestore collections → Scheduler jobs, five seconds each.
-
-> Gemini 3.5 through ADK for the five reasoning agents; Gemma for triage. Cloud Run, Firestore
-> as the task graph, Cloud Scheduler as the heartbeat, Secret Manager for every credential.
-
-README tab, scroll to the guarantees table.
-
-> Across every eval run: zero fabricated identifiers, one hundred percent citation coverage,
-> zero invalid plans. Our worst run was quota-starved and scored badly on judgment — and the
-> guarantees held anyway. A starved pm-agent writes nothing. It degrades to silence, never to
-> lies.
-
-## 3:50 — Close (graph tab)
-
-> Autonomy isn't a capability problem. It's a trust-engineering problem — and trust lives in
-> the gates, not in the model. The Autonomous PM Agent: it acts, you can always undo, and it can always show
-> its work.
+> So that's the Autonomous PM Agent. The ticket I always wanted to receive, the team
+> overview I always wanted as a lead — and nobody had to babysit it. It acts on its own,
+> everything it does can be undone in a click, and it can always, always show its work.
+> Thanks for watching.
 
 Hold on the graph for two seconds. Stop.
 
@@ -134,10 +144,11 @@ Hold on the graph for two seconds. Stop.
 
 ## If something goes wrong on camera
 
-- **Webhook slow:** narrate the toolbar status — "it wakes every minute" — and let the clock run; it
-  is more honest than a cut.
-- **Rate limited:** the status message shows the retry; say "this is the honesty story — it
-  tells you when it's waiting." Let it land.
-- **Model flake (nothing filed):** say so — "that's a drop, not a fabrication" — and fire the
-  call again with a new recording id. Take two is allowed; a lie is not.
-- **Graph sparse:** Replay is always more compelling than a still graph.
+- **Webhook slow:** say "it wakes up every minute — there's the heartbeat" and let the
+  clock run. Honest waiting beats a cut.
+- **Rate limited:** the status message shows the retry. "It tells you when it's waiting" —
+  that's the honesty story landing on its own.
+- **Nothing filed:** "that's a drop, not a fabrication" — fire the call again with a new
+  recording id. Take two is allowed; a lie is not.
+- **Graph sparse:** hit Replay. The story building from nothing beats a full graph
+  standing still.
