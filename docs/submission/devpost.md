@@ -1,7 +1,9 @@
 # Devpost submission draft
 
 Paste-ready field by field. Upload `docs/media/architecture.png` as the architecture image
-(Devpost does not render Mermaid) and `docs/media/graph.png` + `panel.png` as gallery shots. Submit **Sunday well before 5:00 PM PDT**. Attach: repo link,
+(Devpost does not render Mermaid) and `docs/media/graph.png` + `panel.png` as gallery shots. Submit **Sunday well before 5:00 PM PDT**. Make the repo public (or invite
+testing@devpost.com and cloudhackathons@google.com) — the rules require repo access.
+Keep the service and billing on until Oct 1 (judging period). Attach: repo link,
 video link, live demo URL (`https://pm-agent-999960779013.us-central1.run.app/console/graph`).
 
 ## Project name

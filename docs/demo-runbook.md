@@ -51,6 +51,15 @@ against real services on camera; this file is the flight plan and the parachutes
 - **Total service failure** → previous take, or the recorded rehearsal. An unedited take of a
   real system is the requirement; a second take is not a crime.
 
+## Judging period (Sep 1 – Oct 1)
+
+- The service, billing, and both Scheduler jobs stay ON until October 1 — the rules require
+  the project available for testing through the whole judging period.
+- Judges get: the video (must visibly show Google Cloud — console or the .run.app URL), the
+  live URLs, and the repo. Repo access for testing@devpost.com and cloudhackathons@google.com
+  is required — simplest is flipping the repo public at submission time (it is clean: secrets
+  live in Secret Manager and .env is gitignored).
+
 ## Still owed by a human (before recording)
 
 - [ ] Slack app **reinstalled** with `reactions:write` (manifest updated — needs reinstall to take)
