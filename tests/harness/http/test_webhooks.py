@@ -89,7 +89,7 @@ async def test_a_signed_webhook_says_it_is_reading_the_call_and_remembers_where(
     assert post["channel"] == "C-product"
     assert post["text"] == (
         "✻ *Q3 Billing planning* — on it. The plan:\n"
-        "▸ read the call\n"
+        "🟠 read the call\n"
         "○ check it against Linear, the docs and the code\n"
         "○ file what was agreed\n"
         "○ set up the follow-through"

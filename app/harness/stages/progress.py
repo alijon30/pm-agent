@@ -52,7 +52,8 @@ def checklist(title: str, *, doing: int, notes: dict[int, str] | None = None) ->
             note = notes.get(index, "")
             lines.append(f"✓ {DONE[index]}" + (f" — {note}" if note else ""))
         elif index == doing:
-            lines.append(f"▸ {step}")
+            # Orange marks the live step, the way our other bots have always drawn "now".
+            lines.append(f"🟠 {step}")
         else:
             lines.append(f"○ {step}")
     return "\n".join(lines)
