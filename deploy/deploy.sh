@@ -7,7 +7,10 @@ PROJECT="${PM_GCP_PROJECT:-pm-agent-hackathon-26}"
 REGION="${PM_REGION:-us-central1}"
 SERVICE="pm-agent"
 
-SECRETS="PM_TICK_TOKEN=pm-tick-token:latest,GOOGLE_API_KEY=pm-google-api-key:latest"
+# GOOGLE_API_KEY is pinned to version 1 on purpose: it only serves Gemma triage (which 404s
+# on Vertex serverless), and later key versions are prepay-locked. :latest here would load a
+# dead key on the next cold start.
+SECRETS="PM_TICK_TOKEN=pm-tick-token:latest,GOOGLE_API_KEY=pm-google-api-key:1"
 declare -a OPTIONAL=(
   "PM_FATHOM_WEBHOOK_SECRET=pm-fathom-webhook-secret"
   "PM_SLACK_BOT_TOKEN=pm-slack-bot-token"
@@ -24,9 +27,9 @@ for pair in "${OPTIONAL[@]}"; do
   fi
 done
 
-# flash-lite for the strong tier too: the free tier allows 15 req/min against it and only 5
-# against flash, and a reconcile or report run is several calls. Quality is live-verified.
-ENV_VARS="PM_GCP_PROJECT=$PROJECT,PM_DEFAULT_PROJECT_SLUG=acme,GOOGLE_GENAI_USE_VERTEXAI=FALSE,PM_MODEL_STRONG=gemini-3.5-flash,PM_THINKING_BUDGET=1024"
+# Gemini runs through Vertex AI (bills the GCP credit, no AI-Studio tier gymnastics); Gemma
+# triage stays on the API key because Gemma is not served on Vertex serverless.
+ENV_VARS="PM_GCP_PROJECT=$PROJECT,PM_DEFAULT_PROJECT_SLUG=acme,GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=$PROJECT,GOOGLE_CLOUD_LOCATION=global,PM_MODEL_STRONG=gemini-3.5-flash,PM_THINKING_BUDGET=1024"
 if [ -n "${PM_GITHUB_REPO:-}" ]; then
   ENV_VARS="$ENV_VARS,PM_GITHUB_REPO=$PM_GITHUB_REPO"
 fi

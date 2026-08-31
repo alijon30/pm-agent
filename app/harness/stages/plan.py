@@ -9,8 +9,11 @@ When the model gives us nothing usable, the fallback is not silence: a determini
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from typing import Any
+
+from pydantic import ValidationError
 
 from app.agents.base.schemas import Plan
 from app.harness.connectors.slack_blocks import plan_summary_blocks
@@ -170,7 +173,8 @@ async def run(task: Doc, deps: Deps) -> StageResult:
             existing_ids=lambda tid: tid in open_ids,
             id_exists=deps.ids.exists if deps.ids is not None else nothing_exists,
         )
-        notes = "no plan from the planner; using the default follow-up chain"
+        notes = f"{notes}; using the default follow-up chain" if notes else \
+            "no plan from the planner; using the default follow-up chain"
         defaulted = True
 
     supersedes = [s for s in (proposal.get("supersedes") or []) if s in open_ids]
@@ -208,7 +212,12 @@ async def lessons_for(deps: Deps, project_id: str) -> list[str]:
 async def _propose(payload: dict[str, Any], deps: Deps) -> tuple[dict[str, Any], str]:
     if deps.planner is None:
         return {"tasks": [], "supersedes": [], "notes": ""}, "no planner configured"
-    parsed = Plan.model_validate(await deps.planner.run(payload)).model_dump()
+    try:
+        parsed = Plan.model_validate(await deps.planner.run(payload)).model_dump()
+    except (json.JSONDecodeError, ValidationError):
+        # The model wrote something that is not a plan. That is a reason to fall back to the
+        # deterministic chain below, not a reason to fail the task and schedule nothing.
+        return {"tasks": [], "supersedes": [], "notes": ""}, "the planner's output was not usable"
     return parsed, str(parsed.get("notes") or "")
 
 

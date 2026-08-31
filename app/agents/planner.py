@@ -72,6 +72,11 @@ def build_planner(
         output_schema=Plan,
         tools=tools,
         max_tool_calls=max_tool_calls,
+        # With thinking on, this agent stopped answering through ADK's structured-output tool
+        # and hand-wrote its plan JSON instead — six consecutive runs on Vertex, all malformed
+        # around the 14k-character mark. The planner's judgment survives in the plan itself;
+        # the deliberation budget was breaking the envelope it arrives in.
+        thinking=False,
     )
 
 

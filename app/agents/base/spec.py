@@ -30,6 +30,9 @@ class AgentSpec:
     max_tool_calls: int = 12
     max_output_tokens: int = 8192
     temperature: float = 0.1
+    # Thinking is an environment posture (PM_THINKING_BUDGET), but an agent whose structured
+    # output breaks under it may opt out. See build_planner for the one that does, and why.
+    thinking: bool = True
 
 
 # ADK delivers structured output by calling a synthetic tool of its own when an agent has both
@@ -78,7 +81,9 @@ def _content_config(spec: AgentSpec) -> types.GenerateContentConfig:
     agent trait: off on the free tier where every token is rationed, on in production where
     judgment is worth more than latency."""
     budget = int(os.environ.get("PM_THINKING_BUDGET", "0") or "0")
-    thinking = types.ThinkingConfig(thinking_budget=budget) if budget > 0 else None
+    thinking = (
+        types.ThinkingConfig(thinking_budget=budget) if budget > 0 and spec.thinking else None
+    )
     return types.GenerateContentConfig(
         temperature=spec.temperature, max_output_tokens=spec.max_output_tokens,
         thinking_config=thinking,

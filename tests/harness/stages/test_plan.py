@@ -153,6 +153,27 @@ async def test_a_plan_that_stays_invalid_schedules_nothing_and_says_why(deps: De
     assert "INV-999" in out.result["rejected"][0]["reason"]
 
 
+async def test_a_planner_that_breaks_its_own_json_still_yields_the_default_chain(
+    deps: Deps,
+) -> None:
+    """Seen live on Vertex with thinking on: the model hand-writes its plan JSON and breaks
+    it. The commitment still gets watched — by the deterministic chain, honestly labelled."""
+    import json as jsonlib
+
+    class BrokenPlanner:
+        async def run(self, payload: dict[str, Any]) -> dict[str, Any]:
+            raise jsonlib.JSONDecodeError("Expecting ',' delimiter", '{"tasks": [', 10)
+
+    task = await wire(deps, planner_results=[])
+    deps.planner = BrokenPlanner()
+    out = await run(task, deps)
+
+    assert [c["kind"] for c in out.children] == [
+        "check_issue_state", "check_pr_exists", "check_issue_state"]
+    assert "was not usable" in out.result["notes"]
+    assert "default follow-up chain" in out.result["notes"]
+
+
 async def test_a_planner_with_nothing_to_say_falls_back_to_the_default_chain(
     deps: Deps,
 ) -> None:
