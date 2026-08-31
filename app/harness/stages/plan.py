@@ -160,7 +160,10 @@ async def run(task: Doc, deps: Deps) -> StageResult:
     # Nothing survived — whether the model proposed nothing or everything it proposed was
     # rejected. Either way the commitment still gets watched: the default chain is built from
     # the verified context, never from the rejected proposal.
+    dropped_rejected, dropped_reasons = [], []
     if not verdict.tasks:
+        # The fallback gets its own verdict, but the record keeps why the proposal died.
+        dropped_rejected, dropped_reasons = verdict.rejected, verdict.reasons
         fallback = default_followups(context, policy, now).model_dump()
         verdict = await check_plan(
             fallback, now=now, policy=policy,
@@ -174,14 +177,15 @@ async def run(task: Doc, deps: Deps) -> StageResult:
 
     supersedes = [s for s in (proposal.get("supersedes") or []) if s in open_ids]
     # Reasons only: the plan key means nothing in a channel.
-    trimmed = [r["reason"] for r in verdict.rejected] + verdict.reasons
+    trimmed = [r["reason"] for r in [*dropped_rejected, *verdict.rejected]] \
+        + [*dropped_reasons, *verdict.reasons]
     await _announce(task, project, verdict.tasks, trimmed, context, defaulted, deps)
 
     result: dict[str, Any] = {
         "notes": notes,
         "accepted": [t["key"] for t in verdict.tasks],
-        "rejected": verdict.rejected,
-        "reasons": verdict.reasons,
+        "rejected": [*dropped_rejected, *verdict.rejected],
+        "reasons": [*dropped_reasons, *verdict.reasons],
         "supersedes": supersedes,
         "bounced": bounced,
     }
