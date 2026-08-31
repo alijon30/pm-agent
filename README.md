@@ -1,79 +1,57 @@
 # pm-agent
 
-**An autonomous product manager.** A product call ends; minutes later the decisions are in the
-ledger, the action items are cited Linear issues with owners and priorities, the follow-ups are
-scheduled as a dependency graph, and the team was told in Slack — with a revert button on every
-action. Nobody prompted it. Nobody approved each step. That is the point.
+An autonomous product manager, built for Google's All Things Agentic Hackathon 2026
+(Taskmaster track) with Gemini 3.5, Google ADK, and Google Cloud.
 
-Built solo for the **All Things Agentic Hackathon 2026** (Taskmaster track) on Gemini 3.5,
-Google ADK, and Google Cloud.
+A product call ends. A few minutes later the decisions are recorded, the action items are
+Linear tickets with owners and citations, follow-up checks are scheduled for the right days,
+and the team gets a Slack summary with a revert button on every action. Nobody approved each
+step.
 
-![Time across, work down: what the agent heard, understood, did, is watching, and learned](docs/media/graph.png)
+![Timeline of the agent's work](docs/media/graph.png)
 
-## The loop
+Live demo: [graph](https://pm-agent-999960779013.us-central1.run.app/console/graph) ·
+[console](https://pm-agent-999960779013.us-central1.run.app/console)
 
-pm-agent runs 24/7 on Cloud Run, driven by a Cloud Scheduler tick and webhooks:
+## What it does
 
-1. **Extract** — a Fathom call recording lands; Gemma triages the transcript down to its
-   decision-bearing lines, then Gemini extracts decisions, action items, owners, and dates —
-   every one backed by a verbatim quote or dropped.
-2. **Reconcile** — each item is checked against what already exists in Linear, Notion, and the
-   codebase. "Build CSV export" becomes *update INV-25*, not a duplicate ticket. Conflicts
-   between what was said and what is written are reported, never silently resolved.
-3. **Act** — issues are filed with citations, owners from the roster (never invented), and
-   priorities that require an escalation quote to exceed their band. Every write records its
-   revert payload *before* it happens.
-4. **Plan** — the agent schedules its own follow-ups as a dependency graph: *check the issue is
-   underway Sep 1 → then look for a PR Sep 3 → then check it merged*. Blocked checks wait on
-   their dependencies; failures cascade by declared policy (skip / run anyway / cancel).
-5. **Watch and react** — good news resolves early: when an engineer moved INV-26 four days ahead
-   of schedule, the Linear webhook resolved the Sep 1 check within seconds and unblocked its
-   dependents. Bad news waits for its deadline, then nudges — once, politely, within caps.
-6. **Report** — at sprint end (and on request in Slack) it writes the product report. Every
-   claim carries a citation; the citation gate removes any claim it cannot prove.
-7. **Learn** — a daily review turns the day's evidence into lessons that feed the next day's
-   planning. Lessons without evidence from that day's record are refused.
+- Extracts decisions and action items from call transcripts. Gemma filters the transcript,
+  Gemini 3.5 extracts. Anything without a verbatim quote from the call is dropped.
+- Checks each item against Linear, Notion and the codebase before filing. Updates existing
+  tickets instead of duplicating them; reports conflicts instead of resolving them silently.
+- Schedules its own follow-ups as a dependency chain: check the issue is underway, then look
+  for a PR, then check it merged. Each check states what happens if it fails.
+- Reacts to webhooks. If an engineer moves a ticket four days early, the pending check
+  resolves in seconds and its dependents unblock.
+- Posts a morning standup, takes requests in Slack, and writes sprint reports where every
+  claim carries a citation the system re-verified.
+- Remembers instructions. "From now on, billing tasks go to Nodir" becomes a standing rule it
+  applies and cites. Corrections from the "Something's wrong" button feed back into later runs.
+- Reviews its own record daily and turns it into lessons for the next day's planning.
 
-All of it is visible live: the **[console](https://pm-agent-999960779013.us-central1.run.app/console)**
-is the agent's decision journal, and the
-**[graph](https://pm-agent-999960779013.us-central1.run.app/console/graph)** is its work laid
-out like a timeline: **time across, work down**. Each column is a day (future days are marked
-*scheduled*), each row a kind of work — *Heard* (calls, asks), *Understood* (decisions,
-disagreements), *Did* (issues filed, messages sent), *Watching* (checks, past and scheduled),
-*Learned*. Every call is a card with a five-stage strip — read · triaged · reconciled · filed ·
-planned — and everything it produced lines up beneath it, so reading down a column is reading
-the story of one call. A **now line** separates what happened from what is scheduled; the
-toolbar says what the agent is doing this second; Replay rebuilds the page from the first event;
-and clicking anything opens its story — properties, then the agent's reasoning as an activity
-feed.
+The graph shows all of this as a timeline (columns are days, rows are kinds of work, future
+days hold the schedule); the console is a dashboard computed from the same records: median
+time from call to tickets, days saved by early resolutions, citation coverage, gates passed,
+reverts.
 
-![Click anything for what the agent did about it, and why](docs/media/panel.png)
+![Story panel](docs/media/panel.png)
+![Dashboard](docs/media/console.png)
 
-The **console** is the PM dashboard: every number computed from the agent's own records —
-calls heard, decisions, issues filed (and how many were updated instead of re-filed), checks met
-and resolved early, the median time from call to tickets, days saved by early resolution,
-writes and pings against their caps, citation coverage, references verified, gates passed,
-reverts — above the decision journal.
+## Why no approval prompts
 
-![The console: a PM's numbers, derived, never typed](docs/media/console.png)
+Anthropic's engineers measured that users approve ~93% of permission prompts. That isn't
+oversight. So instead of asking first:
 
-## The autonomy stance
+- Every action is recorded before it happens, with an idempotency key and a revert payload.
+  Undo is one click in Slack.
+- Deterministic gates check every model output: quotes must exist in the transcript,
+  identifiers are re-fetched from the systems that own them, owners must be on the roster,
+  a priority above its band needs a spoken escalation, report claims need citations.
+  [GATES.md](GATES.md) documents them and is generated from the code, so it can't drift.
+- A failed gate gets one retry with specific feedback, then a logged drop. When the pipeline
+  is starved (rate limits, model flakes) it writes less, never something false.
 
-Most agent products put a human approval in front of every action. The evidence says that
-theater fails: Anthropic's engineering team found users approved **~93% of permission prompts**
-— approval fatigue turns oversight into a rubber stamp. And OpenAI's own internal orchestrator,
-Symphony, explicitly declines dependency ordering and verification as "not a policy" concern.
-
-pm-agent takes the opposite bet, and makes it safe three ways:
-
-| Instead of | pm-agent does |
-|---|---|
-| Approval prompts before each action | **Act-then-notify with one-click revert** — every Slack post carries revert/wrong buttons wired to the action's stored revert payload |
-| Trusting the model's claims | **Deterministic gates** on every output: evidence quotes, re-fetched identifiers, roster membership, priority bands, citation coverage — see [GATES.md](GATES.md) |
-| Failing open when unsure | **Failing closed, honestly** — a failed gate gets one retry with specific feedback, then a logged drop; a starved pipeline degrades to silence, never to fabrication |
-| A human scheduling follow-through | **A self-scheduling task graph** — the agent enqueues, orders, blocks, and early-resolves its own future work; a lineage gate (depth ≤ 4, children ≤ 12) stops runaway self-employment |
-
-## Architecture
+## How it works
 
 ```mermaid
 flowchart LR
@@ -95,121 +73,48 @@ flowchart LR
         DR -.-> G5[reviewer]
     end
     X -. transcript triage .-> GM[Gemma 4]
-    A --> V{{deterministic gates<br/>evidence · ids · roster · priority<br/>dates · caps · lineage · plan · citations}}
+    A --> V{{deterministic gates}}
     P --> V
     RP --> V
     V --> W[connectors:<br/>Linear · Slack · Notion · GitHub · Fathom]
-    W --> J[decision journal<br/>+ knowledge graph]
+    W --> J[journal + timeline]
 ```
 
-(The same diagram as an image, for viewers without Mermaid: `docs/media/architecture.png`.)
+(Same diagram as an image: `docs/media/architecture.png`.)
 
-**Queue as orchestrator.** There is no workflow engine: the Firestore task graph *is* the
-orchestrator. Tasks carry `due_at`, leases, `depends_on`, and failure policy; a one-minute tick
-drains everything due and promotes whatever became unblocked. Plans materialise atomically —
-a plan that fails its gate materialises nothing.
+There is no workflow engine. The Firestore task queue is the orchestrator: tasks carry due
+times, dependencies, leases and retry backoff. Cloud Scheduler hits `/tick` every minute; the
+handler claims whatever is due (transactionally, so a duplicate tick can't double-run a task)
+and executes it, which enqueues the next stage. Cloud Run scales to zero between requests.
+Secrets live in Secret Manager. Deploys build on Cloud Build and ship from Artifact Registry.
 
-*Why not ADK's workflow agents?* ADK's `SequentialAgent` / `ParallelAgent` orchestrate within
-one model turn; this agent's work spans days, survives restarts, and must be inspectable and
-revertible after the fact. So ADK does what it is best at — the five reasoning steps, with
-schema-enforced output and guarded tools — and a durable, deterministic queue does the
-sequencing. An orchestrator that a model can talk into a loop is the one thing this system
-refuses to have.
+I didn't use ADK's workflow agents for sequencing on purpose: this work spans days, has to
+survive restarts, and has to be revertible after the fact. ADK does the five reasoning steps
+(schema-enforced output, per-agent tool allowlists); a durable queue does the ordering.
 
-**Intent before effect.** Every external write is recorded with an idempotency key and its
-revert payload before the connector call. Replays are detected by key; reverts are one click.
+Gemma 4 handles transcript triage and Slack intent classification. Both fail safe: triage
+keeps everything it can't classify, intent defaults to "request".
 
-**Two models, deliberately.** Gemini 3.5 (`flash` / `flash-lite`) powers the five reasoning
-agents through ADK — structured output enforced by schema, tools guarded per-agent by an
-allowlist. Gemma 4 (31B) handles transcript triage and Slack intent classification — cheap
-classification where the failure posture matters more than brilliance: triage fails open
-(keeps every line), intent defaults to "request".
+## Numbers
 
-**How Google Cloud runs it.** Cloud Run is the body: one container, scale-to-zero — when
-nothing is happening the agent literally does not exist, and it costs nothing while it sleeps.
-Cloud Scheduler is the pulse: a one-minute tick POSTs `/tick` (bearer-token checked), and the
-handler leases every task whose time has come, executes it, and drains the chain it unlocks;
-a second job at 9:00 project time triggers the daily review and standup. Firestore is both the
-memory and the to-do list: `tasks` (the self-scheduled future — due times, dependencies,
-leases, backoff, claimed by transaction so concurrent ticks cannot double-fire), `actions`
-(every external write recorded first, with its idempotency key and revert payload), `events`,
-`decisions`, `wiki_pages` (the brain), `evals`. Secret Manager holds every credential,
-injected as env vars at deploy — nothing sensitive in the image or the repo. Cloud Build +
-Artifact Registry build and shelve the images each revision deploys from.
+Six eval runs against the fixture company, on free-tier quota:
 
-One request, end to end: Fathom fires → Cloud Run cold-starts the container → the handler
-verifies the signature, writes an event and an `extract` task to Firestore, returns 200 in
-milliseconds. Up to a minute later the tick claims the task, calls Gemini, runs the gates,
-writes to Linear and Slack with the revert recorded first, and enqueues the next stage — and
-when the queue is empty, the instance dies. The console and the graph render only from that
-record.
-
-## What it remembers
-
-The **company brain** (`wiki_pages`) is where the team's standing knowledge lives — and the
-agent's memory across calls. Tell it in Slack and it keeps it, with the source:
-
-- *"@pm-agent from now on, assign billing and statement tasks to Nodir"* → an **ownership**
-  entry. When a later call describes billing work and names nobody, the reconciler proposes
-  Nodir and cites `wiki:ownership` on the ticket. A spoken owner still wins over a standing
-  rule; the roster gate still checks whoever is proposed.
-- *"never nudge on Fridays"* → a **preference** the planner reads.
-- *"remember that rates are stored to six decimals"* → a **fact** the reporter can cite; the
-  reconciler also files the durable facts it verifies from calls.
-- The **Something's wrong** button → a **correction**, injected into the stage it applies to as
-  not-advisory, and the strongest evidence the daily review has for a lesson.
-
-Every entry needs a source and, for ownership, a roster person — "I don't know a Sam on this
-project — who did you mean?" is the reply otherwise. Entries are cited like everything else
-(`wiki:<slug>#<entry>`), shown on the console's Brain section, and appear in the graph's
-*Learned* lane. The daily review still writes evidence-gated **lessons** about how to plan and
-nudge; none of this modifies prompts or code — the agent improves what it *knows* and how it
-*schedules*, never what it *is*.
-
-Two more rules that fell out of running real calls: a check about an issue that is already done
-resolves as **moot** — the agent never chases finished work — and the extractor has a **recall
-backstop**: commitment language it skipped ("can you…", "I'll…", "let's…") comes back as one
-bounce with the exact lines, so it says more without ever being allowed to say anything unquoted.
-
-## How it talks
-
-Everything the agent says in Slack goes through one voice layer (`app/harness/core/voice.py`)
-that turns the four things a colleague talks about — a person by first name, a ticket by what it
-is, a day rather than a date, and what happens next — into words. So a nudge reads
-*"Nodir — INV-27 (the duplicate reminders bug) hasn't started, and it was meant to be underway
-today. Anything in the way?"* rather than a log line. Assumptions are stated inline, once
-(*"due Monday — from 'by Monday' on the call"*); the first check of anything someone asked for
-reports back before the rest go quiet; and tone is enforced like a gate — tests fail if any
-message contains a task kind, an "(s)" plural, "the assignee", or a bare URL, and each message
-type has a length ceiling. The charter, and the research behind it (Claude in Slack, Viktor,
-Slack's own guidance), is in `docs/research/slack-voice.md`; every message the agent can send
-renders with `uv run python scripts/preview_slack.py`.
-
-## Guarantees, measured
-
-The eval harness replays the full pipeline against the fixture company and asks 27 questions —
-recall, judgment, and hard guarantees. Six runs on free-tier quota, `gemini-3.5-flash-lite`:
-
-| Metric | Result across all 5 runs |
+| | |
 |---|---|
-| Fabricated identifiers | **0** |
-| Report citation coverage | **100%** |
-| Invalid plans materialised | **0** |
-| Judgment accuracy | 74–92% (mean 83%); 58% on one quota-starved run |
+| Fabricated identifiers | 0 |
+| Report citation coverage | 100% |
+| Invalid plans materialised | 0 |
+| Judgment accuracy | 74–92% |
 
-Two runs are the instructive ones. The quota-starved run scored 15/26 because back-to-back
-runs exhausted the API mid-pipeline; the 20/27 run had no rate limiting at all — the small model
-simply extracted fewer items and planned nothing that time. In both, the guarantees held: a
-starved or unlucky pm-agent writes *less*, cites *nothing false*, invents *no identifiers*. It
-degrades to silence, never to lies — and the judgment spread is the argument for running the
-reasoning agents on a stronger Gemini tier in production, which is a one-line config change
-(`PM_MODEL_STRONG`). Full results in `evals/results/`.
+The bad runs matter more than the good ones. Quota starvation and small-model variance lower
+recall, but the guarantees held every time: fewer tickets, never a false one. Full results in
+`evals/results/`.
 
 ## Run it
 
 ```
 uv sync --dev
-cp .env.example .env          # then fill in GOOGLE_API_KEY
+cp .env.example .env          # fill in GOOGLE_API_KEY
 uv run ruff check . && uv run mypy app && uv run lint-imports && uv run pytest -q
 ```
 
@@ -220,25 +125,18 @@ uv run --env-file .env python scripts/list_models.py
 uv run --env-file .env pytest -m live
 ```
 
-Deploy is `deploy/deploy.sh` (Cloud Run), `deploy/scheduler.sh` (jobs); the full runbook
-including Firestore composite indexes lives in `deploy/secrets.md`.
+Deploy: `deploy/deploy.sh` and `deploy/scheduler.sh`; runbook and required Firestore indexes
+in `deploy/secrets.md`. To feed it a call without Fathom:
+`uv run --env-file .env python scripts/send_call.py fixtures/transcripts/03-pdf-incident-huddle.md --title "PDF incident huddle" --recording-id demo1`
 
-The demo company — **Acme Invoicing**, its roster, call transcript, codebase
-([alijon30/acme-invoicing](https://github.com/alijon30/acme-invoicing)), and Linear project —
-is entirely synthetic, built for this hackathon.
+The demo company (Acme Invoicing — roster, calls, codebase at
+[alijon30/acme-invoicing](https://github.com/alijon30/acme-invoicing)) is synthetic. The
+tickets, webhooks and standups are real.
 
 ## Roadmap
 
-- **Slack Socket Mode + Bolt** — richer interactive surfaces (modals, home tab) beyond the
-  current HTTP events + status-message-edit + emoji-reaction patterns.
-- **Prompt-injection classifier** ahead of extract — transcripts are untrusted input.
-- **Human-review states** for the rare action class where act-then-revert is not enough
-  (deletes, cross-org posts).
-- **Audience-shaped reports** — the same evidence, phrased for engineers vs. stakeholders.
-- **Routines** — recurring intake commitments ("every Friday, summarise open risks").
+Slack Socket Mode, a prompt-injection classifier ahead of extract, human-review states for
+actions where revert isn't enough, audience-shaped reports, recurring routines.
 
-## Design docs
-
-The full design spec is at `docs/superpowers/specs/2026-08-26-pm-agent-design.md`; the
-research that shaped the autonomy stance is in `docs/research/` (Anthropic and OpenAI PM
-practice reviews, with sources).
+Design spec: `docs/superpowers/specs/2026-08-26-pm-agent-design.md` · research notes:
+`docs/research/`
