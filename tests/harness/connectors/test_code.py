@@ -53,3 +53,12 @@ def test_exists_checks_the_file_and_the_line_number() -> None:
     assert code.exists("acme/config.py", 1) is True
     assert code.exists("acme/config.py", 9999) is False
     assert code.exists("acme/ghost.py") is False
+
+
+def test_grep_finds_source_in_any_language_by_default() -> None:
+    """The demo repo is TypeScript; a default grep that only reads .py files reported
+    "couldn't locate this in the code" on bugs that were right there."""
+    ipp = CodeSearch(Path(__file__).parents[3] / "fixtures" / "interviewpreppro")
+    hits = ipp.grep("getRelatedNews")
+    assert hits, "the default glob must see .ts files"
+    assert any(h["path"].endswith("newsUtils.ts") for h in hits)

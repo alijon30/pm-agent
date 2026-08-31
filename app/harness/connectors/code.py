@@ -8,6 +8,13 @@ from typing import Any
 
 MAX_FILE_BYTES = 512_000
 
+# What counts as source. The default glob is broad, so binaries and assets are filtered by
+# suffix — a repo is TypeScript as often as it is Python.
+TEXT_SUFFIXES = {
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".json", ".md", ".css", ".scss", ".html",
+    ".yml", ".yaml", ".toml", ".txt", ".sql", ".sh",
+}
+
 
 class CodeSearch:
     def __init__(self, repo_root: Path | str) -> None:
@@ -21,7 +28,7 @@ class CodeSearch:
         return candidate
 
     def grep(
-        self, pattern: str, *, glob: str = "**/*.py", max_hits: int = 20
+        self, pattern: str, *, glob: str = "**/*", max_hits: int = 20
     ) -> list[dict[str, Any]]:
         """Case-insensitive regex over matching files. Returns {path, line, text} per hit, with
         paths relative to the repo root so they can be cited directly."""
@@ -32,6 +39,8 @@ class CodeSearch:
         hits: list[dict[str, Any]] = []
         for file in sorted(self._root.glob(glob)):
             if not file.is_file() or file.stat().st_size > MAX_FILE_BYTES:
+                continue
+            if file.suffix.lower() not in TEXT_SUFFIXES:
                 continue
             if any(part in {".git", "__pycache__", ".venv"} for part in file.parts):
                 continue

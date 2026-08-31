@@ -119,13 +119,14 @@ def make_read_tools(
             return {"status": "not_found", "page_id": page_id}
         return {"status": "ok", "page": {**page, "markdown": page["markdown"][:MAX_SNIPPET]}}
 
-    def grep_code(pattern: str, glob: str = "**/*.py") -> dict[str, Any]:
+    def grep_code(pattern: str, glob: str = "**/*") -> dict[str, Any]:
         """Search the product's source for a regular expression. This is what the system
         actually does today — prefer it over assuming.
 
         Args:
-            pattern (str): A regular expression, e.g. "REMINDER_DAYS".
-            glob (str): Which files to search, e.g. "**/*.py".
+            pattern (str): A regular expression, e.g. "REMINDER_DAYS" or "getRelatedNews".
+            glob (str): Which files to search. The default searches every source file;
+                narrow it like "**/*.py" or "src/**/*.ts" when the language is known.
         """
         if code is None:
             return {"status": "unavailable", "error": "the codebase is not configured"}
