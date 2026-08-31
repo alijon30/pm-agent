@@ -5,7 +5,8 @@ Linear board · graph · console · GCP console) and a terminal for the one comm
 narration below is written the way you'd actually say it — don't read it, tell it. If your
 words are better, use yours.
 
-Pre-flight is in `docs/demo-runbook.md`. One rule: the clock stays on screen. Everything
+Pre-flight is in `docs/demo-runbook.md`; the clickable tab kit (live pages + GCP
+console links) is on the Recording Desk artifact. One rule: the clock stays on screen. Everything
 this agent does in "about a minute" has to be *visibly* about a minute.
 
 ---
@@ -56,7 +57,8 @@ itself off as the work happens.
 
 Type in the channel: `@pm-agent from now on, assign frontend bugs to Priya`
 
-It replies: *"Noted — frontend bugs go to Priya from now on."*
+It reacts 👀 instantly, drops *"✻ On it…"* in the thread — and that same message becomes:
+*"Noted — frontend bugs go to Priya from now on."*
 
 > While it's busy — you can just talk to it. "From now on, assign frontend bugs to Priya."
 > …and, "Noted." That's not a settings page. It stored who said that and where, and the
@@ -106,7 +108,7 @@ Open the follow-through post in the thread.
 
 Ask for one yourself: `@pm-agent keep an eye on INV-41 until Wednesday`
 
-It answers in-thread with dated checks.
+👀, then *"✻ On it…"* — which becomes the dated checks.
 
 > And you can just ask for your own. "Keep an eye on INV-41 until Wednesday." There —
 > dated checks, in the thread, with what it'll do if they fail.
