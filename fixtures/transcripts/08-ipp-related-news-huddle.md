@@ -1,7 +1,7 @@
 # InterviewPrepPro — related articles huddle
 
 Eighth fixture: the ON-CAMERA call. Two voices, under a minute, one fresh finding no earlier
-call has used. Every claim matches `newsUtils.ts` exactly: `getRelatedNews` (line 71) excludes
+call has used, plus a re-raise of the seeded pricing ticket so an update lands as a comment. Every claim matches `newsUtils.ts` exactly: `getRelatedNews` (line 71) excludes
 by bare numeric id — ids restart from one in every content list — then takes the first three
 of the same type, with no relevance at all.
 
@@ -20,4 +20,6 @@ from Tom, so the priority and date gates both fire on camera.
 
 [00:38] Nodir Rahimov: I'm heads-down on the sign-in work, so I can't take this one. The fix itself is small — the exclusion needs a composite key, the type and the list rather than the bare number, and the rail should match on category before it slices.
 
-[00:47] Tom Alvarez: Okay. Let's get an owner on it right after this call. That's all I had.
+[00:47] Tom Alvarez: Okay. Let's get an owner on it right after this call. One more thing — the pricing page. We already have a ticket for building it, so don't file a new one, but the nav links to it today and just 404s. Can we get that noted on the existing ticket?
+
+[00:58] Nodir Rahimov: Noted works for me. That's everything.
