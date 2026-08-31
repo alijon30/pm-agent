@@ -110,24 +110,33 @@ The bad runs matter more than the good ones. Quota starvation and small-model va
 recall, but the guarantees held every time: fewer tickets, never a false one. Full results in
 `evals/results/`.
 
-## Run it
+## Try it
+
+The live instance is the easiest way: open the
+[graph](https://pm-agent-999960779013.us-central1.run.app/console/graph) and the
+[console](https://pm-agent-999960779013.us-central1.run.app/console).
+
+To run your own:
 
 ```
-uv sync --dev
-cp .env.example .env          # fill in GOOGLE_API_KEY
-uv run ruff check . && uv run mypy app && uv run lint-imports && uv run pytest -q
+uv sync
+cp .env.example .env          # fill in GOOGLE_API_KEY at minimum
+uv run --env-file .env uvicorn app.main:create_default_app --factory --port 8080
 ```
 
-Anything needing credentials takes `--env-file .env`:
+Then feed it a call (no Fathom account needed, the webhook payload carries the transcript):
 
 ```
-uv run --env-file .env python scripts/list_models.py
-uv run --env-file .env pytest -m live
+uv run --env-file .env python scripts/send_call.py \
+  fixtures/transcripts/03-pdf-incident-huddle.md \
+  --url http://127.0.0.1:8080/webhooks/fathom \
+  --title "PDF incident huddle" --recording-id demo1
 ```
 
-Deploy: `deploy/deploy.sh` and `deploy/scheduler.sh`; runbook and required Firestore indexes
-in `deploy/secrets.md`. To feed it a call without Fathom:
-`uv run --env-file .env python scripts/send_call.py fixtures/transcripts/03-pdf-incident-huddle.md --title "PDF incident huddle" --recording-id demo1`
+Deploying to Cloud Run: `deploy/deploy.sh` and `deploy/scheduler.sh`; the runbook and the
+Firestore indexes you'll need are in `deploy/secrets.md`.
+
+Tests, if you're changing things: `uv run pytest -q` (856 tests, no credentials needed).
 
 The demo company (Acme Invoicing — roster, calls, codebase at
 [alijon30/acme-invoicing](https://github.com/alijon30/acme-invoicing)) is synthetic. The
