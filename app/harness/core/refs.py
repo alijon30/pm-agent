@@ -1,8 +1,4 @@
-"""A typed reference, as a person reads it.
-
-`linear:INV-26` is the shape a gate checks and the shape an agent writes; it is not the shape
-anyone should have to read. This turns one into the other, and lives in core because Slack, the
-console, the graph and the report all show citations and must all shorten them identically."""
+"""A typed reference, as a person reads it."""
 
 from __future__ import annotations
 
@@ -13,8 +9,7 @@ REF = re.compile(r"^([a-z]+):(.+)$", re.IGNORECASE)
 
 def ref_chip(ref: str) -> str:
     """`linear:INV-26` becomes "INV-26", a Fathom moment becomes "call @ 1:58", a decision id
-    becomes "decided on the call". Anything whose kind we do not know comes back untouched — a
-    reference we cannot shorten is still true."""
+    becomes "decided on the call". Anything whose kind we do not know comes back untouched."""
     match = REF.match((ref or "").strip())
     if not match:
         return (ref or "").strip()
@@ -42,8 +37,7 @@ def ref_chip(ref: str) -> str:
 
 
 def ref_chips(refs: list[str] | tuple[str, ...]) -> list[str]:
-    """Readable citations, in order, without repeats — three decisions cited on one claim are
-    one "ledger", not three."""
+    """Readable citations, in order, without repeats."""
     chips: list[str] = []
     for ref in refs or []:
         chip = ref_chip(str(ref))

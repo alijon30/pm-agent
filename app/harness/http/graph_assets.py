@@ -1,9 +1,7 @@
 """The graph page's stylesheet and script, kept out of console.py so that file stays about
-data. Both are strings the page inlines: no CDN, no bundler, no build step."""
+data."""
 
 GRAPH_STYLE = """
-/* A tracker, not a starfield. Flat surfaces, one accent used sparingly, and structure carried
-   by alignment rather than by glow — the vocabulary a Linear user already reads fluently. */
 :root {
   --bg:#08090a; --surface:#141516; --surface-2:#1a1b1e; --border:#1f2023; --border-hi:#2a2b2f;
   --text:#f7f8f8; --text-2:#d0d6e0; --muted:#8a8f98; --faint:#5c5f66;
@@ -93,7 +91,6 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 .lane { position:absolute; left:0; border-top:1px solid var(--border); }
 .lane-tag { position:absolute; left:12px; right:8px; }
 .lane-name { font-size:0.85rem; color:var(--muted); }
-/* A stranger has no idea what "Understood" is a row of. */
 .lane-about { font-size:0.77rem; color:var(--faint); line-height:1.3; margin-top:1px; }
 .lane-none { position:absolute; font-size:0.85rem; color:var(--faint); padding-left:12px;
   white-space:nowrap; }
@@ -124,8 +121,6 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 .n.sel .issue { box-shadow:inset 2px 0 0 var(--accent); }
 
 /* An issue reads like a row in a tracker. */
-/* A title is the content, so it gets two lines before it is ever cut. */
-/* Given room, a title is shown rather than cut. Truncation is a last resort, not a default. */
 .issue { width:20rem; max-width:22rem; min-height:2.15rem; display:flex; align-items:flex-start;
   gap:0.54rem; padding:0.46rem 0.62rem; }
 .issue .ico, .issue .bars, .issue .disc { margin-top:1px; }
@@ -565,10 +560,6 @@ function pitchOf(lane, row) {
 }
 
 function fitRem(data) {
-  // The type scales up on a big monitor, but not past the point where the week stops fitting.
-  // Everything visible at slightly smaller type beats bigger type behind a scrollbar, and it
-  // is a better lever than squeezing the columns: nothing gets narrower than it was designed
-  // to be, the whole page just steps down a size.
   // The ceiling is what the stylesheet wants, not what a previous pass left behind: measure
   // with the inline override cleared, or a second layout reads its own 13px as the ceiling,
   // decides nothing needs doing, clears the override, and the page snaps to 17px around a
@@ -659,11 +650,6 @@ function layout(data) {
     laneLines[lane][row] = Math.max(laneLines[lane][row] || 0, lines);
   }
 
-  // A lane is exactly as tall as its rows need. Stretching lanes to fill the viewport left
-  // three hundred pixels of empty ground under one row of cards and made a busy week read as
-  // an empty one — a page that ends where its content ends is the honest shape.
-  // What each lane needs, then what the screen can give it. A 27-inch monitor showing content
-  // in its top third is a page that decided the viewport was somebody else's problem.
   laneNeed = {};
   const need = laneNeed;
   for (const lane of LANES) {
@@ -683,25 +669,18 @@ function layout(data) {
   let y = u(TUNING.head);
   for (const lane of LANES) {
     laneTop[lane] = y;
-    // Filling the screen with empty ground is not better than ending early, so a lane takes
-    // its share only up to half again what is actually in it. What no lane will take stays
-    // below the grid as plain background.
     const share = sharing.includes(lane)
       ? Math.round(spare * (LANE_SHARE[lane] / shareTotal)) : 0;
     laneHeight[lane] = Math.min(need[lane] + share,
                                 Math.round(need[lane] * LANE_STRETCH_CAP));
     y += laneHeight[lane];
   }
-  // Rows may breathe into the room they were given, but only so far — past this the lane is
-  // a list of things floating apart rather than a row of work.
   laneStretch = {};
   for (const lane of LANES) {
     const rows = laneLines[lane].primary || 1;
     const room = laneHeight[lane] - u(TUNING.lanePad);
     laneStretch[lane] = Math.min(1.25, Math.max(1, room / (rows * pitchOf(lane, "primary"))));
   }
-  // The grid ends where the work ends. Stretching the last lane to the bottom of the window
-  // drew a lane-height band of nothing under the final row.
   contentHeight = Math.max(y, stage.clientHeight - u(4));
   diagramHeight = Math.max(contentHeight, stage.clientHeight);
 
@@ -1223,7 +1202,6 @@ function openPanel(node) {
   if (keys.length || node.when_note || origin) {
     panelBody.appendChild(el("div", "p-head", "Properties"));
     if (node.when_note) panelBody.appendChild(factRow("when", node.when_note));
-    // "From a call: Yes" told a reviewer nothing. Which call, and one click to it.
     if (origin && node.type !== "meeting") {
       panelBody.appendChild(linkRow("From", origin));
     }
@@ -1475,8 +1453,6 @@ fetch("/console/graph.json")
   .then((data) => {
     build(data);
     requestAnimationFrame(frame);
-    // A minute is slow enough to be free and fast enough that a page left open on a wall is
-    // never more than a tick behind the agent.
     window.setInterval(poll, 60000);
   })
   .catch(() => { document.getElementById("empty").style.display = "flex"; });

@@ -1,10 +1,5 @@
 """Fire a fixture transcript at the Fathom webhook as if the call just ended.
 
-The webhook payload carries the transcript itself, so a demo call does not need Fathom to
-host it — this signs a Standard-Webhooks request exactly the way Fathom does and posts it.
-The pipeline that runs is the production pipeline; nothing downstream knows the difference,
-which is the point.
-
     uv run --env-file .env python scripts/send_call.py \\
         fixtures/transcripts/02-sprint1-kickoff.md \\
         --title "Sprint 1 kickoff sync" --recording-id call_s1_kickoff_20260828
@@ -46,8 +41,7 @@ def parse_segments(text: str) -> list[dict[str, str]]:
                 "text": match.group(3).strip(),
             })
         elif bold:
-            # The older fixture format: `**Name:** words`, no spoken timestamps. Twenty
-            # seconds a turn is close enough for a citation to point at the right moment.
+            # Older `**Name:** words` fixtures have no timestamps; synthesize ~20s a turn.
             n = len(segments)
             segments.append({
                 "timestamp": f"{n // 3:02d}:{(n * 20) % 60:02d}",

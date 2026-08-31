@@ -1,12 +1,4 @@
-"""What the agent did, counted.
-
-The console's journal answers "what happened"; this answers "how much, and can I trust it".
-Both read the same documents — there is no second record and no new query. A tile may say 0,
-because a dashboard reporting zero calls this sprint is telling the truth, whereas a journal
-line saying "filed 0 issues" is filling space.
-
-Every function here is pure and takes its clock from the caller, so a number a judge reads is
-a number a test can pin."""
+"""What the agent did, counted."""
 
 from __future__ import annotations
 
@@ -28,8 +20,7 @@ def _at(value: Any) -> datetime | None:
 
 
 def in_window(stamp: Any, start: str, end: str) -> bool:
-    """Whether a timestamp falls inside the sprint. A sprint with no dates holds everything —
-    the alternative is a dashboard that reads zero because nobody filled in a field."""
+    """Whether a timestamp falls inside the sprint. A sprint with no dates holds everything."""
     if not start or not end:
         return True
     moment = _at(stamp)
@@ -77,8 +68,7 @@ def spoken_duration(minutes: float | None) -> str:
 def call_to_ticket(events: list[Doc], tasks: list[Doc]) -> float | None:
     """How long a call takes to become filed tickets, in minutes, as a median.
 
-    From the moment the recording arrived to the moment its act stage finished — the span a
-    person actually waits, not the span the model was running."""
+    From the moment the recording arrived to the moment its act stage finished."""
     arrived = {
         str(e["id"]): _at(e.get("received_at"))
         for e in events if e.get("provider") == "fathom"
@@ -95,10 +85,7 @@ def call_to_ticket(events: list[Doc], tasks: list[Doc]) -> float | None:
 
 
 def days_saved(tasks: list[Doc]) -> int:
-    """Whole days between when an early check was due and when it actually resolved.
-
-    This is the number the early-resolution path exists to produce: the agent found out that
-    work was done before it had promised to look."""
+    """Whole days between when an early check was due and when it actually resolved."""
     saved = 0.0
     for task in _checks(tasks):
         if not (task.get("result") or {}).get("early"):
@@ -134,8 +121,7 @@ def sprint_stats(
     sprint = project.get("sprint") or {}
     start, end = str(sprint.get("start") or ""), str(sprint.get("end") or "")
 
-    # Distinct conversations, not extract runs: a call replayed after a flake ran extract
-    # twice and is still one call.
+    # Distinct conversations, not extract runs: a replayed call is still one call.
     heard = len({
         origin(str(t.get("root_event_id") or "")) or str(t["id"])
         for t in _done(tasks, "extract", start, end)
@@ -153,8 +139,6 @@ def sprint_stats(
     watching = sum(1 for t in _checks(tasks) if t.get("status") in ("queued", "blocked"))
 
     return [
-        # What it is holding right now comes first: on a narrow screen the tile that wraps
-        # should be the least urgent, not the most.
         tile("Open watches", watching, f"next: {next_check}" if next_check else ""),
         tile("Calls heard", heard),
         tile("Decisions recorded", said),
@@ -165,7 +149,7 @@ def sprint_stats(
 def working_stats(
     tasks: list[Doc], actions: list[Doc], events: list[Doc], project: Doc, today: str,
 ) -> list[dict[str, Any]]:
-    """How the loop behaves — the numbers that say it is a system and not a demo."""
+    """How the loop behaves."""
     policy = project.get("policy") or {}
     quiet = list(policy.get("quiet_hours") or ["18:00", "09:00"])
     writes = sum(1 for a in actions if a.get("day") == today
@@ -184,13 +168,9 @@ def working_stats(
 def trust_stats(
     tasks: list[Doc], actions: list[Doc], corrections: list[Doc],
 ) -> list[dict[str, Any]]:
-    """The claims a judge is entitled to check. Every one is a count of something written
-    down at the time, not a score computed afterwards."""
+    """The claims a judge is entitled to check."""
     cited, filed = coverage(actions)
-    # Every reference an action carries was re-fetched through the identifier gate before the
-    # action was allowed to happen, so counting them counts what was verified. The gate names
-    # on `checks_passed` are the per-item gates (dates, priority, roster); identifier checking
-    # happens upstream at reconcile and leaves its evidence here, as the citations themselves.
+    # Every citation was re-fetched through the identifier gate, so counting them counts verified.
     verified = sum(len(a.get("citations") or []) for a in actions)
     gates = sum(len(a.get("checks_passed") or []) for a in actions)
     reverted = sum(1 for a in actions if a.get("reverted_at") or a.get("status") == "reverted")
@@ -203,8 +183,7 @@ def trust_stats(
              f"{bounced} retried after feedback" if bounced else "no gate needed a retry"),
         tile("Reverted", reverted, "one click, from the Slack message"),
     ]
-    # A tile for a record this project does not keep would be furniture — and the Brain
-    # section right below the tiles already lists every entry, so it gets no tile at all.
+    # A tile for a record this project does not keep would be furniture.
     if corrections:
         out.append(tile("Corrections", len(corrections), "taught by a human"))
     return out

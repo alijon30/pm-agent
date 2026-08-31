@@ -1,14 +1,4 @@
-"""The audit log: one document per side effect the harness performed.
-
-Intent before effect. Every write is recorded as `pending` *before* it happens and marked `done`
-after, carrying the exact payload that would undo it. Two properties fall out of that:
-
-- a crash between the write and the mark is recoverable — the next attempt finds the pending
-  action by its idempotency key and does not write twice;
-- revert is data, not a special code path per action kind.
-
-`counts_today` is what the caps gate reads, so the split between a write (a ticket nobody is
-woken by) and a ping (a message that interrupts a person) is decided here, once."""
+"""The audit log: one document per side effect the harness performed."""
 
 from __future__ import annotations
 

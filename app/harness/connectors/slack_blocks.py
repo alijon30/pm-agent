@@ -1,13 +1,4 @@
-"""Block Kit builders. Pure functions: dicts in, dicts out, no I/O — so the exact shape of what
-the team sees is unit-testable, and the summary can never fail the run that produced it.
-
-The copy rule for everything in this module: a team lead reads these messages at a glance,
-between other things. So nothing here prints the vocabulary this system happens to use for
-itself — no task kinds, no ISO timestamps, no typed references, no counts of zero. The agent
-says what it did and what it will do, in the words a colleague would use.
-
-Slack rejects a message with more than 50 blocks, so every builder truncates and says so rather
-than losing the whole post."""
+"""Block Kit builders. Pure functions: dicts in, dicts out, no I/O."""
 
 from __future__ import annotations
 
@@ -36,8 +27,7 @@ MAX_BLOCKS = 50
 REVERT_ACTION = "revert"
 WRONG_ACTION = "wrong"
 
-# Charter rule 10: three to five one-line bullets. A standup that grows with the backlog stops
-# being read, so the ceiling is enforced here rather than hoped for.
+# Charter rule 10: three to five one-line bullets.
 STANDUP_BULLETS = 5
 
 SECTION_TITLES = {
@@ -99,10 +89,7 @@ def call_summary_blocks(
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """One message per call: what was filed, what was skipped, what disagrees, and a revert
-    button per action performed.
-
-    The headline counts only what happened. A call that filed two tickets says "filed 2
-    tickets" and stops — nobody needs to be told that nothing was skipped."""
+    button per action performed."""
     title = meeting.get("title") or "call"
     url = meeting.get("url") or ""
     heading = f"*<{url}|{title}>*" if url else f"*{title}*"
@@ -155,7 +142,7 @@ def call_summary_blocks(
 
 def _from_the_call(item: dict[str, Any], now: datetime | None) -> str:
     """A date the agent resolved is a small inference, so it says where it came from in the same
-    breath rather than leaving a reader to trust it. One clause, never a footnote."""
+    breath."""
     due, spoken = str(item.get("due") or ""), str(item.get("due_hint") or "")
     if not due:
         return ""
@@ -169,11 +156,7 @@ def what_happened(
     skipped: list[dict[str, Any]],
     conflicts: list[dict[str, Any]],
 ) -> str:
-    """What came out of a call, as a sentence somebody would say.
-
-    "filed 2 tickets · updated 1 · 1 conflict · 1 skipped" is a receipt. A colleague says "two
-    new tickets, one update to INV-26, and one thing I need a human on" — same facts, and the
-    reader learns what is being asked of them."""
+    """What came out of a call, as a sentence somebody would say."""
     parts: list[str] = []
     if created:
         parts.append(f"{spelled(len(created))} new {'ticket' if len(created) == 1 else 'tickets'}")
@@ -186,18 +169,14 @@ def what_happened(
                      "I need a human on")
     if skipped and not parts:
         parts.append(f"{spelled(len(skipped))} thing{'' if len(skipped) == 1 else 's'} left out")
-    # A clause, not a sentence: it is read after "Sprint 1 kickoff sync — ", where a capital
-    # letter mid-line is the tell that a machine assembled it.
+    # A clause, not a sentence: it is read after "Sprint 1 kickoff sync — ".
     return sentence_list(parts) or "nothing needed filing"
 
 
 def _promises(
     tasks: list[dict[str, Any]], owners: dict[str, str] | None = None, now: datetime | None = None
 ) -> str:
-    """One line per scheduled check: when, what, and who I'll go to if the answer is no.
-
-    "if not, I'll nudge the assignee" describes this system to itself. "if not, I'll check in
-    with Nodir" is a promise a person can hold me to."""
+    """One line per scheduled check: when, what, and who I'll go to if the answer is no."""
     lines: list[str] = []
     for task in tasks:
         issue = str((task.get("params") or {}).get("issue") or "")
@@ -237,16 +216,12 @@ def plan_summary_blocks(
     tasks: list[dict[str, Any]], trimmed: list[str], owners: dict[str, str] | None = None,
     now: datetime | None = None, defaulted: bool = False,
 ) -> list[dict[str, Any]]:
-    """The agent saying what it will check, and when — the visible half of the planner.
-
-    Each line is a promise with a date and a named person, because "check_pr_exists on
-    2026-09-04" tells a reader nothing they can act on."""
+    """The agent saying what it will check, and when — the visible half of the planner."""
     if not tasks:
         return [_section("_Nothing needs watching right now._")]
     blocks = [_section("Here's how I'll follow through:\n" + _promises(tasks, owners, now))]
     if defaulted:
-        # Said once, not per line: the assumption is about all of them, and a clause repeated
-        # three times stops being an assumption and becomes noise.
+        # Said once, not per line: the assumption is about all of them.
         blocks.append(_context("I picked these dates myself — nobody named one on the call."))
     if trimmed:
         blocks.append(_context(
@@ -282,8 +257,7 @@ def report_blocks(report: dict[str, Any], sprint: dict[str, Any]) -> list[dict[s
 
 
 def _since_yesterday(since: dict[str, Any]) -> str:
-    """What changed overnight, named. "1 check came back clear · 2 issues moved" is a scoreboard;
-    "Priya got INV-26 moving; INV-25 moved too" tells you who did what."""
+    """What changed overnight, named."""
     movers: list[str] = []
     for mover in since.get("movers") or []:
         who, issue = first_name(str(mover.get("who") or "")), str(mover.get("issue") or "")
@@ -319,9 +293,7 @@ def standup_blocks(
 ) -> list[dict[str, Any]]:
     """The message the agent sends before anybody asks it anything.
 
-    Three to five one-line bullets under one greeting, and no headings — a heading over two
-    bullets is a form, not a note from a colleague. A quiet day says so in two lines rather than
-    padding itself out to look busy."""
+    Three to five one-line bullets under one greeting, and no headings."""
     day = sprint_day(sprint, today)
     greeting = f"Morning — {day}." if day else "Morning."
     happened = _since_yesterday(since)
@@ -331,8 +303,7 @@ def standup_blocks(
         when = f" before {when_phrase(next_due, now)}" if next_due and now else ""
         return [_section(f"*{greeting}*\nQuiet day ahead — nothing due{when}.")]
 
-    # What is slipping is never trimmed; a day with four things at risk should not spend its
-    # lines on what is merely scheduled.
+    # What is slipping is never trimmed.
     room = max(0, STANDUP_BULLETS - len(at_risk) - (1 if happened else 0))
     lines: list[str] = []
     for task in watching[:room]:
@@ -355,9 +326,7 @@ def standup_blocks(
 
 
 def _about(sentence: str, issue: str, title: str) -> str:
-    """Put what a ticket is next to its key, once, inside a sentence that already names it.
-    "checking whether INV-27 has started" becomes "checking whether INV-27 (the duplicate
-    reminders bug) has started" — the reader stops having to remember what INV-27 was."""
+    """Put what a ticket is next to its key, once, inside a sentence that already names it."""
     phrase = issue_phrase(issue, title)
     return sentence.replace(issue, phrase, 1) if issue and phrase != issue else sentence
 

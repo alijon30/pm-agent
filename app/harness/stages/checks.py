@@ -1,12 +1,4 @@
-"""The checks the agent scheduled for itself, and what it does when one comes back unmet.
-
-This is the half of autonomy people actually feel. Filing a ticket is cheap; coming back three
-days later to see whether it moved — and saying something, once, to the right person, at a
-reasonable hour — is the part that makes the agent useful rather than noisy.
-
-Every executor is deterministic and answers one question with a yes or a no plus what it saw. An
-unreachable source is neither: it records `unavailable` and nudges nobody, because interrupting
-someone over a network failure is worse than staying quiet."""
+"""The checks the agent scheduled for itself, and what it does when one comes back unmet."""
 
 from __future__ import annotations
 
@@ -47,8 +39,7 @@ async def check_issue_state(task: Doc, deps: Deps) -> tuple[bool, dict[str, Any]
     }
     if state.lower() in expected:
         return True, seen
-    # The team went past the state we were waiting for. That is not a miss — asking whether
-    # finished work has started reads as not having noticed it finished.
+    # A done issue past the expected state is met, not a miss.
     if state.lower() in DONE_STATES:
         return True, {**seen, "moot": True, "reason": "issue is done"}
     return False, seen
@@ -57,10 +48,8 @@ async def check_issue_state(task: Doc, deps: Deps) -> tuple[bool, dict[str, Any]
 async def _already_done(task: Doc, deps: Deps) -> dict[str, Any] | None:
     """The issue this check is about, if the team has already finished it.
 
-    A check exists to chase work that is still open. Once the issue is done there is nothing
-    left to chase, and asking "where is the pull request?" about finished work is the rudest
-    thing this agent can do — it reads as not paying attention. None when the issue is still
-    open, and None when the tracker cannot say, because an outage is not an answer."""
+    None when the issue is still open, and None when the tracker cannot say — an outage is
+    not an answer."""
     identifier = str(task["params"].get("issue") or "")
     if deps.linear is None or not identifier:
         return None
@@ -170,8 +159,7 @@ def _values(
     observed: dict[str, Any], person: dict[str, Any] | None, now: datetime
 ) -> dict[str, str]:
     """Everything a template needs, already in the voice: a first name, a ticket that reads as a
-    thing, a day rather than a date. The person is mentioned because a nudge is asking them to
-    do something and a name they never see is not a nudge."""
+    thing, a day rather than a date."""
     pr_url = str(observed.get("pr_url") or "")
     return {
         "person": first_name(person, mention=True) or "Nobody's on this",
@@ -187,11 +175,7 @@ def _values(
 
 async def on_unmet(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]:
     """Say something, once, to one person, within the project's limits. Returns the action ids
-    performed — empty when the agent decided to stay quiet, which is a real outcome.
-
-    Who hears about it depends on who asked for the check: `ping_requester` answers the teammate
-    who commissioned it, in their own thread, because they are the one waiting. Everything else
-    goes to the project channel and is addressed to the owner."""
+    performed — empty when the agent stayed quiet."""
     action = task.get("on_unmet") or "none"
     if action == "none" or observed.get("status") != "ok":
         return []
@@ -203,8 +187,7 @@ async def on_unmet(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]
 
     requester = requester_of(task) if action == "ping_requester" else None
     if action == "ping_requester" and requester is None:
-        # Commissioned by nobody: there is no one to answer, and the assignee never agreed to
-        # anything, so the agent stays quiet.
+        # Commissioned by nobody: there is no one to answer, so stay quiet.
         return []
     channel = (requester or {}).get("channel") or project.get("slack_channel_id")
     if not channel:
@@ -213,8 +196,7 @@ async def on_unmet(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]
     allowed = check_caps("ping", await deps.actions.counts_today(task["project_id"]),
                          deps.clock.now(), project.get("policy") or {})
     if not allowed.ok:
-        # Deferring the whole task, not just the message: when it runs again it will re-observe,
-        # and by then the nudge may no longer be warranted at all.
+        # Defer the whole task, not just the message, so the rerun re-observes first.
         await deps.queue.defer(task, allowed.defer_until or deps.clock.now(), allowed.reason)
         return []
 
@@ -251,12 +233,7 @@ async def on_unmet(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]
 
 
 async def first_look(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[str]:
-    """The first check of a commitment reports back; the rest go quiet.
-
-    Somebody asked for this and heard a promise. If the promise then works perfectly they hear
-    nothing at all, and a watch you cannot tell is running is one you stop believing in. So the
-    first check that comes back met says so once, tells them the silence that follows is the
-    good outcome, and never speaks again unless something changes."""
+    """The first check of a commitment reports back; the rest go quiet."""
     requester = requester_of(task)
     parent = str(task.get("parent_task_id") or "")
     if requester is None or not parent or observed.get("status") != "ok":
@@ -264,8 +241,7 @@ async def first_look(task: Doc, deps: Deps, observed: dict[str, Any]) -> list[st
     channel = requester["channel"]
     if deps.slack is None or deps.actions is None or not channel:
         return []
-    # This task is still leased while its handler runs, so any done sibling is an earlier check
-    # of the same commitment — and this is only the first look when there are none.
+    # This task is still leased, so any done sibling is an earlier check of the same commitment.
     earlier = await deps.db.query(
         "tasks", [("parent_task_id", "==", parent), ("status", "==", "done")], limit=50
     )

@@ -1,8 +1,4 @@
-"""Time, injectable, and how a moment is written down for a person.
-
-Everything that reads the clock takes a Clock so tests can move time. The two human formatters
-live here rather than with any one surface because Slack, the console and the graph must all
-write the same date the same way."""
+"""Time, injectable, and how a moment is written down for a person."""
 
 from __future__ import annotations
 
@@ -33,8 +29,7 @@ def parse_iso(value: str) -> datetime:
 
 
 def readable(value: str) -> datetime | None:
-    """An ISO string as a datetime, or None. Tolerant on purpose: callers format what they can
-    and leave out what they cannot, rather than raising over a field that was always optional."""
+    """An ISO string as a datetime, or None."""
     try:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
@@ -54,11 +49,8 @@ def human_due(value: str) -> str:
 
 
 def human_delta(value: str, now: datetime) -> str:
-    """How far off something is, said the way someone waiting would say it.
-
-    An absolute time answers "when"; a person looking at a queue is asking "how soon". Minutes
-    while it is minutes, hours while it is today, "tomorrow 09:00" once the date turns — and a
-    plain date beyond that, where the hour stops mattering."""
+    """How far off something is, said the way someone waiting would say it. Minutes, then
+    hours, then "tomorrow 09:00", then a plain date."""
     when = readable(value)
     if when is None:
         return ""
@@ -80,10 +72,7 @@ def human_delta(value: str, now: datetime) -> str:
 
 def when_phrase(value: str, now: datetime) -> str:
     """A date as somebody would say it out loud: "today", "tomorrow", "Monday", "Sep 4".
-
-    Different from human_delta, which answers "how soon" for a queue. This answers "when" for a
-    sentence — "it was meant to be underway today" — and a weekday is what a person uses inside
-    the week they are living in."""
+    Different from human_delta, which answers "how soon"; this answers "when"."""
     when = readable(value)
     if when is None:
         return ""
@@ -104,10 +93,7 @@ def when_phrase(value: str, now: datetime) -> str:
 
 
 def stamp_local(value: str, tz: Any) -> str:
-    """"Aug 29 09:00" in the team's own timezone — the same shape the graph draws.
-
-    A standup posted at 9am in California read as "16:00" when the console wrote UTC, which
-    makes the agent look like it ran at the wrong time."""
+    """"Aug 29 09:00" in the team's own timezone — the same shape the graph draws."""
     moment = readable(value)
     if moment is None:
         return ""
@@ -116,11 +102,7 @@ def stamp_local(value: str, tz: Any) -> str:
 
 
 def sprint_day(sprint: dict[str, Any], today: str) -> str:
-    """"day 3 of Sprint 1", or nothing at all. A sprint is a shared sense of where in the week
-    everyone is, and it is the one number that makes a standup feel situated.
-
-    Lives here rather than beside the Slack blocks because the console says it too, and the
-    console may not reach a connector."""
+    """"day 3 of Sprint 1", or nothing at all."""
     start, name = str(sprint.get("start") or ""), str(sprint.get("name") or "")
     first, now = readable(start), readable(today)
     if not name or first is None or now is None:

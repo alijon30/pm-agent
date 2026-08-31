@@ -13,14 +13,11 @@ from pydantic import ValidationError
 from app.harness.kinds.base import KindSpec, StrictParams
 
 # "ping_requester" answers the person who commissioned a check, in the thread they asked in.
-# It exists so a check somebody asked for reports back to them rather than to the assignee, who
-# never agreed to anything.
 UNMET_ACTIONS = (
     "none", "nudge_assignee", "nudge_reviewer", "escalate_channel", "ping_requester",
 )
 
-# Kinds the model may never schedule, and why — a value rather than a comment because GATES.md
-# is generated from this file and a reason nobody can import is a reason that drifts.
+# Kinds the model may never schedule, and why — a value because GATES.md is generated from it.
 NOT_SCHEDULABLE = {
     "intake": "an agent that could schedule its own intakes could talk to itself",
 }

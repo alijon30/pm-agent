@@ -112,8 +112,7 @@ class IdGate:
         if kind == "decision":
             return await self.doc_exists("decisions", target)
         if kind == "wiki":
-            # A brain citation names a page and the entry on it: wiki:<slug>#<entry_id>. The
-            # page is what can be re-fetched, so that is what is checked.
+            # wiki:<slug>#<entry_id> — only the page can be re-fetched, so only the slug is checked.
             slug, _, _entry = target.partition("#")
             return await self.doc_exists("wiki_pages", slug)
         if kind == "fathom":

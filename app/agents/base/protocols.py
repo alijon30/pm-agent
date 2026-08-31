@@ -1,5 +1,4 @@
-"""What a stage needs from the model side. Stages depend on these, never on ADK directly, so
-every stage test runs against a fake."""
+"""What a stage needs from the model side."""
 
 from __future__ import annotations
 

@@ -28,8 +28,5 @@ RETRY_SUFFIX = re.compile(r"#retry\d+$")
 
 
 def origin(event_id: str) -> str:
-    """An event id with a replay's suffix taken off.
-
-    A webhook replayed through the replay script carries `#retry2`. It is the same call, and
-    counting or grouping by the raw id turns one conversation into two."""
+    """An event id with a replay's suffix taken off."""
     return RETRY_SUFFIX.sub("", str(event_id or "").strip())

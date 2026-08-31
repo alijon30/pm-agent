@@ -1,19 +1,5 @@
 """Run the whole pipeline against the fixture company and score it against known answers.
 
-Two things make this reproducible for someone who is not us:
-
-- **The world is fake, the agent is real.** Linear, Notion, GitHub and Slack are the same
-  in-memory fakes the test suite uses, seeded from `fixtures/`, so anyone can run this without a
-  workspace, an API key for any of them, or permission to write to a real tracker. The stages,
-  the gates and the queue are the production ones, imported from `app/`.
-- **The clock is fixed.** Due dates, plan horizons and quiet hours all read the clock, so a
-  moving clock would make "the expected answer" a function of when you ran it. `EVAL_NOW` is a
-  weekday mid-afternoon in UTC: outside quiet hours, so the run exercises the posting path.
-
-The one thing that is genuinely live is Gemini. Everything runs on the fast tier — the free
-tier allows 15 requests a minute against it and 5 against the strong tier, and one reconcile is
-several tool round-trips — and `sdk_runner.retrying` waits out the 429s.
-
     uv run --env-file .env python evals/run_evals.py
 """
 
@@ -63,13 +49,11 @@ QUESTIONS = Path(__file__).parent / "questions.jsonl"
 RESULTS = Path(__file__).parent / "results"
 TRANSCRIPT = ROOT / "fixtures" / "transcripts" / "01-q3-planning.md"
 
-# Mid-afternoon UTC on a weekday: inside the write cap, outside quiet hours, so nothing is
-# deferred for a reason that has nothing to do with the agent's judgment.
+# Mid-afternoon UTC on a weekday: inside the write cap, outside quiet hours.
 EVAL_NOW = datetime(2026, 8, 28, 16, 0, tzinfo=UTC)
 MEETING_ID = "8841201"
 
-# The two spec pages the call disagrees with. Kept here rather than in Notion so the conflict
-# the eval asks about is part of the fixture, not part of someone's workspace.
+# The two spec pages the call disagrees with, kept in the fixture rather than in Notion.
 NOTION_PAGES = {
     "page-prd": {
         "title": "Reminders PRD",
@@ -150,9 +134,7 @@ EVAL_SEED: list[tuple[str, str, str, int | None, bool]] = [
 
 
 def seed_rows() -> list[tuple[str, str, str, int | None, bool]]:
-    """The eval world's own backlog. It used to be read from fixtures/linear_seed.py, but the
-    demo workspace moved on to a real product; the eval questions are written against this
-    synthetic company and must not drift when the demo does."""
+    """The eval world's own backlog; the questions are written against it and must not drift."""
     return list(EVAL_SEED)
 
 
@@ -174,13 +156,11 @@ def seed_issues() -> list[dict[str, Any]]:
 
 def project_document() -> dict[str, Any]:
     project: dict[str, Any] = json.loads((ROOT / "fixtures" / "projects" / "acme.json").read_text())
-    # The live project doc now points at the real demo product; the eval transcript's planted
-    # code references live in the synthetic repo, so the eval pins its own world.
+    # The eval transcript's planted code references live in the synthetic repo, so pin it.
     project["name"] = "Q3 Billing"
     project["code_repo"] = "tests/fixtures/acme-invoicing"
     roster: list[dict[str, Any]] = json.loads((ROOT / "fixtures" / "roster.json").read_text())
-    # The demo workspace's real Linear user ids are not in the repo; synthetic ones let the
-    # assignment path run exactly as it does in production.
+    # Synthetic Linear user ids let the assignment path run as it does in production.
     project["roster"] = [
         {**m, "linear_user_id": f"u-{str(m['name']).split()[0].lower()}"} for m in roster
     ]
@@ -288,8 +268,7 @@ async def drain(deps: Deps, *, rounds: int = 20) -> None:
 
 
 async def probe_gates(deps: Deps, project: dict[str, Any], known: str) -> dict[str, Any]:
-    """Two plans the pipeline would never produce, put straight to the gate. A suite that only
-    scores what the model happened to do never learns whether the refusals still work."""
+    """Two plans the pipeline would never produce, put straight to the gate."""
     policy = project.get("policy") or {}
     assert deps.ids is not None
     common = {
@@ -376,8 +355,7 @@ async def execute(deps: Deps, project: dict[str, Any]) -> dict[str, Any]:
         "actions": await deps.db.query("actions", [("project_id", "==", "acme")],
                                        order_by="created_at"),
         "tasks": tasks,
-        # What the plan gate let through into the queue — children of a plan task, whatever
-        # their kind. Every stage's children carry a plan_id, so parentage is the honest filter.
+        # Children of a plan task, whatever their kind — what the plan gate let through.
         "scheduled": [
             t for t in tasks
             if t.get("parent_task_id") in {p["id"] for p in tasks if p["kind"] == "plan"}
@@ -429,18 +407,13 @@ def headline_numbers(rows: list[dict[str, Any]], run: dict[str, Any]) -> dict[st
         "fabricated_identifiers": len(fabricated_identifiers(run)),
         "citation_coverage_pct": round(100 * cited / len(claims), 1) if claims else 0.0,
         "invalid_plans_materialised": invalid_plans_materialised(run),
-        # Whether what the team told the agent actually reached the step that would act on it.
-        # A brain nothing reads is the hole this number exists to expose.
+        # Whether what the team told the agent reached the step that would act on it.
         "brain_reached_the_model": brain_reached(run),
     }
 
 
 def brain_reached(run: dict[str, Any]) -> str:
-    """Of the entries in the brain, how many were handed to a stage that could act on them.
-
-    Not "did the model obey" — that is a judgment question and it has its own row. This is the
-    plumbing question: something stored and never read is worse than not stored, because it
-    looks like memory."""
+    """Of the entries in the brain, how many were handed to a stage that could act on them."""
     entries = [
         entry
         for page in run.get("brain") or []
@@ -532,8 +505,7 @@ def write_results(outcome: dict[str, Any]) -> Path:
 
 
 async def publish(outcome: dict[str, Any]) -> str | None:
-    """Put the run where the console can read it. Only when a GCP project is configured — the
-    suite must be runnable by a judge with no cloud account at all."""
+    """Put the run where the console can read it, only when a GCP project is configured."""
     settings = Settings()
     if not settings.gcp_project:
         return None

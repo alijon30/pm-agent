@@ -1,9 +1,4 @@
-"""The status message as a live checklist: the plan, and where the agent is in it.
-
-The webhook posts the plan the moment a call lands; extract and reconcile tick their step off
-as they finish, each with a short honest note; the act stage then replaces the whole message
-with the call summary, which is the payoff. All of it is decoration — a Slack hiccup here must
-never undo or delay pipeline work, so every edit is best-effort."""
+"""The status message as a live checklist: the plan, and where the agent is in it."""
 
 from __future__ import annotations
 
@@ -30,8 +25,7 @@ DONE = (
 
 
 def spoken(count: int, noun: str) -> str:
-    """`spoken(2, "action item")` → "two action items". Zero is the caller's problem: a step
-    with nothing to say should say something specific, not "zero things"."""
+    """`spoken(2, "action item")` → "two action items"."""
     return f"{spelled(count)} {noun}{'' if count == 1 else 's'}"
 
 
@@ -66,8 +60,7 @@ def checklist(title: str, *, doing: int, notes: dict[int, str] | None = None) ->
 
 async def show(task: Doc, deps: Any, *, title: str, doing: int, notes: dict[int, str]) -> None:
     """Edit the call's status message to the current state of the plan. Quietly does nothing
-    when there is no Slack, no status message, or Slack is down — the record does not depend
-    on the decoration."""
+    when there is no Slack, no status message, or Slack is down."""
     if deps.slack is None:
         return
     from app.harness.stages.act import _status_message

@@ -1,8 +1,5 @@
 """The reconciler: the step that decides whether what was said in a call is already tracked,
-already specified, or already true in the code — and reports when those disagree.
-
-It reads four sources and writes none of them. Its output is a proposal; every identifier it
-names is re-checked by the id gate before anything ships."""
+already specified, or already true in the code — and reports when those disagree."""
 
 from __future__ import annotations
 

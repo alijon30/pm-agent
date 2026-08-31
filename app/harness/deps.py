@@ -1,5 +1,4 @@
-"""Everything a route or a stage needs, in one object, so wiring lives in main.py and tests
-build it from fakes in one place (tests/conftest.py)."""
+"""Everything a route or a stage needs, in one object."""
 
 from __future__ import annotations
 
@@ -55,6 +54,5 @@ class Deps:
     code: Any = None
     slack: Any = None
     github: Any = None
-    # True only for deps built by build_deps(): the app's startup hook finishes the wiring that
-    # needs an async read (roster, project ids) — test deps wire themselves and skip this.
+    # True only for deps built by build_deps(); test deps wire themselves and skip startup wiring.
     wire_on_startup: bool = False

@@ -1,17 +1,4 @@
-"""Triage: the cheap model that decides what is worth the expensive model's attention.
-
-Two jobs, both classification, neither worth an agent loop. Gemma is called directly through the
-GenAI SDK rather than through ADK: there are no tools to offer, no session to keep and no
-structured output to enforce, so a runner would be scaffolding around a single request.
-
-The failure posture is the interesting part, and it is deliberately different for each job:
-
-- **Segment triage never loses content.** A window the model could not classify — a refusal, a
-  malformed answer, a timeout — is kept in full. Dropping a segment silently loses a decision
-  the team made; keeping one costs the extractor a few tokens.
-- **Intent classification defaults to helping.** An unreadable answer becomes "request", because
-  the worst outcome of guessing "request" is that the steward politely says it cannot help,
-  while the worst outcome of guessing "noise" is ignoring a colleague."""
+"""Triage: the cheap model that decides what is worth the expensive model's attention."""
 
 from __future__ import annotations
 
@@ -22,8 +9,6 @@ from typing import Any
 from app.agents.base.sdk_runner import retrying
 
 # Verified against scripts/list_models.py: this key serves gemma-4-26b-a4b-it and gemma-4-31b-it.
-# The 31b is the one used — it is the larger dense model of the two this key can actually reach,
-# and a classifier is the one place where being slightly slower and more literal is a virtue.
 DEFAULT_TRIAGE_MODEL = "gemma-4-31b-it"
 
 INTENTS = ("report", "request", "cancel", "noise")
@@ -62,11 +47,7 @@ One word:"""
 
 
 def parse_flags(text: str, count: int) -> list[bool] | None:
-    """The JSON array Gemma was asked for, or None if what came back was not that.
-
-    Gemma offers no structured-output guarantee, so this assumes nothing: it finds the first
-    bracketed run, refuses anything that is not exactly `count` numbers, and hands the caller a
-    None it knows how to fall back from."""
+    """The JSON array Gemma was asked for, or None if what came back was not that."""
     match = re.search(r"\[[^\[\]]*\]", text or "")
     if match is None:
         return None
@@ -83,9 +64,7 @@ def parse_flags(text: str, count: int) -> list[bool] | None:
 
 
 def parse_intent(text: str) -> str:
-    """The first intent word the answer mentions. Lenient on purpose: "intent: report" and
-    "This is a report request." both mean report, and an answer naming none of them means the
-    model did not understand the question, which is not the sender's fault."""
+    """The first intent word the answer mentions; an answer naming none defaults to "request"."""
     lowered = (text or "").strip().lower()
     found = [(lowered.find(intent), intent) for intent in INTENTS if intent in lowered]
     return min(found)[1] if found else "request"
@@ -94,8 +73,7 @@ def parse_intent(text: str) -> str:
 class PassthroughTriage:
     """Keeps every segment and has no opinion about intent.
 
-    The empty intent is not a classification, it is an abstention: the Slack route reads it as
-    "nobody classified this" and falls back to matching keywords itself."""
+    The empty intent is an abstention: the Slack route falls back to keyword matching."""
 
     async def decision_bearing(self, segments: list[dict[str, Any]]) -> list[bool]:
         return [True] * len(segments)
@@ -119,10 +97,7 @@ class GemmaTriage:
 
             from google import genai
 
-            # Pinned to the API-key path on purpose: the reasoning agents run on Vertex, but
-            # Gemma is not in Vertex's serverless catalog — it lives on the Gemini API, whose
-            # free tier is plenty for a classifier. Without the pin, GOOGLE_GENAI_USE_VERTEXAI
-            # would route this client to Vertex too and every triage call would 404.
+            # vertexai=False: Gemma is not in Vertex's serverless catalog and would 404 there.
             self._client = genai.Client(
                 vertexai=False, api_key=os.environ.get("GOOGLE_API_KEY", "")
             )
@@ -137,8 +112,7 @@ class GemmaTriage:
         return str(getattr(response, "text", "") or "")
 
     async def decision_bearing(self, segments: list[dict[str, Any]]) -> list[bool]:
-        """One call per window of eight lines. Windows are independent, so a failure costs the
-        filter one window's worth of precision and nothing else."""
+        """One call per window of eight lines."""
         flags: list[bool] = []
         for start in range(0, len(segments), SEGMENT_WINDOW):
             flags.extend(await self._window(segments[start:start + SEGMENT_WINDOW]))
@@ -151,17 +125,15 @@ class GemmaTriage:
         )
         prompt = SEGMENT_PROMPT.format(count=len(window), lines=lines)
         try:
-            # Rate limits are worth waiting out here: this runs inside a stage, where a slow
-            # answer costs nothing anyone is watching.
+            # Retried: this runs inside a stage, where a slow answer costs nothing.
             answer = await retrying(lambda: self._ask(prompt, max_output_tokens=64))
         except Exception:  # noqa: BLE001 — every failure has the same safe answer
             return [True] * len(window)
         return parse_flags(answer, len(window)) or [True] * len(window)
 
     async def classify_intent(self, text: str) -> str:
-        """What one Slack message wants. Deliberately not retried: this is on the path that owes
-        Slack a response in three seconds, and a wrong-but-instant guess beats a right-but-late
-        one when the fallback is a keyword match that was good enough yesterday."""
+        """What one Slack message wants. Deliberately not retried: this path owes Slack a
+        response in three seconds."""
         try:
             answer = await self._ask(INTENT_PROMPT.format(text=text), max_output_tokens=8)
         except Exception:  # noqa: BLE001 — a classifier outage must not swallow a request

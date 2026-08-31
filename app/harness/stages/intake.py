@@ -1,16 +1,4 @@
-"""intake: somebody asked the agent for something, and the agent answers.
-
-Everything else in this system is triggered by an event — a call ended, an issue changed, the
-clock struck nine. This is the one stage a person starts, which changes what is owed. A request
-gets exactly one of two replies, in the thread it was made in:
-
-- a commitment: dated checks the requester can hold the agent to, each carrying who asked so the
-  answer comes back to them rather than to whoever happens to own the ticket; or
-- a refusal in one sentence, naming what the agent cannot do.
-
-Silence is not an option, and neither is an agreeable yes the agent cannot keep — the plan gate
-runs on the steward's proposal exactly as it runs on the planner's, so nothing is promised that
-could not be scheduled."""
+"""intake: somebody asked the agent for something, and the agent answers."""
 
 from __future__ import annotations
 
@@ -36,8 +24,7 @@ CHECK_KINDS = tuple(kind for kind in KINDS if kind.startswith("check_"))
 
 
 def commissioned_by(task: Doc) -> dict[str, str]:
-    """Who asked, and where they asked it. Carried into every task the request produces so the
-    answer goes back to the person waiting for it."""
+    """Who asked, and where they asked it."""
     payload = task.get("payload") or {}
     return {
         "requester_slack_id": str(payload.get("requester") or ""),
@@ -48,8 +35,7 @@ def commissioned_by(task: Doc) -> dict[str, str]:
 
 def commission(tasks: list[dict[str, Any]], task: Doc) -> list[dict[str, Any]]:
     """Stamp the requester onto accepted work, and default a check nobody chose an action for to
-    answering the person who asked. A check somebody commissioned that reports to nobody is the
-    one outcome worse than refusing outright."""
+    answering the person who asked."""
     who = commissioned_by(task)
     return [
         {
@@ -65,11 +51,7 @@ def commission(tasks: list[dict[str, Any]], task: Doc) -> list[dict[str, Any]]:
 
 
 def interpretation(request: str, children: list[dict[str, Any]]) -> str:
-    """When the ask named no ticket and the agent picked one, say which — in the same breath.
-
-    Somebody who wrote "keep an eye on the export" needs to know I read that as INV-26, because
-    if I read it wrong the whole commitment is about the wrong thing and the only moment they
-    can cheaply tell me is now."""
+    """When the ask named no ticket and the agent picked one, say which — in the same breath."""
     named = [
         issue for issue in dict.fromkeys(
             str((child.get("params") or {}).get("issue") or "") for child in children
@@ -108,8 +90,7 @@ async def _lessons(deps: Deps, project_id: str) -> list[str]:
 
 
 async def _cancel(task: Doc, identifier: str, deps: Deps) -> StageResult:
-    """Stop the checks this person asked for on this issue — and only theirs. Somebody else's
-    follow-through, and the agent's own, are not theirs to cancel."""
+    """Stop the checks this person asked for on this issue — and only theirs."""
     who = commissioned_by(task)["requester_slack_id"]
     mine = [
         row for row in await deps.db.query(
@@ -135,17 +116,13 @@ async def _cancel(task: Doc, identifier: str, deps: Deps) -> StageResult:
 
 
 def _noted(remembered: dict[str, Any] | None) -> str:
-    """What the agent says back when it has been told something.
-
-    Said in the words a colleague would use, and said once — a rule repeated back as a
-    confirmation dialogue is how a helpful bot becomes an annoying one."""
+    """What the agent says back when it has been told something."""
     if not remembered:
         return ""
     kind, text = str(remembered.get("kind")), str(remembered.get("text") or "")
     person = str(remembered.get("person") or "")
     if kind == "ownership" and person:
-        # The subject is a list of words from one phrase ("frontend bugs"), not a list of
-        # items — joined with spaces so the reply reads like the sentence the person typed.
+        # The subject is words from one phrase, joined with spaces to read like a sentence.
         subject = " ".join(str(w) for w in remembered.get("subject") or []) or "that work"
         return f"Noted — {subject} go to {first_name({'name': person})} from now on."
     # People type rules without a full stop; the agent still writes sentences.
@@ -158,10 +135,7 @@ def _noted(remembered: dict[str, Any] | None) -> str:
 async def _remember(
     memory: dict[str, Any] | None, task: Doc, project: Doc, deps: Deps
 ) -> tuple[dict[str, Any] | None, str]:
-    """File an instruction in the brain. Returns (what was remembered, what to say instead).
-
-    An owner who is not on the roster is the one thing this refuses: a name the agent invented
-    would be handed back to the team for weeks as though they had chosen it."""
+    """File an instruction in the brain. Returns (what was remembered, what to say instead)."""
     if not memory or deps.wiki is None:
         return None, ""
     text = redact(str(memory.get("text") or "")).strip()
@@ -255,9 +229,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
                         "Fix those, keep the rest, and do not promise anything you had to drop.",
         })
 
-    # An instruction is answered with a memory, not a plan. The roster gate applies here for
-    # the same reason it applies to a filed ticket: an owner the agent invented is worse than
-    # no owner, and this one would be repeated back for weeks.
+    # An instruction is answered with a memory, not a plan.
     remembered, refused = await _remember(proposal.get("memory"), task, project, deps)
 
     children = commission(verdict.tasks, task)
@@ -300,9 +272,7 @@ def _fallback_text(children: list[dict[str, Any]], notes: str) -> str:
 async def _reply(
     task: Doc, text: str, children: list[dict[str, Any]], deps: Deps, *, notes: str = ""
 ) -> bool:
-    """Answer in the thread the request was made in. Recorded as an action — unlike the status
-    message, this one is the agent speaking to a person who is waiting, so it belongs in the
-    audit log and carries a revert."""
+    """Answer in the thread the request was made in. Recorded as an action, with a revert."""
     channel = task["payload"].get("channel")
     if deps.slack is None or deps.actions is None or not channel:
         return False
@@ -320,8 +290,7 @@ async def _reply(
     )
     blocks = commitment_blocks(children, notes, now=deps.clock.now())
     try:
-        # The "On it…" the events route left in the thread becomes the answer itself — one
-        # message that fills itself in, not an acknowledgment plus a reply.
+        # The "On it…" ack in the thread is edited into the answer itself.
         if ack.get("ts"):
             await deps.slack.update(str(ack.get("channel") or channel), str(ack["ts"]),
                                     text, blocks)

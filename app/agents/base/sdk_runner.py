@@ -1,9 +1,4 @@
-"""One-shot ADK execution: fresh in-memory session per call, return the final text. Firestore
-is the source of truth for everything durable; ADK session state is scratch.
-
-Rate limits are retried here, inside the attempt, rather than left to the queue's task retry:
-the free tier allows single-digit requests per minute, so a 429 mid-stage is normal operation,
-not a failure worth re-running a whole stage (and re-spending its earlier model calls) over."""
+"""One-shot ADK execution: fresh in-memory session per call, return the final text."""
 
 from __future__ import annotations
 

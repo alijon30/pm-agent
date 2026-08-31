@@ -17,4 +17,4 @@ class SourceUnavailable(PmError):
 
 
 class GateFailed(PmError):
-    """A deterministic gate refused an item. Carries the specific reason for the one bounce."""
+    """A deterministic gate refused an item."""

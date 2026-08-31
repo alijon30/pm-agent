@@ -1,16 +1,5 @@
 """The reviewer: the agent looks at what its own behaviour caused, and writes down what to do
-differently.
-
-This is the smallest possible version of learning, and the smallness is the design. The reviewer
-sees one day of its own outcomes — checks that fired, people it interrupted, work that moved
-afterwards or did not — and may write at most three sentences about how it should plan and
-nudge. It has no tools, cannot read the product, and is given nothing but its own record.
-
-Two rules keep it from becoming a machine for generating opinions. Every lesson must cite the
-task and action references it came from, and the stage drops any lesson whose citations are not
-in the evidence it was handed — so a fluent sentence with an invented source is thrown away.
-And lessons are about the agent, never about the product: an agent that starts forming views on
-what the team should build has quietly changed jobs."""
+differently."""
 
 from __future__ import annotations
 

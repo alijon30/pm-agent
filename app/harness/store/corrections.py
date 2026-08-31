@@ -1,8 +1,4 @@
-"""Corrections: what a human told the agent it got wrong.
-
-A correction is not a rule the model may reinterpret — it is stored with the situation it
-applies to, and later runs receive only the corrections whose matcher fits. The important part
-is that a correction, once given, does not have to be given again."""
+"""Corrections: what a human told the agent it got wrong."""
 
 from __future__ import annotations
 
@@ -59,10 +55,7 @@ class CorrectionStore:
     async def remember(
         self, wiki: Any, project_id: str, *, wrong: str, right: str, source: str, author: str
     ) -> None:
-        """Also file it in the brain, so one reader answers "what have I been told".
-
-        The correction row keeps the stage it belongs to; the brain keeps the sentence. Both
-        point at the same source, so neither is a second version of the truth."""
+        """Also file it in the brain, so one reader answers "what have I been told"."""
         if wiki is None:
             return
         await wiki.add_entry(project_id, "correction", {

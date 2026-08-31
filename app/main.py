@@ -1,10 +1,4 @@
-"""App factory. create_app(deps) is what tests and the server both use; build_deps() is the
-only place real connectors are constructed.
-
-Wiring happens in two steps because part of it needs the database: connectors come from env in
-build_deps(), and everything that depends on the project document — the roster behind the id
-gate, the tools the agents may call — is finished by the startup hook, which is also why a
-missing project makes the service boot loudly degraded instead of crashing."""
+"""App factory: create_app(deps) for tests and the server; build_deps() for real connectors."""
 
 from __future__ import annotations
 
@@ -86,8 +80,7 @@ async def finish_wiring(deps: Deps) -> None:
     deps.steward = GeminiSteward(deps.settings.model_strong, tools)
     # No tools and nothing to look up: the reviewer reads only the agent's own record.
     deps.reviewer = GeminiReviewer(deps.settings.model_fast)
-    # Gemma only when there is a key to call it with; without one the passthrough keeps every
-    # segment, which is the same answer triage gives when it cannot decide.
+    # Gemma only when there is a key; without one the passthrough keeps every segment.
     if os.environ.get("GOOGLE_API_KEY"):
         deps.triage = GemmaTriage(deps.settings.model_triage)
     log.info("wired for project %r: %d roster member(s), %d tool(s)",
@@ -107,8 +100,7 @@ def create_app(deps: Deps) -> FastAPI:
     app.include_router(slack.router)
     app.include_router(console.router)
 
-    # Not /healthz: Google's front end reserves that exact path at the edge and answers 404
-    # before the request ever reaches Cloud Run.
+    # Not /healthz: Google's front end reserves that path at the edge and answers 404 itself.
     @app.get("/health")
     async def health() -> dict[str, Any]:
         return {"ok": True, "wired": deps.reconciler is not None}

@@ -1,5 +1,4 @@
-"""The tiny document-store surface the harness needs. FirestoreDb implements it for real;
-tests use FakeDb. Nothing outside store/ imports google.cloud.firestore."""
+"""The tiny document-store surface the harness needs."""
 
 from __future__ import annotations
 

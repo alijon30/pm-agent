@@ -1,9 +1,4 @@
-"""Linear over GraphQL. Thin transport: build the request, normalise the response, and turn
-every failure into SourceUnavailable — the stages decide what an outage means. Personal API
-keys go in the Authorization header as-is (no Bearer prefix).
-
-`issue_id` arguments accept Linear's identifier (INV-142) as well as the UUID; the harness only
-ever holds identifiers, so that is what it passes."""
+"""Linear over GraphQL."""
 
 from __future__ import annotations
 
@@ -85,8 +80,7 @@ def _norm_issue(raw: dict[str, Any]) -> dict[str, Any]:
         "title": raw.get("title") or "",
         "description": raw.get("description") or "",
         "state": (raw.get("state") or {}).get("name") or "",
-        # Linear's own enum (backlog/unstarted/started/completed/canceled), not the workspace's
-        # display name, so "is this still open?" survives a team renaming its columns.
+        # Linear's own enum, not the display name — survives a team renaming its columns.
         "state_type": (raw.get("state") or {}).get("type") or "",
         "priority": raw.get("priority"),
         "assignee": {"id": assignee["id"], "name": assignee["name"]} if assignee else None,

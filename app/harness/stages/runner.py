@@ -65,10 +65,8 @@ async def run_task(task: Doc, deps: Deps) -> str:
 async def _tell_the_requester(task: Doc, reason: str, deps: Deps) -> None:
     """When work somebody asked for runs out of retries, say so to the person who asked.
 
-    An agent that accepts a request and then quietly gives up is worse than one that refuses:
-    the requester is still waiting, and has no way to know they should stop. This is the only
-    place a failure speaks. Best-effort, capped like any other interruption, and it never raises
-    — the task is already failed and nothing here may change that."""
+    Best-effort, capped like any other interruption, and it never raises — the task is already
+    failed and nothing here may change that."""
     context = task.get("context") or {}
     slack_id = str(context.get("requester_slack_id") or "")
     channel = str(context.get("request_channel") or "")

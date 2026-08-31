@@ -1,9 +1,4 @@
-"""reconcile: take what a call produced and check it against everything that already exists.
-
-The model proposes; this stage verifies. Every identifier the model names is re-fetched before
-the proposal may reach Act, because an issue key that looks right and is wrong is the fastest
-way to lose a team's trust. A source that is down produces `unverified`, never a guess: the
-items that needed it are held back and retried once, and Act simply does not see them."""
+"""reconcile: take what a call produced and check it against everything that already exists."""
 
 from __future__ import annotations
 
@@ -70,11 +65,7 @@ def call_citation(
 ) -> str:
     """The moment in the call this item came from, as a typed reference the gate can check.
 
-    Every item exists because somebody said something, so the call is always citable — and the
-    harness knows which line it was without asking anyone: the item carries the index of the
-    action item it reconciles, and that action item carries the evidence the extractor took it
-    from. Nothing here is inferred. An item whose evidence has no timestamp gets no reference,
-    because a fabricated one would be worse than none."""
+    An item whose evidence has no timestamp gets no reference."""
     if not meeting_id:
         return ""
     index = item.get("index")
@@ -92,10 +83,7 @@ def with_call_citation(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Give every item the call moment it came from, and say which ones could not have one.
 
-    A backstop, not a replacement: the prompt still asks for citations, and everything the model
-    produced is kept. This exists because a smaller model reliably skips the step, and a citation
-    the harness can compute is not worth begging for. The reference it adds is checked by the
-    same identifier gate as the model's own — a citation written here is still a citation."""
+    The reference it adds is checked by the same identifier gate as the model's own."""
     cited: list[dict[str, Any]] = []
     uncitable: list[str] = []
     for item in items:
@@ -119,10 +107,8 @@ def quotes_for(index: int, action_items: list[dict[str, Any]]) -> list[str]:
 def moments_for(index: int, action_items: list[dict[str, Any]], meeting_id: str) -> list[str]:
     """The moment in the call behind each quote in `quotes_for`, position for position.
 
-    The same evidence list in the same order, one entry each — an empty string where a segment
-    carried no timestamp, so the pairing stays aligned instead of silently shifting by one. The
-    reference is built exactly as `call_citation` builds it, from the meeting id the identifier
-    gate re-checks; a quote whose moment nobody recorded gets nothing rather than a guess."""
+    An empty string where a segment carried no timestamp keeps the pairing aligned instead of
+    silently shifting by one."""
     if not 0 <= index < len(action_items):
         return []
     return [
@@ -135,9 +121,8 @@ def moments_for(index: int, action_items: list[dict[str, Any]], meeting_id: str)
 
 
 def speakers_for(index: int, action_items: list[dict[str, Any]]) -> list[str]:
-    """Who said each quote in `quotes_for`, position for position — so the ticket can attribute
-    the words instead of pointing at a machine reference. Empty where the extractor caught the
-    words but not the voice."""
+    """Who said each quote in `quotes_for`, position for position. Empty where the extractor
+    caught the words but not the voice."""
     if not 0 <= index < len(action_items):
         return []
     return [
@@ -149,11 +134,7 @@ def speakers_for(index: int, action_items: list[dict[str, Any]]) -> list[str]:
 def with_investigation_refs(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Cite every file the investigation names.
 
-    A path in a ticket is a claim about the code like any other, so it faces the same gate as an
-    issue key: a file the model did not actually open bounces the item once with that reference
-    named, and a second miss holds it back. Moving the refs into `citations` is what does that —
-    `item_refs` reads them there — and it is also what puts them in the line a human audits the
-    ticket from."""
+    Moved into `citations` so `item_refs` reads them and the identifier gate checks them."""
     cited: list[dict[str, Any]] = []
     for item in items:
         citations = [str(c) for c in item.get("citations") or []]
@@ -191,9 +172,8 @@ DOWNGRADE_PREFIX = (
 def search_words(title: str) -> list[str]:
     """The words worth searching a tracker on, in the order the title said them.
 
-    The leading verb goes ("Put the invoice CSV export…" is not about putting) and so do the
-    joining words, because the search is a word-AND: every extra word can only lose the match
-    we are looking for."""
+    The leading verb and joining words go: the search is a word-AND, so every extra word can
+    only lose the match."""
     words = [w.strip(".,;:!?()[]'\"").lower() for w in str(title or "").split()]
     words = [w for w in words if w and w not in SEARCH_STOPWORDS]
     if len(words) > 1 and words[0] in LEADING_VERBS:
@@ -204,10 +184,7 @@ def search_words(title: str) -> list[str]:
 def is_open(issue: dict[str, Any]) -> bool:
     """Whether an issue is still live work.
 
-    An issue whose state type we do not know counts as open. That is the cautious direction:
-    a candidate kept can only make the "exactly one match" test harder to pass, while a
-    candidate wrongly dropped could leave one match standing and point an update at the wrong
-    ticket."""
+    An issue whose state type we do not know counts as open — the cautious direction."""
     return str(issue.get("state_type") or "").strip().lower() not in CLOSED_STATES
 
 
@@ -215,12 +192,6 @@ async def resolve_target(
     item: dict[str, Any], team_id: str, linear: IssueSearch
 ) -> tuple[str, str]:
     """The issue an update must have meant, when the tracker names exactly one.
-
-    The title is searched whole first, then with its trailing words dropped one at a time —
-    titles put their subject early and their qualifiers late, so "invoice CSV export behind
-    feature flag" narrows to "invoice CSV export", which is the phrase the ticket was filed
-    under. The first search that matches anything decides: one open issue is an answer, several
-    is an ambiguity we must not guess at, and narrowing further would only add more.
 
     Returns (identifier, note); both empty when nothing can be resolved safely, including when
     the tracker is down — an outage is not evidence that no issue exists."""
@@ -244,9 +215,7 @@ async def resolve_missing_targets(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Give every update that named no issue a target where the tracker makes it unambiguous.
 
-    Returns the items and the titles still without one. A model that says "update" and then
-    names nothing has described work with nowhere to go, and the harness can often find the
-    where itself rather than letting the commitment fall on the floor."""
+    Returns the items and the titles still without one."""
     resolved: list[dict[str, Any]] = []
     unresolved: list[str] = []
     for item in items:
@@ -275,12 +244,7 @@ def _target_feedback(titles: list[str]) -> str:
 def downgrade_unresolved(
     items: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Turn an update with nowhere to go into a clearly-labelled new issue.
-
-    Somebody committed to this on a call. Filing it as a possible duplicate leaves the team a
-    ticket to merge in one click; dropping it leaves them nothing, and nobody finds out until
-    the work does not happen. The label is the honesty: the description says up front that this
-    may already exist."""
+    """Turn an update with nowhere to go into a clearly-labelled new issue."""
     kept: list[dict[str, Any]] = []
     downgraded: list[str] = []
     for item in items:
@@ -374,16 +338,13 @@ async def run(task: Doc, deps: Deps) -> StageResult:
     }
 
     parsed = ReconcileResult.model_validate(await deps.reconciler.run(payload)).model_dump()
-    # The self-citation is added before verification, not after, so there is exactly one place
-    # that decides whether a reference is real. If the event is not in the store the item comes
-    # back unverified like any other, bounces once, and is held back honestly.
+    # Self-citations are added before verification, so one place decides what is real.
     team_id = str(project.get("linear_team_id") or "")
     items, uncitable = with_call_citation(
         parsed.get("items") or [], meeting["meeting_id"], action_items
     )
     items = with_investigation_refs(items)
-    # An "update" that names no issue has nowhere to go. Resolve what the tracker makes
-    # unambiguous before verification, so a recovered target is checked like any other.
+    # Resolve missing targets before verification, so a recovered target is checked too.
     items, homeless = await resolve_missing_targets(items, team_id, deps.linear)
     matched = [i["match_note"] for i in items if i.get("match_note")]
     verified, unverified, outage = await _verify(items, ids)
@@ -403,8 +364,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         items = with_investigation_refs(items)
         items, homeless = await resolve_missing_targets(items, team_id, deps.linear)
         matched = [i["match_note"] for i in items if i.get("match_note")]
-        # The bounce was its chance to say which issue it meant. Anything still pointing
-        # nowhere is filed as a labelled possible duplicate rather than lost.
+        # Still homeless after the bounce: filed as a labelled possible duplicate.
         if homeless:
             items, downgraded = downgrade_unresolved(items)
         verified, unverified, outage = await _verify(items, ids)
@@ -416,9 +376,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         item["moments"] = moments_for(index, action_items, meeting["meeting_id"])
         item["speakers"] = speakers_for(index, action_items)
 
-    # Durable facts go into the brain, but only the ones whose source survived the identifier
-    # gate: a fact nobody can re-open is exactly the kind of thing that should not become
-    # something the agent repeats back to the team next week.
+    # Only facts whose source survived the identifier gate go into the brain.
     learned = await _remember_facts(verified, deps, task["project_id"])
 
     result: dict[str, Any] = {
@@ -452,8 +410,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         ),
     }]
 
-    # An outage is the one failure worth retrying: the items were probably fine, the source was
-    # not. Retry once, only for the items that were held back.
+    # An outage is the one failure worth retrying — once, for the held-back items.
     if outage and not task["payload"].get("retry"):
         children.append({
             "kind": "reconcile",

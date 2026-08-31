@@ -1,5 +1,4 @@
-"""Notion over the REST API. Blocks are flattened to markdown because that is what a model
-reads well and what a citation can point at; every failure becomes SourceUnavailable."""
+"""Notion over the REST API."""
 
 from __future__ import annotations
 
@@ -104,7 +103,7 @@ class NotionClient:
         }
 
     async def list_children(self, page_id: str) -> list[dict[str, Any]]:
-        """Child pages only — what the brain's bootstrap walks (Plan 3)."""
+        """Child pages only."""
         try:
             data = await self._request(
                 "GET", f"/blocks/{page_id}/children", params={"page_size": 100}

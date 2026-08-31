@@ -1,5 +1,5 @@
 """extract: transcript → decisions, action items, open questions — each with verbatim evidence,
-or not at all. One bounce on a gate failure, then an honest drop."""
+or not at all."""
 
 from __future__ import annotations
 
@@ -34,14 +34,8 @@ def select_with_context(
 
 # --- the recall backstop -------------------------------------------------------------------------
 #
-# The evidence gate stops the model inventing; nothing stopped it from being quiet. On a live
-# standup it returned two action items where a person finds six, and every miss was an ordinary
-# sentence — "can you add the doc link", "I'll run the migration by today". The prompt's own
-# "prefer fewer" read as permission to drop.
-#
-# So the harness reads the transcript for commitment language itself. It cannot write an action
-# item — only the model can do that, and only with a verbatim quote — but it can tell when a
-# line that sounds like a promise produced nothing, and ask once.
+# The harness reads the transcript for commitment language itself: it cannot write an action
+# item, but it can tell when a line that sounded like a promise produced nothing, and ask once.
 
 COMMITMENT_CUES = (
     "can you", "could you", "would you", "will you",
@@ -51,11 +45,9 @@ COMMITMENT_CUES = (
     "add a comment", "comment on", "send", "post", "run", "tag", "check with",
     "follow up", "take a look", "write up", "put together",
 )
-"""Language a person uses when work changes hands. Not an extractor — a smoke alarm: it says a
-line sounded like a commitment, and the model still has to find the item and quote it."""
+"""Language a person uses when work changes hands."""
 
-# "can you see my screen?" is not a commitment, and neither are the other pleasantries that
-# open every call. A cue followed by one of these is meeting furniture.
+# A cue followed by one of these is meeting furniture, not a commitment.
 NOT_COMMITMENTS = (
     # the opening minute of every call
     "see my", "see the screen", "hear me", "hear you", "share your screen", "share my screen",
@@ -78,9 +70,7 @@ def _says_commitment(text: str) -> bool:
 
 
 def commitment_cues(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Every transcript line that hands work to somebody, with who said it and when.
-
-    Pure, so the recall claim is testable without a model."""
+    """Every transcript line that hands work to somebody, with who said it and when."""
     return [
         {"timestamp": str(seg.get("timestamp") or ""),
          "speaker": str(seg.get("speaker") or "someone"),
@@ -111,10 +101,7 @@ def uncovered(cues: list[dict[str, Any]], items: list[dict[str, Any]]) -> list[d
 
 
 def thin_recall(cues: list[dict[str, Any]], items: list[dict[str, Any]]) -> bool:
-    """Whether the miss is big enough to be worth one more turn.
-
-    Two lines and forty per cent: below that a bounce costs a call and a delay to argue about
-    a single sentence somebody may well have meant rhetorically."""
+    """Whether the miss is big enough to be worth one more turn."""
     if not cues:
         return False
     missed = len(uncovered(cues, items))
@@ -174,8 +161,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
     covered_final = covered_first
 
     bounced = False
-    # One bounce, whichever gate wants it. A drop and a silence are both worth exactly one more
-    # turn, and asking twice is how a pipeline starts arguing with itself.
+    # One bounce, whichever gate wants it.
     reasons: list[str] = []
     if dropped:
         names = "; ".join(_label(d) for d in dropped)
@@ -193,8 +179,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
             await deps.extractor.run({**payload, "feedback": " ".join(reasons)})
         ).model_dump()
         second, second_dropped = _gate(rescued, plain)
-        # A second pass that found less is a worse answer, not a newer one. The evidence gate
-        # still governs what survives either way, so the retry can only ever add cited items.
+        # A second pass that found less is a worse answer, not a newer one.
         if len(second["action_items"]) >= len(kept["action_items"]):
             parsed, kept, dropped = rescued, second, second_dropped
         covered_final = len(cues) - len(uncovered(cues, kept["action_items"]))
@@ -209,12 +194,9 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         "decision_ids": decision_ids,
         "dropped": dropped,
         "bounced": bounced,
-        # What the model was actually shown. Triage decides what the agent could possibly have
-        # heard, so the number is worth keeping: without it the console can only say the call
-        # was read, not how much of it.
+        # What the model was actually shown, out of the whole transcript.
         "triage": {"kept": len(selected), "total": len(meeting["transcript"])},
-        # How many lines that sounded like commitments became action items. The console shows
-        # it because a recall number nobody looks at is a recall number nobody fixes.
+        # How many commitment-sounding lines became action items.
         "recall": {"cues": len(cues), "covered_first": covered_first,
                    "covered_final": covered_final, "bounced": bounced},
     }

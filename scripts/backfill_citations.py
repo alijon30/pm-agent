@@ -1,22 +1,5 @@
 """Give already-filed issues the call moment they came from.
 
-Issues filed before the reconcile stage grew its self-citation backstop went out with an empty
-`citations` list, so the console says "no citation on record" against work that is in fact fully
-evidenced — the moment is still sitting in the extract result that produced it. This walks that
-chain and fills the gap in place.
-
-    action -> its act task -> the reconcile result it filed from -> the extract result behind
-    that -> the first evidence timestamp on the matching action item
-
-Nothing here is invented. The reference is built by `call_citation` from `stages/reconcile.py`,
-the same function the live stage uses, and it is checked by the same `IdGate.ref_exists` path
-the model's own citations go through, so a backfilled citation is exactly as trustworthy as one
-written at the time. An item whose evidence carries no timestamp gets nothing: a fabricated
-moment would be worse than an honest gap.
-
-Only the `citations` field is written, and only on actions where it is empty. Nothing else on
-the document is touched, and re-running changes nothing.
-
     uv run --env-file .env python scripts/backfill_citations.py            # dry run, the default
     uv run --env-file .env python scripts/backfill_citations.py --apply    # write
 """
@@ -38,9 +21,7 @@ FILED = "linear.create_issue"
 def matching_item(action: Doc, items: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The reconciled item this action filed.
 
-    By title, because that is what the act stage copied onto the action and it survives a
-    reordered result. Position is the fallback for an action whose title was edited afterwards;
-    it is only trusted when the two lists are the same length."""
+    By title, because that is what the act stage copied onto the action."""
     title = str((action.get("inputs") or {}).get("title") or "").strip()
     for item in items:
         if str(item.get("title") or "").strip() == title:
@@ -51,7 +32,7 @@ def matching_item(action: Doc, items: list[dict[str, Any]]) -> dict[str, Any] | 
 async def proposal(action: Doc, db: Db) -> tuple[str, str]:
     """The citation this action should carry, and why it does not have one yet.
 
-    Returns (reference, reason). Exactly one is ever non-empty."""
+    Returns (reference, reason); exactly one is ever non-empty."""
     act_task = await db.get("tasks", str(action.get("task_id") or ""))
     if act_task is None:
         return "", "its act task is gone"
@@ -81,8 +62,8 @@ async def proposal(action: Doc, db: Db) -> tuple[str, str]:
 def gate_for(db: Db) -> IdGate:
     """The citation gate, with only the part a call reference needs.
 
-    A `fathom:` reference resolves through `known_meeting` alone — no Linear or Notion call is
-    involved — so this is the production verification path, not a weaker stand-in."""
+    A `fathom:` reference resolves through `known_meeting` alone, so this is the production
+    verification path."""
     async def known_meeting(meeting_id: str) -> bool:
         rows = await db.query("events", [("provider", "==", "fathom")], limit=50)
         return any(

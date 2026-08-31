@@ -1,31 +1,4 @@
-"""When two sentences are the same decision said twice.
-
-A call says the same thing more than once — "move reminders to three days after the due date"
-and, a minute later, "move reminders to three days after due" — and a model asked to extract
-decisions from both moments faithfully returns two. They are not two decisions, and a ledger
-that lists them both makes a reader wonder which one the team actually took.
-
-Two things have to be true before we merge.
-
-**The sentences mostly share words.** Token-set overlap, not string distance: word order and
-punctuation move around freely when somebody restates a point, but the words themselves barely
-change. Jaccard, at a threshold low enough to catch a restatement that adds a trailing clause
-("keep SMS off for now" / "keep SMS off for now, email only" — 0.75).
-
-**And they name the same values.** Overlap alone is not safe at any useful threshold, because
-the sentences that share the most words are often the ones that disagree:
-
-    Move payment reminders to three days after the due date.
-    Move payment reminders to five days after the due date.     <- 0.82 overlap, opposite meaning
-
-A decision's payload is usually a quantity or a name, and those are exactly the tokens a
-similarity score treats as one word out of twelve. So the numbers and proper names on each side
-must match exactly, whatever the score says. "three days" and "five days" are never one
-decision; neither are the same sentence assigned to Priya and to Nodir.
-
-Deliberately not clever beyond that. No stemming, no stopword list, no trailing-phrase
-stripping: each of those silently merges a pair somebody meant to keep apart, and the costs are
-not symmetric — a missed merge is a duplicate line, a wrong merge is a lost decision."""
+"""When two sentences are the same decision said twice."""
 
 from __future__ import annotations
 
@@ -54,11 +27,8 @@ def tokens(text: str) -> frozenset[str]:
 
 
 def values(text: str) -> frozenset[str]:
-    """The numbers and proper names a sentence commits to.
-
-    These are what a decision is actually about — three days, 2%, Priya, INV-27 — and what a
-    similarity score is worst at noticing. Spelled numbers are folded onto their digits so
-    "three days" and "3 days" stay one decision."""
+    """The numbers and proper names a sentence commits to. Spelled numbers are folded onto
+    their digits so "three days" and "3 days" stay one decision."""
     raw = str(text or "")
     found = {m.lower() for m in NUMERIC.findall(raw)}
     found |= {m.group(1) for m in PROPER.finditer(raw)}
@@ -78,10 +48,8 @@ def overlap(left: str, right: str) -> float:
 
 
 def near_duplicate(left: str, right: str, threshold: float = DUPLICATE_AT) -> bool:
-    """Whether these are one decision said twice.
-
-    Disagreeing about a number or a name is disqualifying on its own: a sentence that differs
-    only in "three" vs "five" scores higher than most genuine restatements."""
+    """Whether these are one decision said twice. Disagreeing about a number or a name is
+    disqualifying on its own."""
     if values(left) != values(right):
         return False
     return overlap(left, right) >= threshold
@@ -90,10 +58,8 @@ def near_duplicate(left: str, right: str, threshold: float = DUPLICATE_AT) -> bo
 def collapse[T](
     rows: Sequence[T], text_of: Callable[[T], str], threshold: float = DUPLICATE_AT
 ) -> list[T]:
-    """The first of each near-duplicate cluster, in the order given.
-
-    First rather than best on purpose: the earliest record is the one other documents already
-    point at, so keeping it means a read-side collapse never orphans a reference."""
+    """The first of each near-duplicate cluster, in the order given. Keeping the earliest
+    record means a read-side collapse never orphans a reference."""
     kept: list[T] = []
     for row in rows:
         text = text_of(row)

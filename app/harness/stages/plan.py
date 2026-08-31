@@ -1,11 +1,4 @@
-"""plan: turn the planner's proposal into scheduled work, or into nothing.
-
-The gate runs first and the queue runs last, and between them the plan is only data. Whatever
-survives becomes the children of this task, which means the queue creates them in the same
-transaction that marks this task done — a plan is never half-scheduled.
-
-When the model gives us nothing usable, the fallback is not silence: a deterministic
-`-1d / due / +3d` chain per issue, which is what a careful person would do anyway."""
+"""plan: turn the planner's proposal into scheduled work, or into nothing."""
 
 from __future__ import annotations
 
@@ -130,8 +123,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
                    ("plan_horizon_days", "max_plan_size", "default_followup_offsets")},
         "now": iso(now),
         "lessons": await lessons_for(deps, task["project_id"]),
-        # Preferences about timing and nudging, and corrections to earlier plans. Facts and
-        # ownership are not the planner's business — it schedules checks, it does not assign.
+        # Preferences and corrections only: facts and ownership are not the planner's business.
         "brain": (await deps.wiki.for_prompt(
             task["project_id"], _about(context, open_tasks), ("preference", "correction"))
             if deps.wiki is not None else []),
@@ -178,8 +170,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         defaulted = True
 
     supersedes = [s for s in (proposal.get("supersedes") or []) if s in open_ids]
-    # Reasons only: the plan key is this system's handle for a task the team never saw, so it
-    # means nothing in a channel. The full rejection, key and all, is in the result and console.
+    # Reasons only: the plan key means nothing in a channel.
     trimmed = [r["reason"] for r in verdict.rejected] + verdict.reasons
     await _announce(task, project, verdict.tasks, trimmed, context, defaulted, deps)
 
@@ -215,8 +206,7 @@ async def _propose(payload: dict[str, Any], deps: Deps) -> tuple[dict[str, Any],
     try:
         parsed = Plan.model_validate(await deps.planner.run(payload)).model_dump()
     except (json.JSONDecodeError, ValidationError):
-        # The model wrote something that is not a plan. That is a reason to fall back to the
-        # deterministic chain below, not a reason to fail the task and schedule nothing.
+        # Unusable output falls back to the deterministic chain, not a failed task.
         return {"tasks": [], "supersedes": [], "notes": ""}, "the planner's output was not usable"
     return parsed, str(parsed.get("notes") or "")
 

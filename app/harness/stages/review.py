@@ -1,17 +1,5 @@
-"""daily_review: every morning the agent reads yesterday, learns at most three things, and plans.
-
-The stage is two halves that must not be confused. The first is deterministic: what ran, what it
-saw, who was interrupted, and what moved afterwards — gathered from the queue and the audit log,
-with the tracker consulted only to ask what an issue looks like now. The second is a model doing
-the one thing a model is good for here: noticing a pattern across a day and saying it in a
-sentence.
-
-Between them sits the evidence gate, which is the only reason the second half is safe. A lesson
-may cite only the references the first half handed over; anything else is dropped before it is
-stored. The model cannot expand its own evidence, and it cannot learn from a day it did not have.
-
-The stage ends by enqueueing a plan with the day's outcomes attached, which is what closes the
-loop: what happened yesterday is what the planner reads before deciding today."""
+"""daily_review: every morning the agent reads yesterday, learns at most three things, and
+plans."""
 
 from __future__ import annotations
 
@@ -33,8 +21,7 @@ from app.harness.verify.caps import check_caps
 
 WINDOW_HOURS = 24
 SCAN_LIMIT = 500
-# What "today" means in a standup: anything due in the next two days is near enough to plan
-# around, and five lines is as many promises as anyone reads before breakfast.
+# Due within two days is near enough to plan around; five lines is the reading budget.
 WATCH_HOURS = 48
 WATCH_LINES = 5
 
@@ -45,8 +32,7 @@ def keep_evidenced(
     """Split lessons into those the day can support and those it cannot.
 
     A lesson needs at least one reference, and every reference must be one the stage actually
-    gathered. This is a membership test against a set built from real documents, not a judgment:
-    the model has no way to talk past it."""
+    gathered."""
     kept: list[dict[str, Any]] = []
     dropped: list[dict[str, Any]] = []
     for lesson in lessons:
@@ -64,9 +50,8 @@ def keep_evidenced(
 async def _movements(
     nudges: list[dict[str, Any]], tasks_by_id: dict[str, Doc], deps: Deps
 ) -> list[dict[str, Any]]:
-    """What happened to an issue after the agent spoke about it. The state the check observed is
-    the state at the moment of the nudge; the tracker says what it is now. Best-effort — an
-    outage costs the reviewer this signal, not the review."""
+    """What happened to an issue after the agent spoke about it. Best-effort — an outage costs
+    the reviewer this signal, not the review."""
     if deps.linear is None:
         return []
     seen: list[dict[str, Any]] = []
@@ -87,8 +72,6 @@ async def _movements(
         was, now = str(observed.get("state") or ""), str(live.get("state") or "")
         seen.append({
             "ref": nudge["ref"], "issue": identifier, "template": nudge.get("template"),
-            # Who owns it, so the standup can say "Priya got INV-26 moving" rather than
-            # counting the things that moved.
             "assignee": str((live.get("assignee") or {}).get("name") or ""),
             "state_when_we_spoke": was, "state_now": now, "moved": bool(was and was != now),
         })
@@ -142,9 +125,6 @@ async def gather(task: Doc, deps: Deps) -> dict[str, Any]:
         and a.get("kind") == "slack.post" and (a.get("inputs") or {}).get("template")
     ]
 
-    # A person taking the trouble to say "that was wrong", or to undo something, is the
-    # strongest evidence of a mistake this agent ever gets. It should not have to infer it
-    # from a check that came back unmet.
     reverted = [
         {"ref": f"action:{a['id']}", "kind": a.get("kind"),
          "identifier": (a.get("target_ids") or {}).get("identifier"),
@@ -188,7 +168,7 @@ def evidence_ids(outcomes: dict[str, Any]) -> set[str]:
 
 
 def recent_results(outcomes: dict[str, Any]) -> list[dict[str, Any]]:
-    """What the planner reads before deciding today. Yesterday's observations, plainly."""
+    """What the planner reads before deciding today."""
     return [
         *(outcomes.get("checks") or []),
         *(outcomes.get("movements") or []),
@@ -198,8 +178,7 @@ def recent_results(outcomes: dict[str, Any]) -> list[dict[str, Any]]:
 
 async def at_risk(outcomes: dict[str, Any], today: str) -> tuple[list[Doc], list[dict[str, Any]]]:
     """What is slipping, from what the checks already saw: the ones that came back with nothing,
-    and any issue observed past its own date and not finished. No extra fetch — a standup should
-    not cost a round of tracker calls."""
+    and any issue observed past its own date and not finished. No extra fetch."""
     unmet = [c for c in outcomes.get("checks") or [] if not c.get("met")]
     overdue: dict[str, dict[str, Any]] = {}
     for check in outcomes.get("checks") or []:
@@ -231,8 +210,7 @@ async def watching(project_id: str, deps: Deps) -> tuple[list[Doc], str]:
 
 
 def _owners(outcomes: dict[str, Any], project: Doc) -> dict[str, str]:
-    """Which first name goes with which ticket, from what the checks already observed. The
-    standup addresses people, so it needs names it did not have to look anything up for."""
+    """Which first name goes with which ticket, from what the checks already observed."""
     owners: dict[str, str] = {}
     for check in outcomes.get("checks") or []:
         observed = check.get("observed") or {}
@@ -247,8 +225,7 @@ def _owners(outcomes: dict[str, Any], project: Doc) -> dict[str, str]:
 
 
 def _titles(outcomes: dict[str, Any]) -> dict[str, str]:
-    """What each ticket is, from what the checks saw. Costs nothing — the observation is already
-    in hand — and turns a key in a standup line into a thing the reader recognises."""
+    """What each ticket is, from what the checks saw."""
     titles: dict[str, str] = {}
     for check in outcomes.get("checks") or []:
         observed = check.get("observed") or {}
@@ -263,9 +240,7 @@ async def _standup(
 ) -> bool:
     """The agent speaking first, once a day, before anybody asks it anything.
 
-    Exempt from quiet hours on purpose: this runs at the start of the working day by design, and
-    deferring the morning message until the morning is over would be a bug wearing a policy's
-    clothes. The daily ping budget still applies."""
+    Exempt from quiet hours on purpose; the daily ping budget still applies."""
     channel = project.get("slack_channel_id")
     if deps.slack is None or deps.actions is None or not channel:
         return False
@@ -307,8 +282,7 @@ async def _standup(
         first = str((blocks[0].get("text") or {}).get("text") or "").splitlines()[0]
         ts = await deps.slack.post(str(channel), first.strip("*"), blocks)
     except SourceUnavailable as exc:
-        # A standup nobody received is a shame, not a failure: the review still learned and
-        # still re-planned, and tomorrow brings another one.
+        # A missed standup is not a failure: the review still learned and re-planned.
         await deps.actions.fail(action_id, redact(str(exc)))
         return False
     await deps.actions.finish(
@@ -347,8 +321,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
 
     posted = await _standup(task, project, outcomes, kept[0]["text"] if kept else "", deps)
 
-    # The point of the review: today's plan is made against yesterday's outcomes, not against a
-    # blank slate. The planner is a child rather than a call so the queue owns it like any work.
+    # The planner is a child rather than a call so the queue owns it like any work.
     children = [{
         "kind": "plan",
         "payload": {"recent_results": recent_results(outcomes)},

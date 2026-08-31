@@ -1,5 +1,4 @@
-"""Shared stage types. A stage is a function (task, deps) -> StageResult; it never writes to the
-queue itself — the runner does, atomically with marking the task done."""
+"""Shared stage types: a stage is a function (task, deps) -> StageResult."""
 
 from __future__ import annotations
 
@@ -15,8 +14,7 @@ from app.harness.store.db import Doc
 class StageResult:
     result: dict[str, Any]
     children: list[dict[str, Any]] = field(default_factory=list)
-    # Open task ids this stage's work makes obsolete; the queue cancels them in the same
-    # transaction that creates the children, so a re-plan is never briefly double-booked.
+    # Open task ids this stage's work makes obsolete; cancelled in the same transaction.
     supersedes: list[str] = field(default_factory=list)
 
 

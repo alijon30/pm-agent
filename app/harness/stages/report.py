@@ -1,15 +1,4 @@
-"""report: what happened this sprint, in sixty seconds, with a reference under every sentence.
-
-The gathering here is deterministic and the model never does it. Issues the agent filed are
-re-fetched live rather than replayed from the audit log, because a report is about the state of
-the work today, not about what this system did to it a week ago — an issue that was created and
-then closed, renamed or archived should say so. Checks, decisions and conflicts come from the
-agent's own record of what it verified.
-
-The model's job is judgment: which of that is worth a team lead's attention, and how to say it.
-The citation gate then removes anything it could not prove, once around the bounce, and what
-survives is posted. Slack is decoration: a report that could not be posted is still a report,
-and the result carries it either way."""
+"""report: what happened this sprint, in sixty seconds, with a reference under every sentence."""
 
 from __future__ import annotations
 
@@ -40,8 +29,7 @@ def report_window(
     project: dict[str, Any], params: dict[str, Any], now: datetime
 ) -> dict[str, str]:
     """The period this report covers: the project's sprint, or the `<N>d` window the task asked
-    for. A project with no sprint configured still gets a bounded window rather than a report
-    over all of history — an unbounded "recently" is what makes status reports untrustworthy."""
+    for. A project with no sprint configured still gets a bounded window."""
     relative = RELATIVE_WINDOW.match(str(params.get("window") or ""))
     sprint = project.get("sprint") or {}
     if relative is None and sprint.get("start") and sprint.get("end"):
@@ -110,8 +98,7 @@ async def gather(task: Doc, project: dict[str, Any], deps: Deps) -> dict[str, An
     )
     checks = [check_summary(t) for t in done if str(t["kind"]).startswith("check_")]
 
-    # Newest act task by created_at, picked in Python: Firestore will not order by one field
-    # while filtering on others without a composite index per combination.
+    # Newest act picked in Python: ordering while filtering needs a composite index.
     acts = [t for t in done if t["kind"] == "act"]
     latest = max(acts, key=lambda t: str(t.get("created_at") or "")) if acts else None
     conflicts = ((latest or {}).get("result") or {}).get("conflicts") or []
@@ -159,8 +146,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         raise PmError(f"project {task['project_id']} not found")
     if deps.reporter is None:
         raise PmError("report needs a reporter")
-    # With no id gate configured nothing can be confirmed, so nothing is claimed — the report
-    # comes back empty rather than unverified.
+    # With no id gate nothing can be confirmed, so nothing is claimed.
     ids = deps.ids if deps.ids is not None else IdGate()
 
     payload = await gather(task, project, deps)
@@ -177,9 +163,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
 
     posted = await _post(task, project, verdict.report, payload["sprint"], deps)
     if posted:
-        # ✅ on the mention that asked for this. thread_ts IS that message's ts, so the person
-        # who asked sees it answered from their own message, wherever the thread has scrolled
-        # to. Best-effort, like every reaction: the report is already delivered.
+        # ✅ on the mention that asked: thread_ts IS that message's ts. Best-effort.
         await react_quietly(deps.slack, task["payload"].get("channel"),
                             task["payload"].get("thread_ts"), "white_check_mark")
     return StageResult(result={
@@ -195,13 +179,12 @@ async def _post(
 ) -> bool:
     """Post the report where it was asked for — the thread of the mention that requested it, or
     the project channel for a scheduled one. Best-effort: a Slack outage loses the message, not
-    the report, which the caller returns either way."""
+    the report."""
     channel = task["payload"].get("channel") or project.get("slack_channel_id")
     if deps.slack is None or deps.actions is None or not channel:
         return False
 
-    # The act stage keys its own summary on (root_event_id, 0, slack.post); a report triggered by
-    # the same event must not collide with it, hence the distinct root.
+    # Distinct root: must not collide with the act stage's summary key for the same event.
     key = idempotency_key(str(task.get("root_event_id") or task["id"]) + "report", 0, "slack.post")
     earlier = await deps.actions.find_by_key(key)
     if earlier is not None and earlier.get("status") == "done":
@@ -211,7 +194,6 @@ async def _post(
         task_id=task["id"], project_id=task["project_id"], kind="slack.post",
         idempotency_key=key, inputs={"channel": channel, "sprint": sprint.get("name", "")},
     )
-    # The notification is the report's own headline, said once — not a label plus a repeat.
     text = str(report.get("headline") or f"{sprint.get('name', 'Status')} report")
     ack = task["payload"].get("ack") or {}
     try:

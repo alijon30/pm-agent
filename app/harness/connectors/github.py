@@ -1,8 +1,4 @@
-"""GitHub pull requests, read-only. The agent never writes here — it only asks whether the work
-it filed has become a PR, been reviewed, and merged.
-
-Matching is by Linear identifier (INV-142) in the PR title, body or branch name, because that is
-what a developer actually types and no other link exists between the two systems."""
+"""GitHub pull requests, read-only."""
 
 from __future__ import annotations
 

@@ -1,15 +1,5 @@
 """Generate GATES.md from the code it describes.
 
-The document makes a claim — that a model's output cannot reach Linear, Slack or the queue
-without passing deterministic checks — and a document that makes that claim by hand is one more
-thing that can quietly stop being true. So every number, every kind, every parameter and every
-description here is read out of the modules themselves at generation time: the catalog comes
-from `KINDS`, the limits from the policies the gates actually default to, and the prose from the
-docstrings the next person to edit those gates will read.
-
-Nothing is hardcoded except the section headings and the connective tissue. If a gate changes
-and this file is not regenerated, `tests/test_gates_doc.py` fails.
-
     uv run python scripts/gen_gates.py
 """
 
@@ -44,9 +34,7 @@ def paragraphs(text: str | None) -> list[str]:
 
 
 def as_markdown(block: str) -> str:
-    """One docstring block as Markdown. An indented block was a listing when it was written and
-    stays one; everything else is reflowed, because a hard-wrapped paragraph is an artefact of
-    a 100-column source file and not of the sentence."""
+    """One docstring block as Markdown: an indented block stays a listing, prose is reflowed."""
     lines = [line for line in block.split("\n")]
     if lines and all(line.startswith("    ") for line in lines if line.strip()):
         return "```\n" + "\n".join(line[4:] for line in lines) + "\n```"
@@ -99,8 +87,7 @@ def kinds_table() -> str:
         if reason:
             schedulable = f"no — {reason}"
         elif name not in STAGES:
-            # Read from the runner rather than asserted: a kind the planner may schedule and
-            # nothing can execute is the drift this document exists to make visible.
+            # Read from the runner rather than asserted, so executor drift shows up here.
             schedulable = "yes — but no executor is registered"
         else:
             schedulable = "yes"
@@ -167,10 +154,7 @@ def gates() -> str:
 
 
 def brain_section() -> str:
-    """What the agent is allowed to remember, and what has to be true before it does.
-
-    Generated from the store rather than written by hand, so a kind added without a gate shows
-    up here as an unguarded kind."""
+    """What the agent is allowed to remember, and what has to be true before it does."""
     return "\n".join([
         "## Brain — what may it remember, and on whose word?",
         "",

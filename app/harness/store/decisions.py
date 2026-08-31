@@ -1,5 +1,4 @@
-"""Decision ledger: every decision a call produced, with the exact moment it was said. Started
-in v0 so it is queryable later; nothing reads it yet except the report stage (Plan 4)."""
+"""Decision ledger: every decision a call produced, with the exact moment it was said."""
 
 from __future__ import annotations
 
@@ -25,8 +24,7 @@ class DecisionStore:
     ) -> list[str]:
         ids: list[str] = []
         now = iso(self._clock.now())
-        # Read once: a call restating a decision is the common case, and each new statement is
-        # checked against everything the project already holds, including earlier calls.
+        # Read once: each new statement is checked against everything the project holds.
         existing = await self._db.query("decisions", [("project_id", "==", project_id)])
         for d in decisions:
             first = (d.get("evidence") or [{}])[0]
@@ -34,8 +32,7 @@ class DecisionStore:
 
             said_before = duplicate_of(str(d["statement"]), existing)
             if said_before is not None:
-                # The same decision, said again. The earlier entry is the one other documents
-                # already cite, so it keeps its id and gains the second moment as evidence.
+                # Said again: the earlier entry keeps its id and gains the second moment.
                 ids.append(str(said_before["id"]))
                 await self._also_quoted(said_before, first.get("quote", ""), source)
                 continue

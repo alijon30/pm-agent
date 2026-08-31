@@ -117,8 +117,7 @@ async def check_plan(
             "context": dict(raw.get("context") or {}),
         }
 
-    # 2. a dependency must be an accepted key or a task that already exists. Rejection cascades:
-    #    a check that waits on something that will never run must not run either.
+    # 2. a dependency must be an accepted key or an existing task; rejection cascades.
     changed = True
     while changed:
         changed = False

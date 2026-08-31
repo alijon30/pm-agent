@@ -1,18 +1,4 @@
-"""How the agent refers to a person, a ticket and a consequence.
-
-A colleague talks about four things: a person by their first name, an issue by what it is, a
-date in human terms, and what happens next. Everything this system used to say was assembled
-instead from its own vocabulary — task kinds, states, counts, `<@id>` mentions, dangling URLs —
-which is why it read like a log line rather than like someone writing to you.
-
-These functions are the only place those four things get turned into words, so every surface
-says them the same way. They live in core because the channel, the console and the graph all
-need them and none of them owns the vocabulary. Kind-specific phrasing ("look for a pull
-request on INV-27") stays with the catalog in kinds/phrasing.py; this is about everything else.
-
-One rule worth stating: a mention notifies somebody. Addressing a person who owes the next
-action is worth a notification; attributing a ticket to its owner in a list is not. So
-`first_name` writes plain text by default and mentions only when asked."""
+"""How the agent refers to a person, a ticket and a consequence."""
 
 from __future__ import annotations
 
@@ -21,9 +7,7 @@ from typing import Any
 
 ISSUE_KEY = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
 
-# Ticket titles are written as instructions — "Fix the duplicate emails" — and a sentence needs
-# the thing, not the instruction. Dropping a leading imperative is the whole transformation;
-# anything cleverer would start inventing words nobody wrote.
+# Titles are imperatives ("Fix the duplicate emails"); drop the leading verb to get the thing.
 LEADING_VERBS = frozenset({
     "add", "audit", "build", "check", "confirm", "create", "draft", "fix", "handle",
     "implement", "investigate", "make", "move", "open", "pause", "plan", "prepare", "put",
@@ -50,8 +34,7 @@ def spelled(number: int) -> str:
 
 
 def count_in_words(number: int, singular: str) -> str:
-    """"one check", "two messages" — the same pluralisation as count_of, said aloud. Small
-    numbers read as words everywhere a person is being spoken to."""
+    """"one check", "two messages" — the same pluralisation as count_of, said aloud."""
     return f"{spelled(number)} {singular}" if number == 1 else f"{spelled(number)} {singular}s"
 
 
@@ -86,10 +69,7 @@ def noun_phrase(title: str) -> str:
 
 
 def issue_phrase(identifier: str, title: str = "", url: str = "") -> str:
-    """"INV-27 (the duplicate reminder emails bug)", with the link on the identifier.
-
-    The link belongs on the thing it points at, not trailing off the end of the sentence where
-    it reads as an afterthought and wraps badly on a phone."""
+    """"INV-27 (the duplicate reminder emails bug)", with the link on the identifier."""
     key = str(identifier or "").strip()
     if not key:
         return ""
@@ -104,10 +84,7 @@ def issue_phrase(identifier: str, title: str = "", url: str = "") -> str:
 def consequence_phrase(
     on_unmet: str, owner: str = "", requester: str = ""
 ) -> str:
-    """What I'll do if the answer is no, said as a promise to a named person where there is one.
-
-    "I'll nudge the assignee" tells a reader about this system's internals. "I'll check in with
-    Nodir" tells them what will actually happen."""
+    """What I'll do if the answer is no, said as a promise to a named person where there is one."""
     template = CONSEQUENCES.get(str(on_unmet or ""))
     if template is None:
         return ""
@@ -115,7 +92,7 @@ def consequence_phrase(
 
 
 def sentence_list(parts: list[str]) -> str:
-    """"a, b, and c" — the Oxford comma included, because these are read aloud in standups."""
+    """"a, b, and c" — the Oxford comma included."""
     kept = [p for p in parts if p]
     if len(kept) <= 1:
         return kept[0] if kept else ""

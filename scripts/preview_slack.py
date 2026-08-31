@@ -1,11 +1,5 @@
 """Every message the agent can send, rendered with realistic data, as the team would read it.
 
-Copy is reviewed here rather than in the channel: one run prints the whole voice of the system
-side by side, which is how a tone problem in one message becomes visible as a pattern across
-all of them. Block Kit is flattened to the mrkdwn a reader sees; buttons are shown as [labels].
-Where a message has both, the first line is the notification preview and the blocks are the
-message — Slack shows one or the other, never both.
-
     uv run python scripts/preview_slack.py
 """
 
@@ -36,8 +30,7 @@ from app.harness.stages.checks import _values  # noqa: E402
 from app.harness.stages.intake import interpretation  # noqa: E402
 from app.harness.verify.priority import check_priority  # noqa: E402
 
-# The template values come from the stage that builds them, not from a copy: a preview that
-# hardcodes what the code produces is a preview that can be wrong about it.
+# Template values come from the stage that builds them, not from a copy.
 NOW = datetime(2026, 8, 29, 9, 0, tzinfo=UTC)
 OWNERS = {"INV-27": "Nodir", "INV-26": "Priya", "INV-29": "Maya", "INV-25": "Tom"}
 TITLES = {"INV-27": "Fix duplicate reminder emails bug", "INV-26": "Ship CSV export"}

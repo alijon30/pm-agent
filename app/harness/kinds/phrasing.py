@@ -14,7 +14,7 @@ DONE_STATES = ("done", "completed", "merged", "closed", "canceled", "cancelled")
 """Tracker states that mean the work is over. One tuple, because a check that nudges about
 finished work and a review that lists it as overdue are the same mistake."""
 
-# What happens if a check comes back unmet — the half of a promise that makes it worth reading.
+# What happens if a check comes back unmet.
 UNMET_CONSEQUENCES = {
     "nudge_assignee": "if not, I'll nudge the assignee",
     "nudge_reviewer": "if not, I'll ask for a reviewer",
@@ -32,9 +32,7 @@ CHECK_SENTENCES = {
 }
 
 
-# The same catalog said in the present tense, for the one surface that shows what is happening
-# right now rather than what is scheduled. Two tables rather than one clever transformation:
-# "look for" → "looking for" is a rule with exceptions, and a table has none.
+# The catalog in the present tense — two tables on purpose; inflection is a rule with exceptions.
 WORKING_SENTENCES = {
     "check_issue_state": "checking whether {issue} is underway",
     "check_pr_exists": "looking for a pull request on {issue}",
@@ -52,9 +50,7 @@ WORKING_SENTENCES = {
 }
 
 
-# The same work again, in a form that survives being put after "I can't". The imperative reads
-# as an order and breaks the sentence — "I'm blocked on look for a pull request" — so a third
-# short table costs less than the grammar contortions that avoiding it would take.
+# The same work again, in a form that survives being put after "I can't".
 INFINITIVE_SENTENCES = {
     "check_issue_state": "check whether {issue} has started",
     "check_pr_exists": "find {issue}'s pull request",
@@ -113,9 +109,7 @@ def human_check(task: dict[str, Any]) -> str:
     )
 
 
-# What a check that came back unmet actually found, in one clause. Lives with the catalog rather
-# than with the stage that first needed it, because the standup says the same thing in the
-# channel and the two must not drift into two different accounts of one observation.
+# What a check that came back unmet actually found, in one clause.
 UNMET_FINDINGS = {
     "check_pr_exists": "still no pull request",
     "check_pr_reviewed": "still no review",
@@ -139,8 +133,7 @@ def human_finding(
     if str(task.get("kind")) == "check_issue_state":
         state = str(observed.get("state") or "")
         if state:
-            # Tracker states are already phrases: "In Progress" needs no preposition in front of
-            # it, and "it's in In Progress" is the tell that a machine glued the sentence.
+            # Tracker states are already phrases — avoid "it's in In Progress".
             said = state.lower() if state.lower().startswith("in ") else f"in {state}"
             return f"it's {said}" if met else f"it's still {said}"
         return "it's underway" if met else "it hasn't started"

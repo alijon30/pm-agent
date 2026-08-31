@@ -39,7 +39,6 @@ async def fathom_webhook(request: Request) -> dict[str, Any]:
 
     meeting = parse_meeting(payload)
     if not meeting["transcript"]:
-        # Plan 2 adds the one-line Slack notice; today the note in the event is the record.
         await deps.events.note(event_id, "no transcript in payload")
         return {"status": "no_transcript"}
 
@@ -60,14 +59,8 @@ async def _post_status(
 ) -> None:
     """Say that the call is being read, and remember where that message is.
 
-    The team learns within seconds that something is happening, and the act stage later edits
-    this same message into the summary rather than posting a second one — so the channel gets
-    one message per call that fills itself in, not a running commentary.
-
-    It is scaffolding rather than an action: nothing is written outside this system, there is
-    nothing to revert, and the audit log records the edit that turns it into the summary. It
-    runs after the work is queued and swallows an outage, so a Slack problem costs the team a
-    message and costs the pipeline nothing."""
+    The act stage later edits this same message into the summary rather than posting a second
+    one."""
     channel = project.get("slack_channel_id")
     if deps.slack is None or not channel:
         return

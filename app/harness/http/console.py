@@ -1,21 +1,4 @@
-"""The console: one read-only page that explains what the agent has been doing, to a person.
-
-The centrepiece is the decision journal — a reverse-chronological, plain-English feed of what the
-agent decided and why. It is rendered entirely from records the harness already writes for other
-reasons (task reasons and results, the action log's citations and checks_passed), because a
-narrative maintained separately from the work is a narrative that drifts from it. Everything on
-this page is derived; nothing here is a second source of truth.
-
-Three rules hold for this module:
-
-1. **Read-only.** No route here writes anything, and the import-linter contract keeps it away
-   from the stages so it cannot start.
-2. **Nothing raw reaches the page.** `esc()` redacts credential-shaped substrings and then
-   HTML-escapes, and it is the only way a string gets into the output. Event payloads — the one
-   place a transcript's raw words live — are never read at all.
-3. **It renders on an empty database.** The first thing a judge sees is this page, possibly
-   before anything has run.
-"""
+"""The console: one read-only page that explains what the agent has been doing, to a person."""
 
 from __future__ import annotations
 
@@ -87,8 +70,7 @@ def _theme_button(cls: str) -> str:
             f' onclick="{THEME_FLIP}">◐</button>')
 
 
-# The console reads whole collections for one project. That is honest at the scale the caps gate
-# permits (tens of writes a day) and the limit keeps a runaway queue from timing out the page.
+# The limit keeps a runaway queue from timing out the page.
 SCAN_LIMIT = 500
 JOURNAL_LIMIT = 60
 AUDIT_LIMIT = 30
@@ -96,13 +78,11 @@ GRAPH_LIMIT = 40
 # A force layout stops being readable long before it stops being fast. The cap is about the eye.
 GRAPH_NODES = 250
 ISSUE_ACTIONS = ("linear.create_issue", "linear.comment")
-# The order a story is told in when several things share a timestamp — which they do constantly,
-# because one call produces a decision, an issue and a check inside the same second.
+# The order a story is told in when several things share a timestamp.
 GRAPH_ORDER = {"meeting": 0, "decision": 1, "issue": 2, "person": 3, "check": 4, "lesson": 5}
 STORY_LINES = 12
 NOW_LINES = 5
-# Firestore documents and one HTTP response: the page fetches this once, so it has to stay
-# something a browser downloads without thinking about it.
+# The page fetches this once; the response has to stay easily downloadable.
 GRAPH_BYTES = 300_000
 STORY_TRIMS = (12, 6, 3, 1, 0)
 DONE_ISH = ("done", "completed", "merged", "closed")
@@ -131,9 +111,7 @@ def _ts_of(doc: Doc) -> str:
 def _entry(ts: str, category: str, text: str, refs: list[str] | None = None) -> dict[str, Any]:
     """One line of the journal, plus the documents it was derived from.
 
-    `refs` exists so another view can attribute an entry without re-deriving its phrasing: the
-    graph asks "which of these lines are about this node?" and the answer is a set membership
-    test rather than a second copy of every sentence in this file."""
+    `refs` lets another view attribute an entry without re-deriving its phrasing."""
     return {"ts": ts, "category": category, "text": text, "refs": refs or []}
 
 
@@ -161,8 +139,7 @@ def _named(identifiers: list[str], noun: str) -> str:
 
 
 def _who(name_or_id: str, roster: list[dict[str, Any]]) -> str:
-    """A first name, from a roster name or a Slack id. Falls back to whatever it was given —
-    a journal that says "U-maya" is still better than one that says nothing."""
+    """A first name, from a roster name or a Slack id. Falls back to whatever it was given."""
     for member in roster or []:
         known = (str(member.get("name") or ""), str(member.get("slack_id") or ""))
         if name_or_id and name_or_id in known:
@@ -190,8 +167,7 @@ def _check_line(task: Doc, result: dict[str, Any], roster: list[dict[str, Any]])
             "answered itself"
         )
     if observed.get("moot"):
-        # Not a success and not a failure: the question stopped applying. Saying "is where it
-        # should be" about finished work reads as the agent not having noticed.
+        # Not a success and not a failure: the question stopped applying.
         return "checked", f"{identifier} is done — nothing left to chase"
     if result.get("met"):
         return "checked", f"{identifier} is where it should be{f' — {state}' if state else ''}"
@@ -205,9 +181,7 @@ def _check_line(task: Doc, result: dict[str, Any], roster: list[dict[str, Any]])
 def _act_line(result: dict[str, Any], call: str = "") -> tuple[str, str]:
     """What one call produced, as a total.
 
-    Deliberately no identifiers: every ticket gets its own line directly underneath, and
-    naming them twice made the journal read like a stutter. This line is the headline — how
-    much, and which conversation it came out of."""
+    Deliberately no identifiers: every ticket gets its own line directly underneath."""
     created, updated = len(result.get("created") or []), len(result.get("updated") or [])
     skipped, conflicts = len(result.get("skipped") or []), len(result.get("conflicts") or [])
     made: list[str] = []
@@ -215,8 +189,7 @@ def _act_line(result: dict[str, Any], call: str = "") -> tuple[str, str]:
         made.append(f"filed {count_in_words(created, 'ticket')}")
     if updated:
         made.append(f"updated {count_in_words(updated, 'issue')}")
-    # The call is named against what was filed, not tacked onto the end of the sentence —
-    # "flagged two disagreements for a human from 'Q3 planning'" says the wrong thing.
+    # The call is named against what was filed, not tacked onto the end of the sentence.
     parts: list[str] = []
     if made:
         parts.append(sentence_list(made) + (f" from {_quoted(call)}" if call else ""))
@@ -280,8 +253,7 @@ def _done_line(
             f"\"{_short(str(report.get('headline') or ''), 70)}\"{tail}"
         )
     if kind == "intake":
-        # An instruction is answered with a memory, not a plan, and the journal should say
-        # which happened — "committed to two checks" would be a lie about a rule.
+        # An instruction is answered with a memory, not a plan.
         remembered = result.get("remembered") or {}
         if remembered:
             who = _who(str((task.get("payload") or {}).get("requester") or ""), roster)
@@ -381,8 +353,7 @@ def _task_entries(
         entries.append(
             _entry(ts, "cancelled", f"skipped {kind} — a dependency did not hold", refs))
 
-    # A refused enqueue is the lineage gate saying no. It is the agent declining to give itself
-    # more work, which is exactly the kind of decision this journal exists to show.
+    # A refused enqueue is the lineage gate saying no.
     for refusal in task.get("refused_enqueues") or []:
         entries.append(_entry(ts, "refused", (
             f"refused to schedule {refusal.get('kind', '?')} — {refusal.get('reason', '')}"
@@ -419,8 +390,7 @@ def _slack_line(
         return "posted", f"posted the {inputs['sprint']} report"
     meeting = inputs.get("meeting")
     subject = f" for '{meeting}'" if meeting else ""
-    # The summary usually replaces the "reading the call…" message rather than arriving as a new
-    # one, and the journal should say which happened — an edit notified nobody.
+    # The summary usually edits the "reading the call…" message; an edit notified nobody.
     verb = "filled in the call summary" if inputs.get("edited") else "posted the call summary"
     return "posted", f"{verb}{subject} — a revert button on every action"
 
@@ -447,8 +417,7 @@ def _action_entries(
 
     ts = _ts_of(action)
     if kind == "linear.create_issue":
-        # A citation is shown as a person reads it; an issue with none says nothing about it,
-        # because a line that announces an absence on every ticket stops being information.
+        # A citation is shown as a person reads it; an issue with none says nothing about it.
         cited = [ref_chip(str(c)) for c in (action.get("citations") or [])][:2]
         owner = _who(str(inputs.get("owner") or ""), roster)
         clauses = [
@@ -473,9 +442,8 @@ def journal_entries(
 ) -> list[dict[str, Any]]:
     """The agent's decisions, newest first, as plain sentences.
 
-    Pure: documents in, a list of {ts, category, text, refs} out. `category` is both the badge a
-    reader sees and the CSS class, so a new kind of entry needs no template change. The roster is
-    optional and only ever used to turn a name or a Slack id into a first name."""
+    Pure: documents in, a list of {ts, category, text, refs} out. `category` is both the badge
+    a reader sees and the CSS class."""
     people = roster or []
     children: dict[str, list[Doc]] = {}
     for task in tasks:
@@ -483,8 +451,7 @@ def journal_entries(
         if parent:
             children.setdefault(parent, []).append(task)
     by_id = {str(t["id"]): t for t in tasks}
-    # Which call each task came out of. Only reconcile writes the meeting down, and every task
-    # in a chain shares its root event, so one pass over the reconciles names them all.
+    # Which call each task came out of: one pass over the reconciles names them all.
     calls: dict[str, str] = {}
     for task in tasks:
         meeting = ((task.get("result") or {}).get("meeting") or {}).get("title")
@@ -511,12 +478,9 @@ def journal_entries(
 
 def plan_groups(tasks: list[Doc]) -> list[dict[str, Any]]:
     """Tasks grouped by the plan that created them, each group ordered so a task appears after
-    whatever it waits on, with `depth` = how far down that chain it sits. Depth is what the page
-    indents by, which is a dependency edge drawn in text instead of in SVG.
+    whatever it waits on, with `depth` = how far down that chain it sits.
 
-    Only the planner's own plans get a group. Every stage's children carry a plan_id — it is the
-    queue's transaction id, not a statement that a model planned anything — so the spine of a
-    call (extract → reconcile → act → plan) stays one list rather than looking like four plans."""
+    Only the planner's own plans get a group; a stage's plan_id is the queue's transaction id."""
     planned_by = {str(t["id"]) for t in tasks if t["kind"] == "plan"}
     groups: dict[str, list[Doc]] = {}
     for task in tasks:
@@ -527,8 +491,7 @@ def plan_groups(tasks: list[Doc]) -> list[dict[str, Any]]:
     for plan_id, rows in groups.items():
         inside = {str(r["id"]) for r in rows}
         depth = {str(r["id"]): 0 for r in rows}
-        # Relax until stable rather than recurse: the plan gate rejects cycles, but the console
-        # must render whatever is in the database, including something a cycle survived into.
+        # Relax until stable rather than recurse: the console must render even a cycle.
         for _ in range(len(rows)):
             changed = False
             for row in rows:
@@ -566,11 +529,7 @@ RETRY_SUFFIX = re.compile(r"#retry\d+$")
 
 
 def _origin(event_id: str) -> str:
-    """The call an event belongs to, with a replay's suffix taken off.
-
-    A webhook replayed through the replay script carries `#retry2` on its root event id. It is
-    the same call, and leaving the suffix on split its work into a second nameless strip beside
-    the card that produced it."""
+    """The call an event belongs to, with a replay's suffix taken off."""
     return RETRY_SUFFIX.sub("", str(event_id or "").strip())
 
 
@@ -580,9 +539,7 @@ def _group_of(
 ) -> str:
     """The call this node came out of, as that call's node id.
 
-    "day" for the things no single conversation produced — a standup, a lesson from the daily
-    review, an early resolution off a webhook. Those are the agent's own initiative, and
-    pretending they belong to a call would be the one kind of lie this view can tell."""
+    "day" for the things no single conversation produced."""
     kind, node_id = str(node.get("type")), str(node.get("id"))
     if kind in ("meeting", "intake"):
         return f"{kind}:{_origin(node_id.split(':', 1)[1])}"
@@ -606,10 +563,7 @@ def _group_of(
 
 
 def _when_note(task: Doc, tz: ZoneInfo) -> str:
-    """When a check was due against when it actually landed.
-
-    Only said when the two differ: a check that resolved on its own day needs no explanation,
-    and a check that came back early is the sentence the demo is about."""
+    """When a check was due against when it actually landed. Only said when the two differ."""
     due = day_key(str(task.get("due_at") or ""), tz)
     done = day_key(str(task.get("finished_at") or ""), tz)
     if not due or not done or due == done:
@@ -619,10 +573,8 @@ def _when_note(task: Doc, tz: ZoneInfo) -> str:
 
 
 def _post_label(inputs: dict[str, Any]) -> str:
-    """What a Slack post was, told apart by what the action carries.
-
-    The same signals the journal reads, so a post on the graph and the same post in the feed
-    can never describe themselves differently."""
+    """What a Slack post was, told apart by what the action carries — the same signals the
+    journal reads."""
     template = str(inputs.get("template") or "")
     if template:
         return TEMPLATE_LABELS.get(template, f"a nudge about {template.replace('_', ' ')}")
@@ -650,8 +602,7 @@ def _issue_nodes(actions: list[Doc]) -> tuple[list[dict[str, Any]], dict[str, st
             continue
         inputs = action.get("inputs") or {}
         existing = issues.get(identifier)
-        # A create carries the title and the link; a later comment on the same issue does not,
-        # so the first good value wins rather than the last write.
+        # A create carries the title and the link; the first good value wins.
         issues[identifier] = {
             "id": f"issue:{identifier}",
             "type": "issue",
@@ -666,8 +617,7 @@ def _issue_nodes(actions: list[Doc]) -> tuple[list[dict[str, Any]], dict[str, st
 
 
 def _cap(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The newest GRAPH_NODES. Oldest go first: the far left of the timeline is the part a
-    reviewer scrolls away from, and today is what they came to see."""
+    """The newest GRAPH_NODES. Oldest go first."""
     return sorted(nodes, key=lambda n: str(n["ts"]))[-GRAPH_NODES:]
 
 
@@ -676,9 +626,8 @@ def attribute(
 ) -> dict[str, list[dict[str, Any]]]:
     """Which lines of the journal belong to which node.
 
-    Attribution is set membership on the refs each line already carries, plus `expand` for the
-    two relationships a ref cannot state on its own: a task belongs to the call it came from,
-    and a decision owns the issues it led to. Nothing here re-derives a sentence."""
+    Set membership on the refs each line carries, plus `expand` for relationships a ref cannot
+    state on its own."""
     story: dict[str, list[dict[str, Any]]] = {}
     for entry in entries:
         owners: set[str] = set()
@@ -686,8 +635,7 @@ def attribute(
             if ref in node_ids:
                 owners.add(ref)
             owners.update(target for target in expand.get(ref, []) if target in node_ids)
-        # The page redacts as it renders; JSON has no render step, so a line is cleaned here or
-        # it ships as it is. A stored error can quote a token, and this is the one road out.
+        # JSON has no render step, so a line is redacted here or it ships as it is.
         line = {"ts": entry["ts"], "category": entry["category"],
                 "text": redact(str(entry["text"]))}
         for owner in owners:
@@ -696,8 +644,7 @@ def attribute(
 
 
 def _observations(tasks: list[Doc]) -> dict[str, dict[str, Any]]:
-    """The newest thing each check saw about each issue. This page never calls the tracker — it
-    shows what the agent recorded, which is also what lets it render with the network down."""
+    """The newest thing each check saw about each issue. This page never calls the tracker."""
     seen: dict[str, dict[str, Any]] = {}
     for task in sorted(tasks, key=lambda t: str(t.get("finished_at") or "")):
         observed = (task.get("result") or {}).get("observed") or {}
@@ -746,14 +693,12 @@ def check_facts(task: Doc, owners: dict[str, str] | None = None) -> dict[str, An
 
 
 def _capped(items: list[dict[str, Any]]) -> dict[str, Any]:
-    """A short list plus how much it is hiding. Five lines is what a glance holds; the count is
-    what stops five from reading like all of it."""
+    """A short list plus how much it is hiding."""
     return {"items": items[:NOW_LINES], "more": max(0, len(items) - NOW_LINES)}
 
 
 def _waiting_on(task: Doc, by_id: dict[str, Doc]) -> str:
-    """What a blocked task is waiting for, named rather than pointed at. This is the plan made
-    visible: the graph shows the dependency, this says it out loud."""
+    """What a blocked task is waiting for, named rather than pointed at."""
     named: list[str] = []
     for dependency in task.get("depends_on") or []:
         found = by_id.get(str(dependency))
@@ -766,19 +711,14 @@ def _waiting_on(task: Doc, by_id: dict[str, Doc]) -> str:
 def now_view(
     tasks: list[Doc], events: list[Doc], now: datetime, lease_minutes: int
 ) -> dict[str, Any]:
-    """What the agent is doing this second, what it will do next, and what it is waiting for.
-
-    Assembled from the same task documents the graph is drawn from — the present and the past
-    are one read, so the two halves of the page can never disagree about the state of the queue.
-    """
+    """What the agent is doing this second, what it will do next, and what it is waiting for."""
     by_id = {str(t["id"]): t for t in tasks}
 
     working: list[dict[str, Any]] = []
     for task in tasks:
         if task.get("status") != "leased":
             continue
-        # A lease is stamped as "now + the lease window", so the moment work started is the only
-        # thing the document does not say outright — and is exactly one subtraction away.
+        # A lease is stamped as "now + the lease window", so "since" is one subtraction away.
         until = readable(str(task.get("lease_until") or ""))
         working.append({
             "id": str(task["id"]), "kind": str(task["kind"]),
@@ -828,8 +768,7 @@ def _facts_for(
     owners: dict[str, str],
     nudged: dict[str, int],
 ) -> dict[str, Any]:
-    """What this thing is, in the terms its own kind is described in. Every value comes from a
-    document this project already wrote — the panel is a reading of the record, not a lookup."""
+    """What this thing is, in the terms its own kind is described in."""
     kind, node_id = str(node["type"]), str(node["id"])
     identifier = node_id.partition(":")[2]
 
@@ -874,8 +813,7 @@ def _facts_for(
 
 
 def lesson_chips(node: dict[str, Any], evidence: list[str], labels: dict[str, str]) -> list[str]:
-    """A lesson's evidence, said in the words of what it points at. "task:8da1…" tells a reader
-    nothing; "check that INV-26 is underway" tells them why the agent believes this."""
+    """A lesson's evidence, said in the words of what it points at."""
     chips: list[str] = []
     for ref in evidence:
         chip = labels.get(str(ref)) or ref_chip(str(ref))
@@ -885,8 +823,7 @@ def lesson_chips(node: dict[str, Any], evidence: list[str], labels: dict[str, st
 
 
 def _within_budget(graph: dict[str, Any]) -> dict[str, Any]:
-    """One response has to stay downloadable. Stories are trimmed before anything else — the
-    shape of the graph is the point of the page, and a shorter story is still a true one."""
+    """One response has to stay downloadable. Stories are trimmed before anything else."""
     for limit in STORY_TRIMS:
         for node in graph["nodes"]:
             node["story"] = node.get("story", [])[:limit]
@@ -898,14 +835,12 @@ def _within_budget(graph: dict[str, Any]) -> dict[str, Any]:
 
 async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     """The agent's world as a graph: what it was told, what it decided, what it filed, who owns
-    it, what it is watching, and what it learned. Assembled from the same documents the rest of
-    the console reads — nothing here is a second record."""
+    it, what it is watching, and what it learned."""
     project_id = str(project["id"])
     filters = [("project_id", "==", project_id)]
     tasks = await deps.db.query("tasks", filters, order_by="created_at", limit=SCAN_LIMIT)
     actions = await deps.db.query("actions", filters, order_by="created_at", limit=SCAN_LIMIT)
-    # Collapsed on the way in: production holds near-duplicates from before the ledger guarded
-    # against them, and a graph with the same decision twice is a graph nobody trusts.
+    # Collapse near-duplicates left over from before the ledger guarded against them.
     decisions = collapse(
         await deps.db.query("decisions", filters, order_by="created_at", limit=SCAN_LIMIT),
         lambda row: str(row.get("statement") or ""),
@@ -918,11 +853,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     today = day_key(deps.clock.now().isoformat(), tz)
 
     nodes: list[dict[str, Any]] = []
-    # The only thing this page ever takes from an event payload is the call's title. The
-    # transcript inside it is exactly what the console must never render.
-    # The only things this page takes from an event payload are the call's title and how many
-    # lines the transcript had. The transcript text itself is what the console must never
-    # render; a count of it is not the thing being protected.
+    # From an event payload, only the title and the transcript line count — never the text.
     lines_in: dict[str, int] = {}
     for event in events:
         if event.get("provider") != "fathom":
@@ -940,9 +871,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     issue_nodes, owners = _issue_nodes(actions)
     nodes.extend(issue_nodes)
     roster_list = list(project.get("roster") or [])
-    # People are no longer nodes. They do not happen on a day, so a timeline had to invent a
-    # position for them, and the invented positions pushed the actual work off the screen.
-    # They come back as badges on what they own and as the roster strip.
+    # People are not nodes; they come back as badges on what they own and as the roster strip.
     for task in tasks:
         kind = str(task["kind"])
         if kind == "intake":
@@ -969,8 +898,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
             moot=bool(((task.get("result") or {}).get("observed") or {}).get("moot")),
             waits_on=[f"task:{d}" for d in task.get("depends_on") or []],
         ))
-    # Slack is where the team actually meets the agent, so what it said belongs on the graph
-    # beside what it changed.
+    # What the agent said in Slack belongs on the graph beside what it changed.
     for action in actions:
         if not str(action.get("kind") or "").startswith("slack.") or action.get(
             "status"
@@ -999,8 +927,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     for lesson in lessons:
         nodes.append(_node(f"lesson:{lesson['id']}", "lesson", str(lesson.get("text") or ""),
                            str(lesson.get("created_at") or "")))
-    # What the team told the agent sits beside what the agent worked out for itself: both are
-    # things it knows now and did not know before.
+    # What the team told the agent sits beside what it worked out for itself.
     for page in brain:
         for entry in page.get("entries") or []:
             if entry.get("retired_at"):
@@ -1018,8 +945,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
     kept = _cap(nodes)
     known = {n["id"] for n in kept}
 
-    # Which call each issue came from, routed through the task that filed it. A decision and an
-    # issue that share a root event came out of the same conversation.
+    # Which call each issue came from, routed through the task that filed it.
     task_root = {str(t["id"]): str(t.get("root_event_id") or "") for t in tasks}
     tasks_by_id = {str(t["id"]): t for t in tasks}
     actions_by_id = {str(a["id"]): a for a in actions}
@@ -1048,8 +974,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
             for identifier in linked:
                 link(node_id, f"issue:{identifier}", "led to", created)
         else:
-            # Nothing recorded the link explicitly, so fall back to the call they share. Skipped
-            # entirely when the issue's origin is unknown — a guessed edge is worse than none.
+            # Fall back to the call they share; skipped when the issue's origin is unknown.
             for issue_id, root in issue_event.items():
                 if root and root == event_id:
                     link(node_id, issue_id, "led to", created)
@@ -1071,8 +996,7 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
             if str(ref).startswith("task:"):
                 link(node_id, str(ref), "learned from", str(lesson.get("created_at") or ""))
 
-    # What each node is, and what the agent did about it. The journal is generated once and
-    # attributed, so the panel and the console's feed can never tell different stories.
+    # The journal is generated once and attributed, so panel and feed cannot diverge.
     expand = {f"task:{tid}": [f"meeting:{root}"] for tid, root in task_root.items() if root}
     for decision in decisions:
         linked = [f"issue:{i}" for i in decision.get("linked_issue_ids") or []] or [
@@ -1112,29 +1036,23 @@ async def graph_data(project: Doc, deps: Deps) -> dict[str, Any]:
         node["facts"] = _facts_for(node, project, decisions, observed, created_by_issue,
                                    issue_event, tasks_by_id, owners, nudged)
 
-    # Emitted in the order the replay should reveal them. The client walks the array rather than
-    # the clock: a burst of activity inside one second is the normal case, and a cursor moving
-    # over milliseconds would show all of it in a single frame and then sit still all night.
+    # Emitted in the order the replay should reveal them; the client walks the array, not the clock.
     kept.sort(key=lambda n: (str(n["ts"]), GRAPH_ORDER.get(str(n["type"]), 9), str(n["id"])))
 
-    # Which call each thing came out of. Provenance is the question a reviewer asks first —
-    # "which conversation produced this ticket?" — and the page answers it by alignment, so
-    # every node has to name its origin before anything is positioned.
+    # Every node names its origin before anything is positioned.
     call_names = {f"meeting:{_origin(str(e['id']))}":
                   str((e.get("payload") or {}).get("title") or "Call")
                   for e in events if e.get("provider") == "fathom"}
     for node in kept:
         node["group"] = _group_of(node, task_root, issue_event, tasks_by_id, actions_by_id)
-        # A check sits in the column of the day it is due, which is usually not the day of the
-        # call that asked for it — so it has to name that call in words.
+        # A check sits on its due day, not its call's day, so it names that call in words.
         if node["type"] == "check" and node["group"] in call_names:
             node["from_call"] = _short(call_names[node["group"]], 34)
             scheduled = tasks_by_id.get(str(node["id"]).split(":", 1)[1])
             if scheduled is not None:
                 node["due_human"] = human_due(str(scheduled.get("due_at") or ""))
 
-    # Position is decided here, not in the browser: the layout is a claim about the agent's
-    # week, and a claim belongs somewhere it can be tested without a screenshot.
+    # Position is decided here, not in the browser, so the layout can be tested.
     kept = place(kept, tz, today)
     chains: dict[str, list[Doc]] = {}
     for task in tasks:
@@ -1170,19 +1088,14 @@ def iso_now(deps: Deps) -> str:
 
 def graph_page(project_name: str) -> str:
     """One self-contained document: no script src, no stylesheet link, no font, no CDN. It
-    fetches its own data from /console/graph.json and draws everything itself — the grid, the
-    status marks and the avatars are all built by the page at load."""
+    fetches its own data from /console/graph.json and draws everything itself."""
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>{esc(project_name)} — the agent's world</title>"
         f"<style>{GRAPH_STYLE}</style>{THEME_BOOT}</head><body>"
-        # The toolbar carries what the agent is doing right now, so the status is a line of
-        # text in the chrome rather than a card floating over the work.
         "<div id='top'>"
         f"<span id='title'>{esc(project_name)}</span>"
-        # The switch sits where the console wears it — beside the title — so moving between
-        # the two views never makes the control jump across the screen.
         "<span id='nav'>"
         "<a href='/console/graph' class='on'>Graph</a>"
         "<a href='/console'>Console</a>"
@@ -1221,8 +1134,6 @@ def graph_page(project_name: str) -> str:
 # --- rendering --------------------------------------------------------------------------------
 
 STYLE = """
-/* The console and the graph are one product seen two ways: same palette, same typeface, same
-   property tiles and tables. Clicking between them should feel like changing view, not app. */
 :root[data-theme="light"] {
   --bg:#f7f7f8; --surface:#ffffff; --surface-2:#f0f0f2; --border:#e2e3e6; --border-hi:#cdd0d5;
   --text:#1b1c1f; --text-2:#3d4048; --muted:#6b6f78;
@@ -1349,8 +1260,7 @@ def _table(headers: list[str], rows: list[list[str]], empty: str) -> str:
 
 
 def _journal_html(entries: list[dict[str, str]], tz: ZoneInfo | None = None) -> str:
-    """The journal as a table. Times are the team's own — a standup posted at 9am in
-    California read as 16:00 when this wrote UTC, which makes the agent look mistimed."""
+    """The journal as a table. Times are the team's own."""
     if not entries:
         return "<p class='empty'>The agent has not done anything yet.</p>"
     here = tz or ZoneInfo("UTC")
@@ -1420,8 +1330,7 @@ def _conflicts_html(conflicts: list[dict[str, Any]]) -> str:
 
 
 def _lessons_html(lessons: list[Doc]) -> str:
-    """What the agent worked out about its own behaviour, with what it worked it out from. The
-    evidence is shown because a lesson nobody can trace back is a lesson nobody should trust."""
+    """What the agent worked out about its own behaviour, with what it worked it out from."""
     if not lessons:
         return "<p class='empty'>The agent has not drawn any lessons from its own runs yet.</p>"
     items = "".join(
@@ -1442,8 +1351,7 @@ BRAIN_ORDER = ("ownership", "preferences", "corrections")
 def _brain_html(pages: list[Doc], tz: ZoneInfo) -> str:
     """What this company has told the agent, as its own pages.
 
-    Retired entries stay, struck through: the useful question about an ownership rule is often
-    "since when", and a page that silently rewrites itself cannot answer it."""
+    Retired entries stay, struck through."""
     if not pages:
         return ("<p class='empty'>Nothing yet — tell the agent something in Slack "
                 "(\"from now on…\") and it will remember.</p>")
@@ -1498,8 +1406,7 @@ def _evals_html(doc: Doc | None) -> str:
 
 
 def _tiles(tiles: list[dict[str, Any]]) -> str:
-    """A row of Linear property tiles. Zeros are allowed here: a dashboard saying the agent
-    heard no calls this sprint is telling the truth, where a journal line saying so is not."""
+    """A row of Linear property tiles. Zeros are allowed here."""
     cells = "".join(
         f"<div class='tile'><span class='t-label'>{esc(t['label'])}</span>"
         f"<b class='t-value'>{esc(t['value'])}</b>"
@@ -1600,10 +1507,7 @@ def render(
 
 
 def _toolbar(project: Doc, tasks: list[Doc], actions: list[Doc], here: str) -> str:
-    """The same 40px bar the graph wears, so the two pages are one product.
-
-    The status line is the graph's dock, folded flat: what the agent is doing this second, or
-    what it is waiting for."""
+    """The same 40px bar the graph wears, so the two pages are one product."""
     working = [t for t in tasks if t.get("status") == "leased"]
     if working:
         status, busy = redact(human_working(working[0])), True
@@ -1668,8 +1572,7 @@ async def console(request: Request) -> HTMLResponse:
     events = await deps.db.query("events", filters, order_by="received_at", limit=SCAN_LIMIT)
     decisions = await deps.db.query("decisions", filters, order_by="created_at",
                                     limit=SCAN_LIMIT)
-    # The team's midnight, not the server's. At 22:30 in California the UTC date is already
-    # tomorrow, and "writes today" would be counting a day the team has not started.
+    # The team's midnight, not the server's.
     today = day_key(deps.clock.now().isoformat(), zone(project))
     return HTMLResponse(
         render(project, tasks, actions, corrections, lessons, runs[-1] if runs else None, today,

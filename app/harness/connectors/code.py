@@ -1,5 +1,4 @@
-"""Read-only search over a checked-out repository. Jailed to repo_root: a path that escapes it
-is refused, because the model chooses these paths and `../../.env` must never resolve."""
+"""Read-only search over a checked-out repository."""
 
 from __future__ import annotations
 

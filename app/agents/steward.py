@@ -1,13 +1,4 @@
-"""The steward: the agent takes a request from a person and commits to it, or says it cannot.
-
-This is the planner pointed at a human instead of at a call. The difference that matters is not
-technical — it emits the same validated task graph — but social. A teammate who asks for
-something is owed one of two answers: a specific promise with dates on it, or a plain sentence
-saying what the agent can and cannot do. An agent that answers a request with silence, or with
-an enthusiastic yes it cannot keep, is worse than no agent.
-
-So the empty plan is a first-class outcome here, not a failure. `notes` carries the sentence the
-requester will actually read."""
+"""The steward: the agent takes a request from a person and commits to it, or says it cannot."""
 
 from __future__ import annotations
 

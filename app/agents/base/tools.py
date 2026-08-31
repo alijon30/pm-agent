@@ -1,13 +1,7 @@
 """The read-only tools an agent may call.
 
-Three rules hold for every tool here:
-
-1. **Read-only.** Nothing in this module writes anywhere. The stages perform side effects.
-2. **Never raise at the model.** A source outage returns {"status": "unavailable"} so the model
-   can say what it could not check, instead of the run dying mid-thought.
-3. **A docstring is an API.** ADK builds the tool schema from the signature and docstring, so
-   the wording here is what the model actually reads.
-"""
+The tool docstrings below are model-facing: ADK sends them to the model as the tool
+schema. They are API, not comments — do not trim them."""
 
 from __future__ import annotations
 

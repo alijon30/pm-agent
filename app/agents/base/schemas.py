@@ -1,5 +1,4 @@
-"""Output schemas for the ADK agents. ADK forces the model to emit exactly these shapes; the
-stages validate again with the same classes, so gates always operate on typed data."""
+"""Output schemas for the ADK agents."""
 
 from __future__ import annotations
 

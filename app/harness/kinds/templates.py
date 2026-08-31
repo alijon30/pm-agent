@@ -37,8 +37,7 @@ TEMPLATES: dict[str, str] = {
     "escalate_no_owner": (
         "{issue} hasn't moved and nobody owns it. Who's picking this up?"
     ),
-    # The one message addressed to whoever asked for the check rather than to the owner. It
-    # names their own request back to them, because a ping out of context reads as noise.
+    # Addressed to whoever asked for the check; it names their own request back to them.
     "requester_unmet": (
         "{person} — you asked me to watch {issue}: {finding}."
     ),

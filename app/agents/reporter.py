@@ -1,11 +1,4 @@
-"""The reporter: the agent says what happened this sprint, and proves every word of it.
-
-A status report is the one artefact of this system a team lead reads without checking anything,
-which makes an uncited sentence in it more dangerous than an uncited sentence anywhere else. So
-the model is given only material this harness gathered deterministically — live issues, its own
-check results, the decision ledger — and every claim it writes must carry a reference back into
-that material. The citation gate removes the ones that do not; the instruction below exists so
-that removal is rare rather than routine."""
+"""The reporter: the agent says what happened this sprint, and proves every word of it."""
 
 from __future__ import annotations
 

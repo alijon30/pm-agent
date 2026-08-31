@@ -1,5 +1,4 @@
-"""The heartbeat. Cloud Scheduler POSTs here once a minute with the shared token; we run every
-due task whose kind we know how to handle, sequentially, oldest first."""
+"""The heartbeat. Cloud Scheduler POSTs here once a minute with the shared token."""
 
 from __future__ import annotations
 
@@ -18,12 +17,7 @@ DAILY_REVIEW = "daily_review"
 
 
 async def _ensure_daily_review(deps: Deps) -> str | None:
-    """Queue the morning review, unless today already has one.
-
-    Cloud Scheduler retries, and a retry that queued a second review would give the agent two
-    chances to learn the same lesson and two plans for one day. The queue hands out random ids,
-    so "already done today" is a question about what is in the collection rather than about a
-    document id we could have chosen."""
+    """Queue the morning review, unless today already has one (Cloud Scheduler retries)."""
     project = await deps.projects.get(deps.settings.default_project_slug)
     if project is None:
         return None
@@ -48,11 +42,8 @@ async def tick(request: Request) -> dict[str, Any]:
     given = request.headers.get("x-tick-token", "")
     if not expected or not hmac.compare_digest(given, expected):
         raise HTTPException(status_code=401, detail="bad tick token")
-    # Drain in rounds: a stage's children are due immediately, and a call should flow through
-    # extract → reconcile → act → plan in one tick, not one stage per minute. The budget keeps
-    # a busy queue from outliving the request; whatever is left waits for the next tick.
-    # The same endpoint, a different job on the scheduler: one header decides whether this tick
-    # also starts the day. It then drains as usual, so the review runs inside this same request.
+    # Drain in rounds: a call flows extract → reconcile → act → plan in one tick, within budget.
+    # The x-tick-kind header decides whether this tick also queues the daily review first.
     queued_review = (
         await _ensure_daily_review(deps)
         if request.headers.get(TICK_KIND_HEADER, "") == DAILY_REVIEW else None

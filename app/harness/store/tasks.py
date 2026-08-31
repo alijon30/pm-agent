@@ -1,8 +1,4 @@
-"""The durable task-graph queue. Firestore documents are the tasks; a lease is the claim;
-dependencies make a task `blocked` until every dependency is done; a cas() that marks a task
-done and creates its children (a plan) in one transaction is what makes "did the work but
-failed to schedule the follow-up" impossible. The model never touches this module: stages hand
-the runner child specs, and the runner calls complete()."""
+"""The durable task-graph queue."""
 
 from __future__ import annotations
 
@@ -322,8 +318,7 @@ class TaskQueue:
 
     async def complete_early(self, task: Doc, result: dict[str, Any]) -> bool:
         """Reality satisfied a scheduled check before its due time: complete it from any open
-        status, without a lease — there is no work to protect, only a fact to record. False when
-        the task was already terminal or running."""
+        status, without a lease. False when the task was already terminal or running."""
         return await self._db.cas(
             "tasks", task["id"],
             lambda t: t["status"] in ("queued", "blocked", "deferred"),

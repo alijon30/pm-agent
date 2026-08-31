@@ -1,13 +1,4 @@
-"""Early resolution: reality moved, so the schedule follows it.
-
-Scheduled checks are deadlines, not appointments. When an issue changes, every open check about
-it is re-evaluated immediately: a check whose condition is already met completes now — ahead of
-its due date — and whatever depended on it unblocks now too. A check that is still unmet is left
-alone until its due time, because the deadline is the promise; chasing someone early about
-unfinished work is how an agent gets muted.
-
-Nothing here fires on_unmet, posts, or nudges. It only turns future good news into present
-fact — the one kind of action that cannot annoy anyone."""
+"""Early resolution: reality moved, so the schedule follows it."""
 
 from __future__ import annotations
 
@@ -30,8 +21,7 @@ RESOLVABLE = ("queued", "blocked", "deferred")
 
 async def resolve_early(identifier: str, deps: Deps) -> list[str]:
     """Re-evaluate every open check about this issue. Returns the ids of checks that completed
-    ahead of schedule. Dependency order does not matter: a met condition is met regardless of
-    which check was scheduled to notice it first, and promote_ready() reconciles the graph."""
+    ahead of schedule."""
     resolved: list[str] = []
     open_checks = [
         t for t in await deps.db.query("tasks", [("status", "in", list(RESOLVABLE))])
@@ -53,15 +43,13 @@ async def resolve_early(identifier: str, deps: Deps) -> list[str]:
 
 
 async def _good_news(identifier: str, resolved: list[str], deps: Deps) -> str:
-    """One line of good news, with the person in it. "INV-26 is already underway" is a state
-    change; "Priya's already on INV-26" is somebody doing their job."""
+    """One line of good news, with the person in it."""
     cleared = [t for t in [await deps.db.get("tasks", tid) for tid in resolved] if t]
     who = first_name(str(
         ((cleared[0] if cleared else {}).get("result") or {}).get("observed", {}).get("assignee")
         or ""
     ))
-    # A check the work overtook is cleared for a different reason than one somebody got ahead
-    # of, and the note should say which.
+    # moot: the work finished outright rather than somebody getting ahead of the schedule.
     moot = bool(cleared) and all(
         ((t.get("result") or {}).get("observed") or {}).get("moot") for t in cleared
     )
@@ -80,18 +68,13 @@ async def _good_news(identifier: str, resolved: list[str], deps: Deps) -> str:
         nxt = min(upcoming, key=lambda t: str(t.get("due_at") or ""))
         return (f"{opening} — I've cleared{when}. Next up: {human_check(nxt)}, "
                 f"{when_phrase(str(nxt.get('due_at') or ''), deps.clock.now())}.")
-    # "early" is the whole point when somebody got ahead of the schedule, and wrong when the
-    # work simply finished — nothing was early about it.
+    # "early" is wrong when the work simply finished.
     return f"{opening} — I've cleared{when}." if moot else f"{opening} — I've cleared{when} early."
 
 
 async def _note_in_thread(identifier: str, resolved: list[str], deps: Deps) -> None:
     """A quiet line under the plan announcement, so the channel sees progress without a ping.
-    Best-effort: the early completion stands whether or not this lands.
-
-    Best-effort is not the same as silent. A bare `except Exception: return` here hid the fact
-    that this note was never reaching the channel at all, so anything unexpected is logged with
-    its traceback; only an outage is shrugged off, because that one is ordinary."""
+    Best-effort: the early completion stands whether or not this lands."""
     if deps.slack is None or deps.actions is None:
         return
     plan_posts = [
@@ -100,8 +83,7 @@ async def _note_in_thread(identifier: str, resolved: list[str], deps: Deps) -> N
     ]
     if not plan_posts:
         return
-    # The query has no order_by — Firestore returns these in whatever order it likes, so the
-    # newest announcement is chosen here rather than by taking the last row.
+    # No order_by: Firestore returns these in any order, so the newest is chosen here.
     newest = max(plan_posts, key=lambda a: str(a.get("created_at") or ""))
     target = newest.get("target_ids") or {}
     channel, ts = target.get("channel"), target.get("ts")

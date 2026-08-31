@@ -1,9 +1,4 @@
-"""How an agent is declared, and the one place a tool allow-list is enforced.
-
-Every agent is a name, a model, an instruction, a set of read-only tools and a fixed output
-schema — plus budgets, so a confused run costs a bounded amount. `build_agent` attaches a
-`before_tool_callback` that refuses any tool outside the spec: the tool list already omits
-writers, and this refuses them again in code the prompt cannot reach."""
+"""How an agent is declared, and the one place a tool allow-list is enforced."""
 
 from __future__ import annotations
 
@@ -36,8 +31,7 @@ class AgentSpec:
 
 
 # ADK delivers structured output by calling a synthetic tool of its own when an agent has both
-# an output_schema and real tools. It is the framework talking to itself, not the model reaching
-# for something, so the guard must let it through — denying it silently empties the response.
+# an output_schema and real tools; the guard must let it through or the response comes back empty.
 ADK_INTERNAL_TOOLS = frozenset({"set_model_response", "transfer_to_agent", "exit_loop"})
 
 
@@ -45,8 +39,7 @@ class ToolGuard:
     """Denies tools outside the allow-list and stops a run that will not stop calling them.
 
     Returning a dict from before_tool_callback skips the tool and hands the model that dict as
-    the result, so a denied call becomes a visible refusal in the transcript rather than a
-    crash — the run continues and usually recovers."""
+    the result, so a denied call is a visible refusal rather than a crash."""
 
     def __init__(self, allowed: set[str], max_calls: int) -> None:
         self._allowed = allowed
@@ -76,10 +69,7 @@ class ToolGuard:
 def _content_config(spec: AgentSpec) -> types.GenerateContentConfig:
     """One environment switch turns reasoning on for every agent at once.
 
-    PM_THINKING_BUDGET is a token budget for the model's own deliberation (0 = off). It lives
-    in the environment rather than on each spec because it is a deployment posture, not an
-    agent trait: off on the free tier where every token is rationed, on in production where
-    judgment is worth more than latency."""
+    PM_THINKING_BUDGET is a token budget for the model's own deliberation (0 = off)."""
     budget = int(os.environ.get("PM_THINKING_BUDGET", "0") or "0")
     thinking = (
         types.ThinkingConfig(thinking_budget=budget) if budget > 0 and spec.thinking else None

@@ -27,8 +27,7 @@ class Settings(BaseSettings):
     # Verified against models.list() on day 1 (scripts/list_models.py).
     model_fast: str = "gemini-3.5-flash-lite"
     model_strong: str = "gemini-3.5-flash"
-    # Gemma, not Gemini: triage is a classifier, and the smaller open model is both cheaper and
-    # a second Google model family in the build. Verified with scripts/list_models.py.
+    # Gemma, not Gemini: triage is a classifier. Verified with scripts/list_models.py.
     model_triage: str = "gemma-4-31b-it"
 
     stage_timeout_seconds: int = 600

@@ -1,5 +1,4 @@
-"""Print the Gemini/Gemma model ids visible to this API key. Run once on day 1 and paste the
-result into the README's "verified on" line; config defaults must be in this list."""
+"""Print the Gemini/Gemma model ids visible to this API key."""
 
 from google import genai
 

@@ -1,12 +1,5 @@
 """Reset the demo world: the agent's records go, the configuration stays.
 
-Deletes every document in the collections the agent writes as it works — tasks, actions,
-events, decisions, wiki_pages, and the _contract test scratch — and leaves `projects` (the
-Acme configuration) and `evals` (published results the README cites) untouched. Optionally
-archives a range of Linear issues so the board matches.
-
-Dry-run by default; nothing is deleted without --apply.
-
     uv run --env-file .env python scripts/wipe_demo_data.py
     uv run --env-file .env python scripts/wipe_demo_data.py --apply --archive-linear 20:36
 """

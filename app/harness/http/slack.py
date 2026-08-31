@@ -1,9 +1,4 @@
-"""Slack's side of the conversation: the buttons on a summary, and mentions.
-
-Revert is the promise that makes full autonomy acceptable — the agent acts without asking, and
-anyone can undo any single action in one click. It is deliberately dumb: replay the inverse
-payload the action recorded, cancel the follow-ups that only existed because of it, and edit the
-message so the record in the channel matches the record in the tracker."""
+"""Slack's side of the conversation: the buttons on a summary, and mentions."""
 
 from __future__ import annotations
 
@@ -24,23 +19,18 @@ from app.harness.deps import Deps
 
 router = APIRouter()
 
-# Two different jobs, deliberately two different patterns. CANCEL *detects* a cancellation from
-# words alone, for when no classifier answered. ISSUE_KEY only *extracts* the identifier, and is
-# what a classified cancellation uses — once Gemma has said "cancel", requiring the word "stop"
-# as well would be the keyword router quietly overruling it.
+# CANCEL detects a cancellation from words alone; ISSUE_KEY only extracts the identifier.
 CANCEL = re.compile(r"\b(stop|cancel|forget|drop)\b.*\b[A-Z][A-Z0-9]*-\d+\b")
 ISSUE_KEY = re.compile(r"\b([A-Z][A-Z0-9]*-\d+)\b")
 MENTION_TOKEN = re.compile(r"<@[^>]+>")
 # Below this a mention is a greeting, not a request. "@pm-agent thanks" deserves no task.
 MIN_REQUEST_WORDS = 4
 KNOWN_INTENTS = ("report", "request", "cancel", "instruct", "noise")
-# How a person tells a colleague to work differently from now on. Not a request for a check —
-# a rule that outlives the message, which is why it goes to the brain rather than the queue.
+# A rule that outlives the message; it goes to the brain rather than the queue.
 INSTRUCTS = re.compile(
     r"\b(from now on|going forward|always|never|stop\s+\w+ing|don't|do not|"
     r"remember that|assign\s+.+\s+to\b)", re.IGNORECASE)
-# Slack wants a 200 in three seconds. A classifier that has not answered in two is one we do not
-# wait for — the keyword router below was good enough before Gemma existed.
+# Slack wants a 200 in three seconds; a classifier slower than two is not waited for.
 CLASSIFY_SECONDS = 2.0
 
 
@@ -57,8 +47,7 @@ def request_text(text: str) -> str:
 
 def task_for(intent: str, text: str, project_id: str) -> dict[str, Any] | None:
     """The task one classified intent becomes, or None when this intent cannot be actioned from
-    this text — a cancellation with no identifier in it, for instance, which the caller then
-    re-reads as an ordinary request."""
+    this text."""
     if intent == "report":
         return {"kind": "report", "params": {"project": project_id, "window": "sprint"},
                 "reason": "report requested in Slack"}
@@ -72,8 +61,7 @@ def task_for(intent: str, text: str, project_id: str) -> dict[str, Any] | None:
         rule = request_text(text)
         if not rule:
             return None
-        # Same stage as a request — the steward reads both — but flagged, because the answer
-        # to an instruction is a memory rather than a plan.
+        # Same stage as a request, but flagged: the answer to an instruction is a memory, not a plan.
         return {"kind": "intake", "params": {"text": rule, "instruct": True},
                 "reason": "a teammate told me how to work from now on"}
     if intent == "request":
@@ -87,13 +75,9 @@ def task_for(intent: str, text: str, project_id: str) -> dict[str, Any] | None:
 
 def intent_of(text: str, project_id: str) -> dict[str, Any] | None:
     """What a mention is asking for, decided by keywords alone — the fallback for when the
-    classifier is unavailable, unsure, or too slow, and the rule the tests pin down.
-
-    Pure, because the routing rule is the part worth reading in a test rather than inferring
-    from a Slack fixture."""
+    classifier is unavailable, unsure, or too slow."""
     raw = str(text or "")
-    # Order matters. "stop watching INV-27" is a cancellation about one ticket, not a rule; but
-    # "always put the report in the thread" is a rule about reports, not a request for one.
+    # Order matters: a cancellation about one ticket beats a rule; a rule beats a report request.
     if CANCEL.search(raw) is not None:
         return task_for("cancel", raw, project_id)
     if INSTRUCTS.search(raw) is not None and request_text(raw):
@@ -243,8 +227,7 @@ async def events(request: Request) -> dict[str, Any]:
         )
         said = str(event.get("text") or "")
         classified = await classify(deps, said)
-        # A classified intent wins; anything it could not action falls back to the keywords.
-        # "noise" is the one answer that stops here: the agent saw it and has nothing to do.
+        # A classified intent wins; keywords are the fallback — except "noise", which stops here.
         intent = task_for(classified, said, str(project["id"])) if classified else None
         if intent is None and classified != "noise":
             intent = intent_of(said, str(project["id"]))
@@ -253,10 +236,7 @@ async def events(request: Request) -> dict[str, Any]:
             # Seen, and deliberately not acted on. The reaction is the whole reply.
             await react_quietly(deps.slack, event.get("channel"), event.get("ts"), "eyes")
         elif event_id is not None and intent is not None:
-            # The asker should not stare at a silent channel for a tick: "On it…" lands in the
-            # thread inside Slack's three-second window, and the stage that does the work later
-            # edits this same message into the answer — one message that fills itself in, the
-            # same shape as a call summary. Best-effort: no ack still means the work happens.
+            # "On it…" is best-effort; the stage later edits this same message into the answer.
             ack: dict[str, Any] = {}
             if deps.slack is not None:
                 try:
@@ -267,9 +247,7 @@ async def events(request: Request) -> dict[str, Any]:
                     ack = {"channel": event.get("channel"), "ts": ack_ts}
                 except SourceUnavailable:
                     ack = {}
-            # Answer where it was asked: every stage this queues posts into this channel and
-            # thread rather than the project channel, so a question in one room is never
-            # answered in another. The requester travels with the work.
+            # Answer where it was asked: the channel, thread and requester travel with the work.
             task_id = await deps.queue.enqueue(
                 kind=intent["kind"],
                 project_id=project["id"],
@@ -280,8 +258,6 @@ async def events(request: Request) -> dict[str, Any]:
                 root_event_id=event_id,
             )
             if task_id is not None:
-                # 👀 on the mention: the asker sees the request landed, in the three seconds
-                # Slack gives this route, without a message anyone has to read. The stage that
-                # runs it adds ✅ or 🤝 to the same message when it has an answer.
+                # 👀 says the request landed; the stage adds ✅ or 🤝 when it has an answer.
                 await react_quietly(deps.slack, event.get("channel"), event.get("ts"), "eyes")
     return {"ok": True}

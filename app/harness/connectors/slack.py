@@ -1,7 +1,4 @@
-"""Slack Web API, plus request-signature verification for the inbound side.
-
-Two directions live here on purpose: the signing secret and the bot token are both Slack
-protocol knowledge, and keeping them together means http/slack.py stays about routing."""
+"""Slack Web API, plus request-signature verification for the inbound side."""
 
 from __future__ import annotations
 
@@ -103,11 +100,7 @@ class SlackClient:
         await self._call("chat.update", payload)
 
     async def react(self, channel: str, ts: str, name: str) -> None:
-        """Add one emoji reaction to a message. `name` is the emoji name with no colons.
-
-        Reacting twice is success, not a failure: a reaction is a piece of state, and
-        `already_reacted` means the state we wanted is already there. Every other application
-        error is an outage like any other."""
+        """Add one emoji reaction to a message. `name` is the emoji name with no colons."""
         try:
             await self._call(
                 "reactions.add", {"channel": channel, "timestamp": ts, "name": name}
@@ -121,7 +114,7 @@ class SlackClient:
         await self._call("views.open", {"trigger_id": trigger_id, "view": view})
 
     async def user_info(self, user_id: str) -> dict[str, Any] | None:
-        """None for an unknown user; an outage still raises. Used to map a clicker to a person."""
+        """None for an unknown user; an outage still raises."""
         try:
             data = await self._call("users.info", {"user": user_id})
         except SourceUnavailable as exc:
@@ -143,12 +136,8 @@ class Reactor(Protocol):
 async def react_quietly(
     slack: Reactor | None, channel: str | None, ts: str | None, name: str
 ) -> bool:
-    """Acknowledge a message with an emoji. True if it landed.
-
-    A reaction is the only thing this agent can say in Slack that notifies nobody, which is
-    exactly why it is used to say "I have this" and "this is done". It is decoration on top of
-    work that already happened, so an outage here is a shrug, never a failed request or a
-    failed stage."""
+    """Acknowledge a message with an emoji. True if it landed — an outage here is a shrug,
+    never a failed request or a failed stage."""
     if slack is None or not channel or not ts:
         return False
     try:

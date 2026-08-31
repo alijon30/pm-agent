@@ -1,21 +1,5 @@
 """The company brain: what this team has told the agent, kept so it does not have to be said
-twice.
-
-Four kinds of thing live here, and the difference matters because each is used differently:
-
-    ownership   who takes a kind of work — "billing and statements go to Nodir"
-    preference  how to work — "never nudge before ten", "always cc the channel"
-    fact        something durable about the product — "rates allow six decimals"
-    correction  a mistake somebody pointed out, and what right looked like
-
-Every entry carries where it came from. An entry with no source is a rumour, and this store
-does not keep rumours: `source` is a typed ref that the identifier gate can re-check, so a
-sentence in a Linear ticket that says "per the brain" can always be traced to the person who
-said it and the moment they said it.
-
-Nothing here reinterprets anything. Entries are matched to a situation by word overlap and
-handed to the model as text; the gates that already govern owners, citations and evidence still
-govern what comes back."""
+twice."""
 
 from __future__ import annotations
 
@@ -30,8 +14,7 @@ KINDS = ("ownership", "preference", "fact", "correction")
 PAGE_OF = {"ownership": "ownership", "preference": "preferences", "correction": "corrections"}
 BRAIN_LIMIT = 8
 WORD = re.compile(r"[a-z0-9][a-z0-9'-]*")
-# Words too common to tell one situation from another. Kept short on purpose: a brain that
-# fires slightly too often is a smaller problem than one that never fires.
+# Words too common to tell one situation from another.
 NOISE = frozenset({
     "about", "after", "again", "always", "another", "because", "before", "being", "could",
     "every", "first", "never", "other", "should", "their", "there", "these",
@@ -41,16 +24,13 @@ NOISE = frozenset({
 
 
 def keywords(text: str, limit: int = 12) -> list[str]:
-    """The words that decide whether something applies later.
-
-    Crude on purpose, and the same rule everywhere: an entry that fires slightly too often is
-    a smaller problem than one that never fires when it should."""
+    """The words that decide whether something applies later."""
     found = {w for w in WORD.findall(str(text or "").lower()) if len(w) > 4 and w not in NOISE}
     return sorted(found)[:limit]
 
 
 def topic_slug(text: str) -> str:
-    """Which facts page a fact belongs on. Facts are per topic so a page stays readable."""
+    """Which facts page a fact belongs on."""
     words = keywords(text, limit=2)
     return "facts-" + ("-".join(words) if words else "general")
 
@@ -60,8 +40,7 @@ def overlap(entry: dict[str, Any], words: set[str]) -> int:
 
 
 class WikiStore:
-    """The brain, as pages of entries. One store, not one per kind: a reader asking "what do
-    you know about billing?" should not have to know which drawer it was filed in."""
+    """The brain, as pages of entries."""
 
     def __init__(self, db: Db, clock: Clock) -> None:
         self._db = db
@@ -75,14 +54,13 @@ class WikiStore:
     ) -> tuple[str, str] | None:
         """Remember one thing. Returns (slug, entry_id), or None when it was already known.
 
-        Idempotent by source: the same Slack message replayed, or the same fact extracted from
-        the same call twice, must not become two memories."""
+        Idempotent by source: the same message replayed must not become two memories."""
         if kind not in KINDS:
             return None
         text = str(entry.get("text") or "").strip()
         source = str(entry.get("source") or "").strip()
         if not text or not source:
-            # No source, no memory. An entry nobody can trace is one nobody can argue with.
+            # No source, no memory.
             return None
 
         slug = self._slug(kind, text)
@@ -94,8 +72,7 @@ class WikiStore:
         fresh = {
             "id": new_id(),
             "text": text,
-            # An explicitly empty subject means "this applies to everything", which is not the
-            # same as not having said what it is about.
+            # An explicitly empty subject means "this applies to everything".
             "subject": list(entry["subject"]) if "subject" in entry else keywords(text),
             "person": entry.get("person"),
             "source": source,
@@ -103,8 +80,7 @@ class WikiStore:
             "created_at": iso(self._clock.now()),
             "retired_at": None,
         }
-        # A newer instruction about the same subject retires the older one rather than
-        # deleting it: the page should be able to answer "since when, and what changed".
+        # A newer instruction retires the older one rather than deleting it.
         for old in entries:
             if self._contradicts(old, fresh, kind):
                 old["retired_at"] = fresh["created_at"]
@@ -117,9 +93,7 @@ class WikiStore:
     def _contradicts(self, old: dict[str, Any], fresh: dict[str, Any], kind: str) -> bool:
         """Whether a new entry replaces an older one.
 
-        Only ownership can contradict: the same work cannot belong to two people, so naming a
-        new owner retires the old claim. A second preference or fact about the same subject is
-        additional, not contradictory — people hold several opinions about billing."""
+        Only ownership can contradict: the same work cannot belong to two people."""
         if kind != "ownership" or old.get("retired_at"):
             return False
         same = set(old.get("subject") or []) & set(fresh.get("subject") or [])
@@ -145,8 +119,7 @@ class WikiStore:
     ) -> list[dict[str, Any]]:
         """What this company has told the agent that bears on the situation in hand.
 
-        Word overlap, newest first, retired entries left out. Capped because a prompt that
-        carries the whole brain carries none of it — the model reads the top of a list."""
+        Word overlap, newest first, retired entries left out."""
         words = set(keywords(text, limit=64))
         wanted = tuple(kinds or KINDS)
         scored: list[tuple[int, str, dict[str, Any]]] = []

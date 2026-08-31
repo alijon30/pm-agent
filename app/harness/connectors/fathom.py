@@ -1,5 +1,4 @@
-"""Fathom webhook verification and payload normalisation. The REST connector (meetings,
-transcript re-fetch) is added in Plan 2 if the webhook payload turns out to omit anything we need."""
+"""Fathom webhook verification and payload normalisation."""
 
 from __future__ import annotations
 

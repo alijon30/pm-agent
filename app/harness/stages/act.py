@@ -1,19 +1,4 @@
-"""act: the only stage that changes anything outside this system.
-
-No model runs here. Everything the reconciler proposed has already been verified; this stage
-decides what policy allows, performs the writes, and records how to undo each one.
-
-The order matters and is deliberate:
-
-    roster → priority → dates → caps → idempotency → write → record
-
-An owner who is not on the project is dropped before a priority is considered, because assigning
-urgency to a phantom is worse than either mistake alone. Caps come last of the gates so that an
-item held back by a cap is otherwise fully decided and can simply be replayed tomorrow.
-
-Every write is recorded as `pending` before it happens, with a deterministic idempotency key
-also stamped into the issue body. A crash between the write and the record is therefore
-recoverable: the next attempt finds its own earlier work instead of duplicating it."""
+"""act: the only stage that changes anything outside this system."""
 
 from __future__ import annotations
 
@@ -35,11 +20,7 @@ from app.harness.verify.roster import resolve_owner
 SAID_HEADING = "**What was said**"
 DESCRIPTION_CAP = 1800
 
-# The ladder the body is cut down by when it runs long, in order. The investigation goes first
-# because it is the one section an engineer can rebuild for themselves — the files stay behind
-# in **Checked:** either way — and the note is the longest thing in it. Then the quotes after
-# the first, then the free prose down to a paragraph each. The acceptance criteria are never on
-# this ladder: a ticket that arrives without them is the thing this was all built to stop.
+# The ladder the body is cut down by when it runs long; acceptance criteria are never trimmed.
 FULL, NO_NOTE, NO_INVESTIGATION, ONE_QUOTE, SHORT_PROSE = range(5)
 PROSE_CEILING = 240
 
@@ -55,10 +36,7 @@ def _clip(text: str, room: int) -> str:
 
 
 def _code_path(ref: str) -> str:
-    """`code:acme/reminders/scheduler.py:19` as `acme/reminders/scheduler.py:19`.
-
-    The typed reference is what the identifier gate re-checks and it sits in **Checked:** a few
-    lines further down; what belongs in a sentence an engineer reads is the line they open."""
+    """`code:acme/reminders/scheduler.py:19` as `acme/reminders/scheduler.py:19`."""
     text = str(ref or "").strip()
     return text[5:] if text.lower().startswith("code:") else text
 
@@ -66,10 +44,8 @@ def _code_path(ref: str) -> str:
 def _said_lines(item: dict[str, Any], meeting: dict[str, Any], keep: int | None) -> list[str]:
     """The words somebody actually said, each with the moment in the call they said them.
 
-    `moments` holds one fathom reference per quote, built by the reconcile stage from the same
-    evidence entries `quotes` came from, in the same order — so the pairing is the extractor's
-    work, not a guess made here. An item filed before that field existed renders its quotes
-    without the moments rather than mispairing them."""
+    `moments` holds one fathom reference per quote, in the same order; an item filed before
+    that field existed renders its quotes without the moments rather than mispairing them."""
     quotes = [str(q) for q in item.get("quotes") or []]
     moments = [str(m) for m in item.get("moments") or []]
     speakers = [str(s) for s in item.get("speakers") or []]
@@ -94,8 +70,7 @@ def _said_lines(item: dict[str, Any], meeting: dict[str, Any], keep: int | None)
 
 
 def _said_line(quote: str, ref: str, who: str) -> str:
-    """`> Two of them said they'd leave — Tom, 01:58`. The machine reference behind the moment
-    stays in **Checked:**; a sentence a human reads gets a name and a clock, not a URI."""
+    """`> Two of them said they'd leave — Tom, 01:58`."""
     stamp = ref.rsplit("@", 1)[-1] if "@" in ref else ""
     stamp = stamp[3:] if len(stamp) == 8 and stamp.startswith("00:") else stamp
     name = first_name(who) if who else ""
@@ -104,8 +79,7 @@ def _said_line(quote: str, ref: str, who: str) -> str:
 
 
 def _acceptance_lines(item: dict[str, Any]) -> list[str]:
-    """What "done" means, as boxes a reviewer can tick. Nobody has to guess whether the thing
-    they built is the thing that was asked for."""
+    """What "done" means, as boxes a reviewer can tick."""
     criteria = [str(c).strip() for c in item.get("acceptance") or [] if str(c).strip()]
     if not criteria:
         return []
@@ -113,8 +87,7 @@ def _acceptance_lines(item: dict[str, Any]) -> list[str]:
 
 
 def _investigation_lines(item: dict[str, Any], *, with_note: bool) -> list[str]:
-    """Where the behaviour lives, for a bug. Confidence is stated because "possible" and
-    "likely" send an engineer to different places, and "unknown" tells them to start fresh."""
+    """Where the behaviour lives, for a bug."""
     investigation = item.get("investigation") or {}
     note = str(investigation.get("note") or "").strip() if with_note else ""
     files = [path for path in (_code_path(f) for f in investigation.get("files") or []) if path]
@@ -131,7 +104,7 @@ def _investigation_lines(item: dict[str, Any], *, with_note: bool) -> list[str]:
 
 def _head_lines(item: dict[str, Any], meeting: dict[str, Any], trim: int) -> list[str]:
     """The part of the body that describes the work: why, what was said, what done means, and
-    what the code says. Assembled here and nowhere else, so no model decides its shape."""
+    what the code says."""
     room = PROSE_CEILING if trim >= SHORT_PROSE else DESCRIPTION_CAP
     lines: list[str] = []
     lead = _clip(str(item.get("description") or "").strip(), room)
@@ -149,9 +122,7 @@ def _head_lines(item: dict[str, Any], meeting: dict[str, Any], trim: int) -> lis
 
 def _tail_lines(item: dict[str, Any], notes: list[str]) -> list[str]:
     """What the gates produced: the disagreements, the references that were re-fetched, every
-    place the proposal was not taken at face value. None of it is ever trimmed — a note about
-    why the owner is missing is the most useful line in the ticket. (Idempotency lives in the
-    actions store, not here: the footer is provenance for a reader, nothing parses it.)"""
+    place the proposal was not taken at face value. None of it is ever trimmed."""
     lines: list[str] = []
     for conflict in item.get("conflicts") or []:
         sides = " · ".join(
@@ -173,13 +144,8 @@ def _tail_lines(item: dict[str, Any], notes: list[str]) -> list[str]:
 def build_description(
     item: dict[str, Any], meeting: dict[str, Any], key: str, notes: list[str]
 ) -> str:
-    """What a human reads in Linear. Every claim carries where it came from, so the issue can be
-    audited in ten seconds without opening this system.
-
-    Nothing here is model prose: the sections are assembled in a fixed order from typed fields,
-    empty ones are left out rather than filled with a heading and nothing under it, and the
-    whole thing goes through redact() before it leaves. A body over the cap is cut down the
-    ladder above and never past the footer."""
+    """What a human reads in Linear. A body over the cap is cut down the ladder above and
+    never past the footer."""
     tail = redact("\n".join(_tail_lines(item, notes)))
     head = ""
     for trim in (FULL, NO_NOTE, NO_INVESTIGATION, ONE_QUOTE, SHORT_PROSE):
@@ -254,8 +220,7 @@ async def _perform(
 
     earlier = await deps.actions.find_by_key(key)
     if earlier is not None and earlier.get("status") == "done":
-        # A replay after a crash. Report what actually exists — not what this attempt would
-        # have done — so the summary of a retried run is still true.
+        # A replay after a crash: report what the earlier attempt actually did.
         return {
             "outcome": "created" if earlier["kind"] == "linear.create_issue" else "updated",
             "identifier": earlier["target_ids"].get("identifier"),
@@ -291,8 +256,7 @@ async def _perform(
             return {"outcome": "created", "identifier": created["identifier"],
                     "url": created["url"], "action_id": action_id, "title": item["title"],
                     "owner": (decided["owner"] or {}).get("name"),
-                    # Both already decided above; carried so the summary can say where the date
-                    # came from without anybody having to go and look.
+                    # Carried so the summary can say where the date came from.
                     "due": decided["due"], "due_hint": item.get("due_hint"),
                     "note": "; ".join(decided["notes"])}
 
@@ -350,8 +314,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         performed.append({"id": record["action_id"], "label": record["identifier"] or "action"})
         (created if record["outcome"] == "created" else updated).append(record)
 
-    # The same disagreement often arrives twice — once against the item, once against the
-    # decision that produced it. The team should hear about it once.
+    # The same disagreement often arrives twice: once on the item, once on the decision.
     conflicts = dedupe_conflicts(
         [c for item in reconciled.get("items") or [] for c in item.get("conflicts") or []]
         + (reconciled.get("decision_conflicts") or [])
@@ -404,15 +367,9 @@ async def _post_summary(
     counts: dict[str, int],
     deps: Deps,
 ) -> str | None:
-    """One message per call. Decoration is best-effort: a Slack outage must not undo the work
-    that already landed in the tracker.
+    """One message per call, edited into the webhook's status message when there is one.
 
-    Where the webhook left a "reading the call…" message, this edits that message in place
-    rather than posting a second one. Slack notifies nobody for a chat.update, which is the
-    point: the team already got one notification when the call ended, and watching the message
-    fill itself in is calm in a way a second post is not. The plan announcement that follows is
-    deliberately a fresh post — that one is new information, arriving after the work is done,
-    and it should ping."""
+    Best-effort: a Slack outage must not undo the work that already landed in the tracker."""
     assert deps.actions is not None
     channel = project.get("slack_channel_id")
     if deps.slack is None or not channel:
@@ -435,8 +392,7 @@ async def _post_summary(
         meeting, created, updated, skipped, conflicts, performed, post_ref=action_id,
         now=deps.clock.now(),
     )
-    # The notification line is the message's own first sentence, said once — Slack shows the
-    # preview or the message, never both, so a second header would only ever be a duplicate.
+    # The notification line is the message's own first sentence; Slack never shows both.
     text = (f"{meeting.get('title', 'call')} — "
             f"{what_happened(created, updated, skipped, conflicts)}.")
     try:
@@ -459,10 +415,7 @@ async def _post_summary(
 async def _status_message(task: Doc, deps: Deps) -> dict[str, str] | None:
     """The "reading the call…" message the webhook posted for this call, if there is one.
 
-    A replayed root carries a `#retryN` suffix (scripts and operators use it to rerun a call
-    with fresh idempotency), so the event id is everything before the `#`. A mention-triggered
-    flow has no status message at all, and neither does a call whose Slack post failed — both
-    simply post fresh."""
+    A replayed root carries a `#retryN` suffix, so the event id is everything before the `#`."""
     root = str(task.get("root_event_id") or "")
     if not root:
         return None

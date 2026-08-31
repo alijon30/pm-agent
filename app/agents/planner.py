@@ -1,10 +1,4 @@
-"""The planner: the agent decides what it will check, and when.
-
-This is the closest the system comes to letting a model drive, so the boundary is worth stating
-plainly. The planner never enqueues anything. It emits a task graph as structured output; the
-plan gate decides which of those tasks are real; the queue materialises the survivors in one
-transaction. The model gets the judgment — what to watch, in what order, how long to wait — and
-none of the authority."""
+"""The planner: the agent decides what it will check, and when."""
 
 from __future__ import annotations
 
@@ -72,10 +66,7 @@ def build_planner(
         output_schema=Plan,
         tools=tools,
         max_tool_calls=max_tool_calls,
-        # With thinking on, this agent stopped answering through ADK's structured-output tool
-        # and hand-wrote its plan JSON instead — six consecutive runs on Vertex, all malformed
-        # around the 14k-character mark. The planner's judgment survives in the plan itself;
-        # the deliberation budget was breaking the envelope it arrives in.
+        # With thinking on, this agent hand-writes its plan JSON and it arrives malformed.
         thinking=False,
     )
 
