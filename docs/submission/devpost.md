@@ -8,12 +8,12 @@ video link, live demo URL (`https://pm-agent-999960779013.us-central1.run.app/co
 
 ## Project name
 
-pm-agent
+Autonomous PM Agent
 
 ## Elevator pitch (≤ ~200 chars)
 
-An autonomous product manager: the call ends, the cited tickets exist, the follow-ups schedule
-themselves, and the team just gets told — with a revert button on every action.
+The call ends. The tickets exist, cited to the words that created them. The follow-ups
+scheduled themselves. Undo is one click. An autonomous product manager on Gemini 3.5.
 
 ## Inspiration
 

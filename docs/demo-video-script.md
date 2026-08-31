@@ -11,7 +11,7 @@ below must be visible as seconds.
 
 ## 0:00 — The claim (Slack channel, quiet)
 
-> This is pm-agent — an autonomous product manager. It runs around the clock on Cloud Run, and
+> This is the Autonomous PM Agent. It runs around the clock on Cloud Run, and
 > it never asks permission. That sounds reckless, so let me show you why it's the safest design
 > in the room.
 
@@ -104,7 +104,7 @@ README tab, scroll to the guarantees table.
 ## 3:50 — Close (graph tab)
 
 > Autonomy isn't a capability problem. It's a trust-engineering problem — and trust lives in
-> the gates, not in the model. pm-agent: it acts, you can always undo, and it can always show
+> the gates, not in the model. The Autonomous PM Agent: it acts, you can always undo, and it can always show
 > its work.
 
 Hold on the graph for two seconds. Stop.

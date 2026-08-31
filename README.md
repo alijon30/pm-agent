@@ -1,7 +1,7 @@
-# pm-agent
+# Autonomous PM Agent
 
-An autonomous product manager, built for Google's All Things Agentic Hackathon 2026
-(Taskmaster track) with Gemini 3.5, Google ADK, and Google Cloud.
+Built for Google's All Things Agentic Hackathon 2026 (Taskmaster track) with Gemini 3.5,
+Google ADK, and Google Cloud. Repo name: `pm-agent`.
 
 A product call ends. A few minutes later the decisions are recorded, the action items are
 Linear tickets with owners and citations, follow-up checks are scheduled for the right days,
