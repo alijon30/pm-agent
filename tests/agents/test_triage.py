@@ -159,3 +159,12 @@ async def test_the_real_gemma_finds_the_decisions_in_the_fixture_call() -> None:
     kept = " ".join(s["text"] for s, keep in zip(lines, flags, strict=True) if keep).lower()
     assert "three days" in kept, "the planted decision must survive triage"
     assert sum(flags) < len(flags), "keeping literally everything means it did not filter"
+
+
+def test_gemma_stays_on_the_gemini_api_when_the_agents_move_to_vertex(monkeypatch) -> None:
+    """GOOGLE_GENAI_USE_VERTEXAI routes bare clients to Vertex, where Gemma does not live."""
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    triage = GemmaTriage()
+    client = triage._api()
+    assert client.vertexai is False

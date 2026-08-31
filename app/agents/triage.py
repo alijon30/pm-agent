@@ -115,9 +115,17 @@ class GemmaTriage:
         """Built on first use, not in __init__: constructing a client reads the environment, and
         wiring should not fail at import time on a machine with no key."""
         if self._client is None:
+            import os
+
             from google import genai
 
-            self._client = genai.Client()
+            # Pinned to the API-key path on purpose: the reasoning agents run on Vertex, but
+            # Gemma is not in Vertex's serverless catalog — it lives on the Gemini API, whose
+            # free tier is plenty for a classifier. Without the pin, GOOGLE_GENAI_USE_VERTEXAI
+            # would route this client to Vertex too and every triage call would 404.
+            self._client = genai.Client(
+                vertexai=False, api_key=os.environ.get("GOOGLE_API_KEY", "")
+            )
         return self._client
 
     async def _ask(self, prompt: str, *, max_output_tokens: int) -> str:
