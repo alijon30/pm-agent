@@ -88,7 +88,11 @@ async def test_a_signed_webhook_says_it_is_reading_the_call_and_remembers_where(
     post = deps.slack.posts[0]
     assert post["channel"] == "C-product"
     assert post["text"] == (
-        "✻ Reading *Q3 Billing planning*… I'll file what was agreed and set up the follow-through."
+        "✻ *Q3 Billing planning* — on it. The plan:\n"
+        "▸ read the call\n"
+        "○ check it against Linear, the docs and the code\n"
+        "○ file what was agreed\n"
+        "○ set up the follow-through"
     )
     assert post["blocks"] == []  # plain text: there is nothing to show yet
 

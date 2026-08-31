@@ -13,6 +13,7 @@ from app.harness.connectors.fathom import parse_meeting, verify_signature
 from app.harness.core.errors import SourceUnavailable
 from app.harness.deps import Deps
 from app.harness.stages.early import issue_identifier_of, resolve_early
+from app.harness.stages.progress import checklist
 
 router = APIRouter()
 
@@ -72,10 +73,7 @@ async def _post_status(
         return
     title = meeting.get("title") or "the call"
     try:
-        ts = await deps.slack.post(
-            channel,
-            f"✻ Reading *{title}*… I'll file what was agreed and set up the follow-through.",
-        )
+        ts = await deps.slack.post(channel, checklist(title, doing=0))
     except SourceUnavailable:
         return
     await deps.db.update("events", event_id, {"status_message": {"channel": channel, "ts": ts}})

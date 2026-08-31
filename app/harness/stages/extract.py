@@ -10,6 +10,7 @@ from app.agents.base.schemas import ExtractResult
 from app.harness.connectors.fathom import parse_meeting, render_transcript, transcript_plain
 from app.harness.core.errors import PmError
 from app.harness.deps import Deps
+from app.harness.stages import progress
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
 from app.harness.verify.evidence import check_evidence
@@ -228,4 +229,8 @@ async def run(task: Doc, deps: Deps) -> StageResult:
                 "Linear, Notion and code"
             ),
         })
+        await progress.show(
+            task, deps, title=meeting["title"], doing=1,
+            notes={0: progress.read_note(len(kept["action_items"]), len(decision_ids))},
+        )
     return StageResult(result=result, children=children)

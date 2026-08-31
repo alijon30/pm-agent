@@ -17,6 +17,7 @@ from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.voice import LEADING_VERBS
 from app.harness.core.words import count_of
 from app.harness.deps import Deps
+from app.harness.stages import progress
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
 from app.harness.verify.ids import IdGate
@@ -130,6 +131,18 @@ def moments_for(index: int, action_items: list[dict[str, Any]], meeting_id: str)
             str(e.get("timestamp") or "").strip()
             for e in action_items[index].get("evidence") or []
         )
+    ]
+
+
+def speakers_for(index: int, action_items: list[dict[str, Any]]) -> list[str]:
+    """Who said each quote in `quotes_for`, position for position — so the ticket can attribute
+    the words instead of pointing at a machine reference. Empty where the extractor caught the
+    words but not the voice."""
+    if not 0 <= index < len(action_items):
+        return []
+    return [
+        str(e.get("speaker") or "").strip()
+        for e in action_items[index].get("evidence") or []
     ]
 
 
@@ -401,6 +414,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         index = int(item.get("index", -1))
         item["quotes"] = quotes_for(index, action_items)
         item["moments"] = moments_for(index, action_items, meeting["meeting_id"])
+        item["speakers"] = speakers_for(index, action_items)
 
     # Durable facts go into the brain, but only the ones whose source survived the identifier
     # gate: a fact nobody can re-open is exactly the kind of thing that should not become
@@ -448,4 +462,14 @@ async def run(task: Doc, deps: Deps) -> StageResult:
             "reason": f"retry {len(unverified)} item(s) whose sources were unavailable",
         })
 
+    await progress.show(
+        task, deps, title=str(meeting.get("title") or "the call"), doing=2,
+        notes={
+            0: progress.read_note(
+                len(extracted.get("action_items") or []),
+                len(extracted.get("decision_ids") or []),
+            ),
+            1: progress.check_note(len(verified)),
+        },
+    )
     return StageResult(result=result, children=children)

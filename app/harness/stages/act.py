@@ -23,6 +23,7 @@ from app.harness.connectors.slack_blocks import call_summary_blocks, what_happen
 from app.harness.core.errors import PmError, SourceUnavailable
 from app.harness.core.keys import idempotency_key
 from app.harness.core.redact import redact
+from app.harness.core.voice import first_name
 from app.harness.deps import Deps
 from app.harness.stages.base import StageResult
 from app.harness.store.db import Doc
@@ -31,7 +32,6 @@ from app.harness.verify.dates import resolve_due
 from app.harness.verify.priority import check_priority
 from app.harness.verify.roster import resolve_owner
 
-FOOTER = "<!-- pm-agent:{key} -->"
 SAID_HEADING = "**What was said**"
 DESCRIPTION_CAP = 1800
 
@@ -72,8 +72,11 @@ def _said_lines(item: dict[str, Any], meeting: dict[str, Any], keep: int | None)
     without the moments rather than mispairing them."""
     quotes = [str(q) for q in item.get("quotes") or []]
     moments = [str(m) for m in item.get("moments") or []]
+    speakers = [str(s) for s in item.get("speakers") or []]
     said = [
-        (quote.strip(), moments[i] if i < len(moments) else "")
+        (quote.strip(),
+         moments[i] if i < len(moments) else "",
+         speakers[i].strip() if i < len(speakers) else "")
         for i, quote in enumerate(quotes)
         if quote.strip()
     ]
@@ -86,8 +89,18 @@ def _said_lines(item: dict[str, Any], meeting: dict[str, Any], keep: int | None)
         f"[recording]({meeting['url']})" if meeting.get("url") else "",
     ] if part)
     lines = [f"{SAID_HEADING} — {where}" if where else SAID_HEADING]
-    lines += [f"> {quote} · `{ref}`" if ref else f"> {quote}" for quote, ref in said]
+    lines += [_said_line(quote, ref, who) for quote, ref, who in said]
     return [*lines, ""]
+
+
+def _said_line(quote: str, ref: str, who: str) -> str:
+    """`> Two of them said they'd leave — Tom, 01:58`. The machine reference behind the moment
+    stays in **Checked:**; a sentence a human reads gets a name and a clock, not a URI."""
+    stamp = ref.rsplit("@", 1)[-1] if "@" in ref else ""
+    stamp = stamp[3:] if len(stamp) == 8 and stamp.startswith("00:") else stamp
+    name = first_name(who) if who else ""
+    trail = ", ".join(part for part in (name, stamp) if part)
+    return f"> {quote} — {trail}" if trail else f"> {quote}"
 
 
 def _acceptance_lines(item: dict[str, Any]) -> list[str]:
@@ -134,11 +147,11 @@ def _head_lines(item: dict[str, Any], meeting: dict[str, Any], trim: int) -> lis
     return lines
 
 
-def _tail_lines(item: dict[str, Any], key: str, notes: list[str]) -> list[str]:
+def _tail_lines(item: dict[str, Any], notes: list[str]) -> list[str]:
     """What the gates produced: the disagreements, the references that were re-fetched, every
-    place the proposal was not taken at face value, and the key a retried run recognises. None
-    of it is ever trimmed — a body too long to carry its own idempotency key would be filed
-    twice, and a note about why the owner is missing is the most useful line in the ticket."""
+    place the proposal was not taken at face value. None of it is ever trimmed — a note about
+    why the owner is missing is the most useful line in the ticket. (Idempotency lives in the
+    actions store, not here: the footer is provenance for a reader, nothing parses it.)"""
     lines: list[str] = []
     for conflict in item.get("conflicts") or []:
         sides = " · ".join(
@@ -153,7 +166,7 @@ def _tail_lines(item: dict[str, Any], key: str, notes: list[str]) -> list[str]:
     for note in notes:
         lines.append(f"_{note}_")
 
-    lines += ["", f"— filed by pm-agent {FOOTER.format(key=key)}"]
+    lines += ["", "— filed by pm-agent"]
     return lines
 
 
@@ -167,7 +180,7 @@ def build_description(
     empty ones are left out rather than filled with a heading and nothing under it, and the
     whole thing goes through redact() before it leaves. A body over the cap is cut down the
     ladder above and never past the footer."""
-    tail = redact("\n".join(_tail_lines(item, key, notes)))
+    tail = redact("\n".join(_tail_lines(item, notes)))
     head = ""
     for trim in (FULL, NO_NOTE, NO_INVESTIGATION, ONE_QUOTE, SHORT_PROSE):
         head = redact("\n".join(_head_lines(item, meeting, trim))).strip()

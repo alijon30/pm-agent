@@ -127,7 +127,7 @@ def test_the_description_shows_the_quote_the_conflict_and_what_was_checked() -> 
     assert "`code:acme/config.py:6`" in body and "`notion:page-prd`" in body
     assert "`fathom:8841201@00:01:58`" in body
     assert "_owner not on the roster_" in body
-    assert "<!-- pm-agent:key-abc -->" in body
+    assert "— filed by pm-agent" in body
 
 
 # --- the writes -------------------------------------------------------------------------------
@@ -141,7 +141,7 @@ async def test_a_verified_item_becomes_one_cited_assigned_issue(deps: Deps) -> N
     write = deps.linear.writes[0]
     assert write["op"] == "create" and write["assignee_id"] == "u-nodir"
     assert write["priority"] == 3 and write["due_date"] == "2026-09-04"
-    assert "pm-agent:" in write["description"]
+    assert "— filed by pm-agent" in write["description"]
 
     action = (await deps.actions.list_since("acme", "2026-01-01T00:00:00+00:00"))[0]
     assert action["status"] == "done" and action["kind"] == "linear.create_issue"
@@ -493,7 +493,7 @@ def test_the_description_carries_the_why_the_words_the_criteria_and_the_code() -
     assert "**Investigation** (likely)" in body
     assert "due_for_reminder" in body
     assert "· acme/reminders/scheduler.py:19 · acme/config.py:6" in body
-    assert "<!-- pm-agent:key-abc -->" in body
+    assert "— filed by pm-agent" in body
 
 
 def test_the_sections_arrive_in_the_order_somebody_reads_them_in() -> None:
@@ -510,8 +510,8 @@ def test_each_quote_carries_the_moment_it_was_said_at() -> None:
     """A reader who wants the tone opens the recording at that second, not at the top."""
     body = build_description(INVESTIGATED, MEETING, "key-abc", [])
 
-    assert "> Customers are getting the same reminder twice · `fathom:8841201@00:01:58`" in body
-    assert "> Two of them said they'd leave · `fathom:8841201@00:02:11`" in body
+    assert "> Customers are getting the same reminder twice — 01:58" in body
+    assert "> Two of them said they'd leave — 02:11" in body
 
 
 def test_a_quote_whose_moment_nobody_recorded_is_still_quoted() -> None:
@@ -597,7 +597,7 @@ def test_however_long_the_body_runs_the_key_a_retry_recognises_survives() -> Non
     body = build_description(enormous, MEETING, "key-abc", ["Sam isn't on this project"])
 
     assert len(body) <= DESCRIPTION_CAP
-    assert body.endswith("— filed by pm-agent <!-- pm-agent:key-abc -->")
+    assert body.endswith("— filed by pm-agent")
     assert "**Checked:** `fathom:8841201@00:01:58`" in body
     assert "_Sam isn't on this project_" in body
     assert "…" in body
