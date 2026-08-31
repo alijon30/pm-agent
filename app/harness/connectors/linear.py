@@ -73,6 +73,12 @@ mutation($id: String!, $input: IssueUpdateInput!) {
 }
 """
 
+_ARCHIVE = """
+mutation($id: String!) {
+  issueArchive(id: $id) { success }
+}
+"""
+
 _COMMENT = """
 mutation($input: CommentCreateInput!) {
   commentCreate(input: $input) { success comment { id } }
@@ -218,6 +224,15 @@ class LinearClient:
             "identifier": issue.get("identifier"),
             "url": issue.get("url"),
         }
+
+    async def archive_issue(self, identifier: str) -> None:
+        """Archiving is its own Linear mutation and wants the UUID, not the key — an
+        issueUpdate with an "archived" field is a 400, which is how the revert button spent a
+        day silently doing nothing."""
+        issue = await self.get_issue(identifier)
+        if issue is None or not issue.get("id"):
+            raise SourceUnavailable("linear", f"{identifier} not found")
+        await self._gql(_ARCHIVE, {"id": str(issue["id"])})
 
     async def update_issue(self, issue_id: str, fields: dict[str, Any]) -> dict[str, Any]:
         data = await self._gql(_UPDATE, {"id": issue_id, "input": fields})

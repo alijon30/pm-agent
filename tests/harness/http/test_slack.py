@@ -82,8 +82,7 @@ async def test_revert_undoes_the_write_and_records_who_did_it(
 
     assert response.status_code == 200
     assert response.json()["text"].startswith("Reverted INV-143.")
-    assert deps.linear.writes[-1] == {"op": "update", "identifier": "INV-143",
-                                      "fields": {"archived": True}}
+    assert deps.linear.writes[-1] == {"op": "archive", "identifier": "INV-143"}
     action = await deps.actions.get(action_id)
     assert action is not None
     assert action["status"] == "reverted" and action["reverted_by"] == "U-maya"
@@ -176,7 +175,7 @@ async def test_a_tracker_outage_during_revert_reports_it_instead_of_lying(
     async def down(*args: Any, **kwargs: Any) -> dict[str, Any]:
         raise SourceUnavailable("linear", "HTTP 503")
 
-    deps.linear.update_issue = down  # type: ignore[method-assign]
+    deps.linear.archive_issue = down  # type: ignore[method-assign]
     body = interaction(block_action(f"revert:{action_id}"))
     text = client.post("/slack/interactions", content=body, headers=signed(body)).json()["text"]
     assert text.startswith("I can't undo that right now:")

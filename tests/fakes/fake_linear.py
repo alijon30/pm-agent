@@ -92,6 +92,11 @@ class FakeLinear:
         })
         return {"id": issue["id"], "identifier": identifier, "url": issue["url"]}
 
+    async def archive_issue(self, identifier: str) -> None:
+        issue = self._existing(identifier)
+        issue["archived"] = True
+        self.writes.append({"op": "archive", "identifier": identifier})
+
     async def update_issue(self, issue_id: str, fields: dict[str, Any]) -> dict[str, Any]:
         issue = self._existing(issue_id)
         issue.update(copy.deepcopy(fields))

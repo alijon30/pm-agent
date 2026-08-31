@@ -130,7 +130,7 @@ async def _revert(action_id: str, who: str, deps: Deps) -> str:
     op = revert.get("op")
     try:
         if op == "archive" and deps.linear is not None:
-            await deps.linear.update_issue(revert["issue"], {"archived": True})
+            await deps.linear.archive_issue(revert["issue"])
         elif op == "delete_comment" and deps.linear is not None:
             await deps.linear.comment(
                 revert["issue"], "_This comment was reverted by the team._"
