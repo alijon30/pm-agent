@@ -116,13 +116,27 @@ The live instance is the easiest way: open the
 [graph](https://pm-agent-999960779013.us-central1.run.app/console/graph) and the
 [console](https://pm-agent-999960779013.us-central1.run.app/console).
 
-To run your own:
+To run your own, you need a Gemini API key and a Firestore to write to. The quickest
+Firestore is the local emulator, which needs no Google Cloud account at all:
+
+```
+gcloud emulators firestore start --host-port=127.0.0.1:8790   # keep running
+```
+
+Then, in another terminal:
 
 ```
 uv sync
-cp .env.example .env          # fill in GOOGLE_API_KEY at minimum
+cp .env.example .env          # fill in GOOGLE_API_KEY; set PM_GCP_PROJECT=demo
+export FIRESTORE_EMULATOR_HOST=127.0.0.1:8790
+uv run --env-file .env python scripts/seed_project.py   # writes the project config + roster
 uv run --env-file .env uvicorn app.main:create_default_app --factory --port 8080
 ```
+
+(Have a real GCP project? Skip the emulator lines, set `PM_GCP_PROJECT` to your project id,
+and run `gcloud auth application-default login` — Firestore in Native mode is all it needs.
+Connectors whose credentials are absent simply stay disabled; the stages that need them fail
+closed with a reason.)
 
 Then feed it a call (no Fathom account needed, the webhook payload carries the transcript):
 
