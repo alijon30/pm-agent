@@ -35,14 +35,15 @@ click.
 ## What it does
 
 A product call ends. Fathom fires a webhook, and pm-agent, which runs around the clock on
-Cloud Run, does the PM's next two hours in about a minute:
+Cloud Run, does the PM's next two hours in a few minutes:
 
 - It reads the call. Every action item needs a verbatim quote behind it, or it gets dropped.
 - It checks Linear, the docs and the actual codebase before filing anything. A re-raised issue
   becomes a note on the existing ticket instead of a duplicate.
 - It files tickets I'd actually want to receive: why this matters, what was said (with who
-  said it and when), acceptance criteria as checkboxes, and an Investigation section pointing
-  at the file and line where the bug probably lives, with an honest confidence label.
+  said it and when), acceptance criteria as checkboxes, an Investigation section pointing
+  at the file and line where the bug probably lives, with an honest confidence label, and a
+  frontend/backend label it works out from the call.
 - It schedules its own follow-through: a dependency-ordered chain of checks (underway by
   Tuesday, then a PR exists, then it landed), each with a date and a declared consequence.
   Bad news waits for its deadline. Good news doesn't: when an engineer drags a ticket to In
@@ -69,7 +70,8 @@ GenAI SDK.
 The orchestrator is not a framework. It's a Firestore task graph: leases via transactions,
 depends_on edges, retry with backoff, and plans that materialise atomically, so a plan is
 never half-scheduled. Cloud Scheduler ticks it once a minute, webhooks short-circuit it the
-moment reality moves, and Cloud Run scales the whole thing to zero between ticks.
+moment reality moves, and Cloud Run scales it down between ticks (one warm instance stays
+up through the judging window).
 
 Between every model output and every external effect sit deterministic gates: quotes must
 exist in the transcript, identifiers are re-fetched before they may be cited, owners must be
@@ -127,8 +129,8 @@ degrades to silence, never to lies.
 
 And it's all live-proven off real recorded calls against my real product: it caught a
 re-raised issue and updated the existing ticket instead of duplicating it, its investigation
-sections point at real files and lines, and the median from call ended to tickets filed is
-about a minute.
+sections point at real files and lines, and a call becomes filed, cited tickets in minutes,
+not at the end of somebody's day.
 
 ## What we learned
 
