@@ -16,6 +16,7 @@ from app.harness.core.errors import SourceUnavailable
 from app.harness.core.redact import redact
 from app.harness.core.words import count_of
 from app.harness.deps import Deps
+from app.harness.http.poke import poke_tick
 
 router = APIRouter()
 
@@ -258,6 +259,7 @@ async def events(request: Request) -> dict[str, Any]:
                 root_event_id=event_id,
             )
             if task_id is not None:
+                poke_tick(deps.settings.tick_token)
                 # 👀 says the request landed; the stage adds ✅ or 🤝 when it has an answer.
                 await react_quietly(deps.slack, event.get("channel"), event.get("ts"), "eyes")
     return {"ok": True}

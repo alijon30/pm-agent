@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from app.harness.connectors.fathom import parse_meeting, verify_signature
 from app.harness.core.errors import SourceUnavailable
 from app.harness.deps import Deps
+from app.harness.http.poke import poke_tick
 from app.harness.stages.early import issue_identifier_of, resolve_early
 from app.harness.stages.progress import checklist
 
@@ -51,6 +52,7 @@ async def fathom_webhook(request: Request) -> dict[str, Any]:
         policy=project.get("policy"),
     )
     await _post_status(event_id, meeting, project, deps)
+    poke_tick(deps.settings.tick_token)
     return {"status": "queued", "task_id": task_id}
 
 

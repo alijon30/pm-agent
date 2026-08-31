@@ -144,3 +144,21 @@ async def test_a_project_with_no_channel_configured_simply_says_nothing(
 
     assert response.json()["status"] == "queued"
     assert deps.slack.posts == []
+
+
+async def test_a_landed_call_pokes_the_tick_so_work_starts_in_seconds(
+    client: TestClient, deps: Deps, monkeypatch
+) -> None:
+    """The scheduler is the guarantee; the poke is why the demo never stares at a silent
+    channel for a minute."""
+    import app.harness.http.webhooks as webhooks
+
+    pokes: list[str] = []
+    monkeypatch.setattr(webhooks, "poke_tick", pokes.append)
+    deps.settings.fathom_webhook_secret = SECRET
+    deps.settings.tick_token = "tick-secret"
+    await deps.projects.upsert("acme", {**ACME, "slack_channel_id": "C-product"})
+
+    client.post("/webhooks/fathom", content=SAMPLE, headers=signed_headers(SAMPLE))
+
+    assert pokes == ["tick-secret"]
