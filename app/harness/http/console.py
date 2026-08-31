@@ -1181,16 +1181,18 @@ def graph_page(project_name: str) -> str:
         # text in the chrome rather than a card floating over the work.
         "<div id='top'>"
         f"<span id='title'>{esc(project_name)}</span>"
+        # The switch sits where the console wears it — beside the title — so moving between
+        # the two views never makes the control jump across the screen.
+        "<span id='nav'>"
+        "<a href='/console/graph' class='on'>Graph</a>"
+        "<a href='/console'>Console</a>"
+        "</span>"
         "<span id='tagline'>Each column is a day · each row a kind of work · "
         "click anything for its story</span>"
         "<span id='status'><i id='status-dot'></i><b id='status-text'>waking up…</b></span>"
         "<span id='tools'>"
         "<button id='now-btn' class='flat'>Now</button>"
         "<span id='avatars'></span>"
-        "<span id='nav'>"
-        "<a href='/console/graph' class='on'>Graph</a>"
-        "<a href='/console'>Console</a>"
-        "</span>"
         + _theme_button("flat")
         + "</span></div>"
         "<div id='stage'><div id='world'>"
