@@ -86,3 +86,24 @@ If a deploy stalls after "Uploading sources... done":
       --tag us-central1-docker.pkg.dev/pm-agent-hackathon-26/cloud-run-source-deploy/pm-agent/redesign:<tag> .
     gcloud run deploy pm-agent --region us-central1 --project pm-agent-hackathon-26 \
       --image us-central1-docker.pkg.dev/pm-agent-hackathon-26/cloud-run-source-deploy/pm-agent/redesign:<tag> --quiet
+
+
+## Gemini API key and tiers (learned 2026-08-31)
+
+The Gemini API tier follows the KEY's project, not the gcloud account. The original AI Studio
+key lived in an auto-created unbilled project: free tier (flash: 20 requests/day). A key minted
+on pm-agent-hackathon-26 (`gcloud services api-keys create --api-target
+service=generativelanguage.googleapis.com`) attaches to the billed project — but that project
+is prepay-gated: until billing is set up for the Gemini API in AI Studio
+(https://ai.studio/projects → project → billing; see
+https://ai.google.dev/gemini-api/docs/billing#prepay), EVERY model returns "prepayment credits
+are depleted", including the ones that are free elsewhere.
+
+Secret versions: v1 = old free-tier key (works, small quota), v2 = project-bound key (works
+only after AI Studio billing). The service is PINNED to `pm-google-api-key:1` — env-var
+secrets referencing `latest` resolve at instance start, so on a scale-to-zero service a bad
+`latest` takes production down at the next cold start. After AI Studio billing is confirmed
+(probe with a burst of 15 flash calls), unpin with:
+
+    gcloud run services update pm-agent --region us-central1 \
+      --update-secrets GOOGLE_API_KEY=pm-google-api-key:latest
