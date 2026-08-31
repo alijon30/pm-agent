@@ -55,6 +55,9 @@ Then emit one entry per action item with:
   For "update" and "duplicate_of", target_issue MUST be an identifier you actually read.
 - owner: EXACTLY one name from roster, or null. Never guess. If the call named someone who is
   not on the roster, leave owner null and say so in the description.
+- area: "frontend" or "backend" when the call or the code you read makes it obvious which side
+  of the product the work lives on; null otherwise. It becomes a label on the ticket, so only
+  set it when you would defend it.
 - priority: 1 urgent, 2 high, 3 medium, 4 low, or null. When the transcript contains
   escalation language about an item — urgent, blocker, blocked, p0, asap — you MUST set 1 for a
   spoken emergency or 2 for spoken urgency, and the citations MUST include the fathom moment

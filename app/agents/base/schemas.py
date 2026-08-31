@@ -112,6 +112,11 @@ class ReconcileItem(BaseModel):
         default=None, description="The existing issue for update/duplicate_of; null for new."
     )
     owner: str | None = Field(default=None, description="A roster name, or null.")
+    area: Literal["frontend", "backend"] | None = Field(
+        default=None,
+        description="Which side of the product the work lives on, when the call or the code "
+                    "you read makes it clear. Null when it is neither or unclear.",
+    )
     priority: int | None = Field(
         default=None, description="Linear scale: 1 urgent … 4 low. Null when nobody indicated."
     )

@@ -235,7 +235,8 @@ async def _perform(
         inputs={"title": item["title"], "disposition": item["disposition"],
                 "target_issue": item.get("target_issue"),
                 "owner": (decided["owner"] or {}).get("name"),
-                "priority": decided["priority"], "due": decided["due"]},
+                "priority": decided["priority"], "due": decided["due"],
+                "area": item.get("area")},
         citations=list(item.get("citations") or []),
         checks_passed=list(decided["checks_passed"]),
     )
@@ -248,6 +249,7 @@ async def _perform(
                 title=item["title"], description=body,
                 assignee_id=(decided["owner"] or {}).get("linear_user_id") or None,
                 priority=decided["priority"], due_date=decided["due"],
+                labels=[item["area"]] if item.get("area") else None,
             )
             await deps.actions.finish(
                 action_id, target_ids={"identifier": created["identifier"], "url": created["url"]},

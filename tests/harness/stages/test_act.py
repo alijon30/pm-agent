@@ -625,3 +625,12 @@ async def test_the_files_an_investigation_named_reach_linear_in_the_body_and_the
     assert "**Checked:** `fathom:8841201@00:01:58` · `code:acme/reminders/scheduler.py:19`" in (
         written)
     assert "- [ ] A customer gets at most one reminder per invoice per day" in written
+
+
+async def test_the_spoken_area_becomes_a_label_on_the_ticket(deps: Deps) -> None:
+    """"It's a frontend bug" on the call becomes a frontend label in Linear — and no area
+    means no label, never a guessed one."""
+    task = await wire(deps, items=[{**ITEM, "area": "frontend"}])
+    await run(task, deps)
+
+    assert deps.linear.writes[0]["labels"] == ["frontend"]

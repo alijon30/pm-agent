@@ -55,6 +55,18 @@ mutation($input: IssueCreateInput!) {
 }
 """
 
+_TEAM_LABELS = """
+query($team: String!) {
+  team(id: $team) { labels { nodes { id name } } }
+}
+"""
+
+_LABEL_CREATE = """
+mutation($input: IssueLabelCreateInput!) {
+  issueLabelCreate(input: $input) { issueLabel { id name } }
+}
+"""
+
 _UPDATE = """
 mutation($id: String!, $input: IssueUpdateInput!) {
   issueUpdate(id: $id, input: $input) { success issue { id identifier } }
@@ -149,6 +161,29 @@ class LinearClient:
         nodes = ((data.get("team") or {}).get("members") or {}).get("nodes") or []
         return [dict(n) for n in nodes]
 
+    async def _label_ids(self, team_id: str, names: list[str]) -> list[str]:
+        """Ids for the given label names on this team, creating any that do not exist yet."""
+        data = await self._gql(_TEAM_LABELS, {"team": team_id})
+        existing = {
+            str(n["name"]).lower(): str(n["id"])
+            for n in ((data.get("team") or {}).get("labels") or {}).get("nodes") or []
+        }
+        ids: list[str] = []
+        for name in names:
+            key = name.strip().lower()
+            if not key:
+                continue
+            if key not in existing:
+                made = await self._gql(
+                    _LABEL_CREATE, {"input": {"name": key, "teamId": team_id}}
+                )
+                node = (made.get("issueLabelCreate") or {}).get("issueLabel") or {}
+                if node.get("id"):
+                    existing[key] = str(node["id"])
+            if key in existing:
+                ids.append(existing[key])
+        return ids
+
     async def create_issue(
         self,
         *,
@@ -159,6 +194,7 @@ class LinearClient:
         assignee_id: str | None,
         priority: int | None,
         due_date: str | None,
+        labels: list[str] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {"teamId": team_id, "title": title, "description": description}
         if project_id:
@@ -169,6 +205,12 @@ class LinearClient:
             payload["priority"] = priority
         if due_date:
             payload["dueDate"] = due_date
+        if labels:
+            try:
+                # A label is decoration on a ticket that must exist either way.
+                payload["labelIds"] = await self._label_ids(team_id, labels)
+            except SourceUnavailable:
+                pass
         data = await self._gql(_CREATE, {"input": payload})
         issue = (data.get("issueCreate") or {}).get("issue") or {}
         return {

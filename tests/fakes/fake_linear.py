@@ -66,6 +66,7 @@ class FakeLinear:
         assignee_id: str | None,
         priority: int | None,
         due_date: str | None,
+        labels: list[str] | None = None,
     ) -> dict[str, Any]:
         self._counter += 1
         identifier = f"INV-{self._counter}"
@@ -87,6 +88,7 @@ class FakeLinear:
             "op": "create", "identifier": identifier, "team_id": team_id,
             "project_id": project_id, "title": title, "description": description,
             "assignee_id": assignee_id, "priority": priority, "due_date": due_date,
+            "labels": labels or [],
         })
         return {"id": issue["id"], "identifier": identifier, "url": issue["url"]}
 

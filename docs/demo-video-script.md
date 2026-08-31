@@ -37,7 +37,18 @@ this agent does in "about a minute" has to be *visibly* about a minute.
 > Keep this page in mind, because in the next three minutes it's going to fill itself in,
 > live, and everything on it will be traceable back to words somebody actually said.
 
-## 0:55 — A call just ended (terminal, then Slack)
+## 0:55 — Teach it something first (Slack)
+
+Type in the channel: `@pm-agent from now on, assign frontend bugs to Priya`
+
+It reacts 👀 instantly, drops *"✻ On it…"* in the thread — and that same message becomes:
+*"Noted — frontend bugs go to Priya from now on."*
+
+> Before anything happens, let me teach it something. "From now on, assign frontend bugs to
+> Priya." Eyes, "On it…" — and that message just turned into "Noted." That's not a settings
+> page — it saved who said it and where. Remember this message; it matters in two minutes.
+
+## 1:10 — A call just ended (terminal, then Slack)
 
 > So — the team just finished a two-minute huddle. Tom found that the "related articles"
 > section recommends the wrong articles, and the partner demo is tomorrow morning. In real
@@ -63,18 +74,6 @@ itself off as the work happens.
 > There it is — it just posted its plan. Read the call, check it against Linear and the
 > code, file what was agreed, set up the follow-through. And watch it tick the steps off as
 > it goes — each one gets a little note about what it found.
-
-## 1:15 — Teach it something while it works (Slack)
-
-Type in the channel: `@pm-agent from now on, assign frontend bugs to Priya`
-
-It reacts 👀 instantly, drops *"✻ On it…"* in the thread — and that same message becomes:
-*"Noted — frontend bugs go to Priya from now on."*
-
-> While it's busy — you can just talk to it. "From now on, assign frontend bugs to Priya."
-> …and, "Noted." That's not a settings page. It stored who said that and where, and the
-> next time a call mentions a frontend bug with no owner, it proposes Priya and cites this
-> exact message as its reason.
 
 ## 1:35 — Meanwhile, in Google Cloud (GCP console)
 
@@ -105,7 +104,7 @@ The summary lands. Open the new ticket in Linear and take your time with it.
 > And the stuff you *can't* see is my favorite-favorite part: the gates. The owner has to
 > exist on the roster — it can't invent people. The priority only got raised because Tom
 > literally said "this is urgent" — no escalation words in the transcript, no escalation in
-> the ticket. The due date exists because Priya said "by tomorrow." If the agent can't
+> the ticket. The due date exists because Tom said "by tomorrow." If the agent can't
 > prove a claim, the claim doesn't ship.
 
 ## 2:45 — It schedules its own future (Slack thread)
