@@ -22,6 +22,9 @@ against real services on camera; this file is the flight plan and the parachutes
   archived so the board is clean.
 - [ ] **Pre-open browser tabs**, in order: Slack channel · Linear board · the graph ·
   the console · GCP console (Cloud Run + Firestore + Scheduler, to show the stack).
+- [ ] **Test the Slack interactions off-camera once**: `@pm-agent from now on, assign frontend
+  bugs to Priya` (expect "Noted — …"), and `@pm-agent keep an eye on INV-46 until Wednesday`
+  (expect "Got it — I'll watch INV-46 for you:" in the thread). Both are on-camera beats now.
 - [ ] **Do one full off-camera rehearsal** with a throwaway call recording. If the rehearsal
   worked, change nothing afterwards.
 

@@ -17,48 +17,69 @@ below must be visible as seconds.
 
 ## 0:20 — The call ends (terminal, then Slack)
 
-Run: `uv run --env-file .env python scripts/send_call.py fixtures/transcripts/03-pdf-incident-huddle.md --title "PDF incident huddle" --recording-id demo_<date>`
+Run: `uv run --env-file .env python scripts/send_call.py fixtures/transcripts/08-ipp-related-news-huddle.md --title "Related articles huddle" --recording-id demo_<date>`
 
 > A product call just ended. In real life this is Fathom's webhook; today I'm firing the same
 > payload by hand so you can see the clock.
 
-Switch to Slack. The status line appears: *Reading "PDF incident huddle"…* — then edits in
+Switch to Slack. The status line appears: *Reading "Related articles huddle"…* — then edits in
 place within a minute or so.
 
 > Watch that message. It's editing itself as the agent works — reading, reconciling against
 > Linear and the codebase, filing.
 
+While it works, talk to it — type in the channel:
+
+`@pm-agent from now on, assign frontend bugs to Priya`
+
+It replies: *"Noted — frontend bugs go to Priya from now on."*
+
+> I just taught it something. That's not a setting — it stored the rule with my name and this
+> message as the source, and the next time a call mentions a frontend bug with no owner, it
+> proposes Priya and cites this exact moment. Slack is how you talk to it; the record is how
+> it proves it listened.
+
 When the summary lands, read it aloud, slowly:
 
-> "One new ticket, marked urgent — somebody said so on the call." Every claim you're reading
+> "One new ticket, marked urgent — Tom said so on the call." Every claim you're reading
 > was checked before it was allowed to be said: the quote exists in the transcript, the owner
 > exists on the roster, the priority needed an escalation word — and there's a revert button.
 
 ## 1:10 — The ticket (Linear)
 
-Switch to Linear, open INV-3x.
+Switch to Linear, open the new ticket.
 
-> Here's the ticket. Owner from the roster — never invented. Priority 1 because Maya said
-> "this is urgent" and "a blocker" — the gate found those words; without them this would have
-> been clamped to normal and the message would have said so. Due date from "this week" — the
-> agent only sets dates someone actually spoke.
+> Here's the ticket. Owner from the roster — never invented. Priority raised because Tom said
+> "this is urgent" — the gate found those words; without them it would have been clamped to
+> normal and the message would have said so. Due from "by tomorrow" — the agent only sets
+> dates someone actually spoke. And the Investigation section: the agent searched our real
+> code and is pointing at the exact filter, with the file and line.
 
 Scroll to the description footer.
 
 > And the citation back to the moment in the call. The agent cannot write a reference it didn't
 > re-fetch. Zero fabricated identifiers across every eval run — that's a gate, not a hope.
 
-## 1:45 — The plan (Slack thread)
+## 1:45 — The plan, and asking for something (Slack)
 
 Back to Slack; open the follow-through post.
 
 > Now the part no orchestrator I know of does: it scheduled its own future. "Tomorrow — check
-> INV-3x is underway; if not, I'll check in with Nodir." A dependency graph of checks, each
+> the ticket is underway; if not, I'll check in with Priya." A dependency graph of checks, each
 > with a declared consequence. A lineage gate caps how much work it can give itself.
+
+Then ask it for something yourself:
+
+`@pm-agent keep an eye on INV-46 until Wednesday`
+
+It replies in the thread: *"Got it — I'll watch INV-46 for you:"* with the dated checks and
+their if-unmet promises. Point at the revert button on the earlier summary:
+
+> Every action it takes carries this. Undo is one click — that's why it doesn't have to ask.
 
 ## 2:05 — The reaction (Linear → Slack → graph)
 
-In Linear, drag INV-26 (or the new ticket) to **In Progress**. Switch to the graph tab
+In Linear, drag the new ticket to **In Progress**. Switch to the graph tab
 immediately.
 
 > An engineer just moved a ticket. Good news travels fast — watch the Watching lane.
@@ -76,7 +97,7 @@ Hit **Replay**.
 > row a kind of work: what it heard, what it understood, what it did, what it's watching, what
 > it learned. Everything a call produced lines up under that call. Replayed from the first event.
 
-Let it run ~15 seconds; click INV-26 mid-replay (replay pauses).
+Let it run ~15 seconds; click the news-lookup ticket mid-replay (replay pauses).
 
 > Click anything and it tells you what it did about it and why, in plain sentences, with
 > timestamps. This is the audit log — it just dresses well.
