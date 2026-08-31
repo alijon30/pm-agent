@@ -82,28 +82,29 @@ down.
 
 ## Challenges we ran into
 
-The quota maze, on deadline week. The free tier allows 20 requests a day against the model I
-needed, and the replacement key ran into AI Studio's prepayment gate. The fix was moving
-inference to Vertex AI, same models, billed to the project. The retry-with-backoff design got
-a very real test along the way.
+Honestly, the biggest one was quotas, and it hit on deadline week. The free Gemini tier turned
+out to allow 20 requests a day for the model I needed. I made a fresh API key and ran into AI
+Studio's prepayment wall instead. I ended up moving all inference to Vertex AI so it just
+bills the project, and weirdly I'm glad it happened, because the retry and backoff code I had
+written "just in case" finally got tested for real.
 
-The planner that broke its own JSON. On Vertex it started hand-writing about 14,000
-characters of plan JSON and malforming it, six runs in a row. I blamed the thinking budget,
-turned it off, and it broke anyway. The real fix wasn't finding the culprit. It was refusing
-to let a parse error decide the outcome: an unusable plan now falls back to a deterministic
-follow-up chain, honestly labelled, and the commitment still gets watched.
+Then the planner started breaking its own JSON on Vertex. Around 14,000 characters of plan
+output, malformed, six runs in a row. I was sure the thinking budget was the culprit, turned
+it off, and it broke again. So I stopped hunting the culprit and changed the rule instead: a
+plan that doesn't parse now falls back to a boring deterministic follow-up chain, labelled as
+such. The checks get scheduled either way, which is what actually matters.
 
-ADK's invisible tool. Structured output arrives through an internal tool called
-set_model_response. My per-agent tool guard silently blocked it, which produced perfectly
-empty responses that only a live test caught.
+ADK also has an internal tool called set_model_response that carries structured output. My
+per-agent tool guard was blocking it, silently, so agents returned nothing at all while every
+unit test stayed green. Only a live run caught it.
 
-Making it sound human. The first Slack posts were robotic, so the voice became code: a layer
-that says "Priya" instead of "the assignee", spells small numbers, and knows a phrasal verb
-from a preposition. I built that last part the day the agent announced "the up a regression
-test". The tone is enforced by tests now.
+The one I didn't expect to be hard: making the agent sound like a person in Slack. The first
+posts were painfully robotic, so tone became actual code, with tests. There's now a function
+that knows "set up" is a phrasal verb, written the day the agent proudly announced "the up a
+regression test".
 
-And one humbling layout bug: the first version of the timeline computed 4,736 pixels of day
-columns. There is no monitor on earth it fit.
+Also, the first version of my timeline computed 4,736 pixels of day columns. No monitor fits
+that. I keep the number around as a reminder.
 
 ## Accomplishments that we're proud of
 
