@@ -42,11 +42,12 @@ this agent does in "about a minute" has to be *visibly* about a minute.
 
 Run: `uv run --env-file .env python scripts/send_call.py fixtures/transcripts/08-ipp-related-news-huddle.md --title "Related articles huddle" --recording-id demo_<date>`
 
-Switch to Slack. The status line appears: *Reading "Related articles huddle"…*
+Switch to Slack. A status message appears carrying the agent's four-step plan, and it ticks
+itself off as the work happens.
 
-> There it is. And watch this message — it keeps editing itself as the agent works. Reading
-> the transcript, checking Linear so it doesn't file something we already have, digging
-> through the codebase.
+> There it is — it just posted its plan. Read the call, check it against Linear and the
+> code, file what was agreed, set up the follow-through. And watch it tick the steps off as
+> it goes — each one gets a little note about what it found.
 
 ## 1:15 — Teach it something while it works (Slack)
 
@@ -79,9 +80,9 @@ The summary lands. Open the new ticket in Linear and take your time with it.
 > the ticket I always wished someone had written for me.
 >
 > Look what's in here. Why this matters — partner demo tomorrow, news section is the first
-> thing we show. What was actually said — real quotes, timestamped, linked back into the
-> call. Acceptance criteria as checkboxes — pulled from what Priya committed to, not made
-> up. And my favorite part — the Investigation. The agent searched the actual codebase, and
+> thing we show. What was actually said — real quotes, each with who said it and when.
+> Acceptance criteria as checkboxes — pulled from what Priya committed to, not made up.
+> And my favorite part — the Investigation. The agent searched the actual codebase, and
 > it's pointing at the exact filter causing this bug. File and line. With an honest
 > confidence label.
 >
