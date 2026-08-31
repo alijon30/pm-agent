@@ -136,8 +136,6 @@ def test_this_sprint_counts_what_the_sprint_produced() -> None:
     assert tiles["Decisions recorded"]["value"] == "2"
     assert tiles["Issues filed"]["value"] == "3"
     assert tiles["Issues filed"]["footnote"] == "1 updated instead of re-filed"
-    assert tiles["Checks run"]["value"] == "3"
-    assert tiles["Checks run"]["footnote"] == "2 met · 1 early · 1 unmet"
     assert tiles["Open watches"]["value"] == "2", "queued and blocked; deferred waits on a clock"
 
 
@@ -160,11 +158,9 @@ def test_how_it_works_reports_the_loop_not_the_model() -> None:
     tiles = by_label(working_stats(TASKS, ACTIONS, EVENTS, PROJECT, "2026-08-30"))
 
     assert tiles["Call → tickets"]["value"] == "7 min"
-    assert tiles["Days saved"]["value"] == "4"
     assert tiles["Writes today"]["value"] == "2 / 40"
     assert tiles["Pings today"]["value"] == "1 / 10"
-    assert tiles["Held for quiet hours"]["value"] == "1"
-    assert tiles["Held for quiet hours"]["footnote"] == "18:00–09:00 local"
+    assert tiles["Pings today"]["footnote"] == "quiet hours 18:00–09:00 local"
 
 
 def test_trust_counts_only_what_was_written_down_at_the_time() -> None:

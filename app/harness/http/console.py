@@ -1549,7 +1549,7 @@ def render(
             _next_watch(tasks)))
         + _group("How it works", working_stats(
             tasks, actions, events or [], project, today))
-        + _group("Trust", trust_stats(tasks, actions, corrections, brain))
+        + _group("Trust", trust_stats(tasks, actions, corrections))
         + "<h2>Brain</h2>"
         + _brain_html(brain or [], zone(project))
         + "<h2>Decision journal</h2>"

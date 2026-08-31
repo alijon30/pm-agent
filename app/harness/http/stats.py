@@ -149,15 +149,8 @@ def sprint_stats(
     updated = sum(1 for a in actions if str(a.get("kind")) == ISSUE_COMMENT
                   and a.get("status") == "done" and in_window(a.get("created_at"), start, end))
 
-    checks = _checks(tasks)
-    settled = [t for t in checks if t.get("status") == "done"]
-    met = sum(1 for t in settled if (t.get("result") or {}).get("met"))
-    early = sum(1 for t in settled if (t.get("result") or {}).get("early"))
-    unmet = sum(1 for t in settled if not (t.get("result") or {}).get("met"))
-    nudges = sum(1 for a in actions
-                 if (a.get("inputs") or {}).get("template") and a.get("status") == "done")
     # Queued and blocked only. A deferred check is waiting on the clock, not on the work.
-    watching = sum(1 for t in checks if t.get("status") in ("queued", "blocked"))
+    watching = sum(1 for t in _checks(tasks) if t.get("status") in ("queued", "blocked"))
 
     return [
         # What it is holding right now comes first: on a narrow screen the tile that wraps
@@ -166,9 +159,6 @@ def sprint_stats(
         tile("Calls heard", heard),
         tile("Decisions recorded", said),
         tile("Issues filed", filed, f"{updated} updated instead of re-filed"),
-        tile("Checks run", len(settled),
-             f"{met} met · {early} early · {unmet} unmet"),
-        tile("Nudges sent", nudges, "within the daily cap"),
     ]
 
 
@@ -182,22 +172,17 @@ def working_stats(
                  and str(a.get("cap_kind")) == "write" and a.get("status") != "failed")
     pings = sum(1 for a in actions if a.get("day") == today
                 and str(a.get("cap_kind")) == "ping" and a.get("status") != "failed")
-    held = sum(1 for t in tasks
-               if "quiet hours" in str(t.get("defer_reason") or "").lower())
-
     return [
         tile("Call → tickets", spoken_duration(call_to_ticket(events, tasks)),
              "median, webhook to filed"),
-        tile("Days saved", days_saved(tasks), "by resolving checks early"),
         tile("Writes today", f"{writes} / {int(policy.get('daily_write_cap', 40))}"),
-        tile("Pings today", f"{pings} / {int(policy.get('daily_ping_cap', 10))}"),
-        tile("Held for quiet hours", held, f"{quiet[0]}–{quiet[1]} local"),
+        tile("Pings today", f"{pings} / {int(policy.get('daily_ping_cap', 10))}",
+             f"quiet hours {quiet[0]}–{quiet[1]} local"),
     ]
 
 
 def trust_stats(
     tasks: list[Doc], actions: list[Doc], corrections: list[Doc],
-    brain: list[Doc] | None = None,
 ) -> list[dict[str, Any]]:
     """The claims a judge is entitled to check. Every one is a count of something written
     down at the time, not a score computed afterwards."""
@@ -218,17 +203,8 @@ def trust_stats(
              f"{bounced} retried after feedback" if bounced else "no gate needed a retry"),
         tile("Reverted", reverted, "one click, from the Slack message"),
     ]
-    # A tile for a record this project does not keep would be furniture.
+    # A tile for a record this project does not keep would be furniture — and the Brain
+    # section right below the tiles already lists every entry, so it gets no tile at all.
     if corrections:
         out.append(tile("Corrections", len(corrections), "taught by a human"))
-    if brain:
-        entries = [e for p in brain for e in (p.get("entries") or []) if not e.get("retired_at")]
-        # "Applied" is deliberately a cheap count: actions whose citations point back at the
-        # brain. It undercounts — a preference the model followed without citing does not show
-        # — and that is the safer direction for a number on a trust panel.
-        applied = sum(
-            1 for a in actions
-            if any(str(c).startswith("wiki:") for c in (a.get("citations") or []))
-        )
-        out.append(tile("Brain", len(entries), f"{applied} applied in later work"))
     return out
