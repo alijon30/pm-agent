@@ -20,7 +20,6 @@ several tool round-trips — and `sdk_runner.retrying` waits out the 429s.
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import sys
 from collections.abc import Callable
@@ -101,18 +100,60 @@ AgentsFactory = Callable[[dict[str, Any], dict[str, Any]], Agents]
 # --- the fixture world ------------------------------------------------------------------------
 
 
+EVAL_SEED: list[tuple[str, str, str, int | None, bool]] = [
+    ("Overdue invoices dashboard for finance",
+     "Finance asked for a view of everything past due. Raised last quarter, never scheduled.",
+     "Backlog", 4, False),  # ← the near-duplicate the Q3 call re-raises
+    ("Reminder cadence experiment",
+     "Tried a 5-day first reminder for two weeks in June. Reverted; inconclusive.",
+     "Done", None, False),  # ← the closed twin near the reminder work
+    ("Invoice PDF footer shows the wrong support email",
+     "support@acme-invoicing.test moved to help@; the template still has the old one.",
+     "Todo", 3, False),
+    ("Customers table pagination breaks past 200 rows",
+     "Offset pagination double-counts when invoices are created mid-scroll.",
+     "In Progress", 2, False),
+    ("Add currency column to payments export",
+     "Two customers bill in EUR; the export assumes USD.",
+     "Backlog", 3, False),
+    ("Stripe webhook retries are not idempotent",
+     "A retried payment.succeeded can mark an invoice paid twice.",
+     "Todo", 2, False),
+    ("Late-fee policy needs a decision",
+     "Finance keeps asking. Product has not decided whether we charge at all.",
+     "Backlog", 4, False),
+    ("Empty state for the invoices list",
+     "New accounts see a blank table with no call to action.",
+     "Todo", 4, False),
+    ("Reminder email copy sounds robotic",
+     "Support hears complaints; wants a friendlier first reminder.",
+     "Backlog", 4, False),
+    ("Upgrade to Python 3.12 in CI",
+     "Runners still on 3.11; dataclass slots patch wanted.",
+     "Done", None, False),
+    ("Invoice numbering skips on rollback",
+     "A failed create burns a sequence number; auditors notice gaps.",
+     "Todo", 3, False),
+    ("Onboarding: import customers from CSV",
+     "Biggest ask from sales for Q3.",
+     "In Progress", 2, True),
+    ("Payment reconciliation report",
+     "Match Stripe payouts to invoices for the accountant.",
+     "Backlog", 3, True),
+    ("Rate-limit the public invoice status endpoint",
+     "One customer polls it every second.",
+     "Todo", 3, False),
+    ("Dark mode for the customer portal",
+     "Requested twice. Low priority.",
+     "Backlog", 4, False),
+]
+
+
 def seed_rows() -> list[tuple[str, str, str, int | None, bool]]:
-    """The seeded backlog, read from the same list that seeds the real Linear team, so the eval
-    fixture and the demo workspace cannot drift apart. `fixtures/` is data rather than a package,
-    so it is loaded by path instead of imported."""
-    spec = importlib.util.spec_from_file_location("linear_seed", ROOT / "fixtures" /
-                                                  "linear_seed.py")
-    if spec is None or spec.loader is None:  # pragma: no cover — the file is in the repo
-        raise RuntimeError("fixtures/linear_seed.py could not be loaded")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    rows: list[tuple[str, str, str, int | None, bool]] = list(module.SEED)
-    return rows
+    """The eval world's own backlog. It used to be read from fixtures/linear_seed.py, but the
+    demo workspace moved on to a real product; the eval questions are written against this
+    synthetic company and must not drift when the demo does."""
+    return list(EVAL_SEED)
 
 
 def seed_issues() -> list[dict[str, Any]]:
@@ -133,6 +174,10 @@ def seed_issues() -> list[dict[str, Any]]:
 
 def project_document() -> dict[str, Any]:
     project: dict[str, Any] = json.loads((ROOT / "fixtures" / "projects" / "acme.json").read_text())
+    # The live project doc now points at the real demo product; the eval transcript's planted
+    # code references live in the synthetic repo, so the eval pins its own world.
+    project["name"] = "Q3 Billing"
+    project["code_repo"] = "fixtures/acme-invoicing"
     roster: list[dict[str, Any]] = json.loads((ROOT / "fixtures" / "roster.json").read_text())
     # The demo workspace's real Linear user ids are not in the repo; synthetic ones let the
     # assignment path run exactly as it does in production.
