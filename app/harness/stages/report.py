@@ -213,11 +213,18 @@ async def _post(
     )
     # The notification is the report's own headline, said once — not a label plus a repeat.
     text = str(report.get("headline") or f"{sprint.get('name', 'Status')} report")
+    ack = task["payload"].get("ack") or {}
     try:
-        ts = await deps.slack.post(
-            channel, text, report_blocks(report, sprint),
-            thread_ts=task["payload"].get("thread_ts"),
-        )
+        # A report asked for in a thread edits the "On it…" that acknowledged the ask.
+        if ack.get("ts"):
+            await deps.slack.update(str(ack.get("channel") or channel), str(ack["ts"]),
+                                    text, report_blocks(report, sprint))
+            ts = str(ack["ts"])
+        else:
+            ts = await deps.slack.post(
+                channel, text, report_blocks(report, sprint),
+                thread_ts=task["payload"].get("thread_ts"),
+            )
     except SourceUnavailable as exc:
         await deps.actions.fail(action_id, redact(str(exc)))
         return False

@@ -312,15 +312,24 @@ async def _reply(
     if earlier is not None and earlier.get("status") == "done":
         return True
 
+    ack = task["payload"].get("ack") or {}
     action_id = await deps.actions.begin(
         task_id=task["id"], project_id=task["project_id"], kind="slack.post",
-        idempotency_key=key, inputs={"channel": channel, "committed": len(children)},
+        idempotency_key=key,
+        inputs={"channel": channel, "committed": len(children), "edited": bool(ack.get("ts"))},
     )
+    blocks = commitment_blocks(children, notes, now=deps.clock.now())
     try:
-        ts = await deps.slack.post(
-            channel, text, commitment_blocks(children, notes, now=deps.clock.now()),
-            thread_ts=task["payload"].get("thread_ts"),
-        )
+        # The "On it…" the events route left in the thread becomes the answer itself — one
+        # message that fills itself in, not an acknowledgment plus a reply.
+        if ack.get("ts"):
+            await deps.slack.update(str(ack.get("channel") or channel), str(ack["ts"]),
+                                    text, blocks)
+            ts = str(ack["ts"])
+        else:
+            ts = await deps.slack.post(
+                channel, text, blocks, thread_ts=task["payload"].get("thread_ts"),
+            )
     except SourceUnavailable as exc:
         await deps.actions.fail(action_id, redact(str(exc)))
         return False

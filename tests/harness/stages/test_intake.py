@@ -419,3 +419,17 @@ async def test_the_steward_is_shown_what_it_has_already_been_told(deps: Deps) ->
     brain = fake.calls[0]["brain"]
     assert [e["text"] for e in brain] == ["Billing and statements go to Nodir"]
     assert brain[0]["ref"].startswith("wiki:ownership#")
+
+
+async def test_the_answer_edits_the_on_it_ack_instead_of_posting_again(deps: Deps) -> None:
+    """The events route leaves "✻ On it…" in the thread; the reply becomes that message.
+    One message that fills itself in — the same shape as a call summary."""
+    task = await wire(deps, steward_results=[COMMITMENT])
+    task["payload"]["ack"] = {"channel": "C-random", "ts": "42.000100"}
+
+    out = await run(task, deps)
+
+    assert out.result["replied"] is True
+    assert deps.slack.posts == [], "the ack is already there; nothing new is posted"
+    assert deps.slack.updates[-1]["ts"] == "42.000100"
+    assert "watch INV-26" in deps.slack.updates[-1]["text"]

@@ -285,8 +285,10 @@ async def test_a_mention_asking_for_a_report_queues_one_aimed_at_that_thread(
     queued = await deps.db.query("tasks", [("kind", "==", "report")])
     assert len(queued) == 1
     assert queued[0]["params"] == {"project": "acme", "window": "sprint"}
+    # No Slack configured in this test, so there is no "On it…" to point back at — and the
+    # payload says so honestly instead of omitting the field.
     assert queued[0]["payload"] == {"channel": "C-random", "thread_ts": "1787821201.000100",
-                                    "requester": "U-maya"}
+                                    "requester": "U-maya", "ack": {}}
     assert queued[0]["root_event_id"] == "slack:Ev200"
     assert queued[0]["status"] == "queued" and queued[0]["due_at"] == "2026-08-27T09:00:00+00:00"
 
@@ -323,7 +325,14 @@ async def test_a_queued_report_request_is_acknowledged_with_eyes_on_the_mention(
     assert deps.slack.reactions == [
         {"channel": "C-random", "ts": "1787821201.000100", "name": "eyes"}
     ]
-    assert deps.slack.posts == []  # an acknowledgement nobody is notified about
+    # "On it…" lands in the thread within Slack's three seconds; the answering stage will
+    # edit this exact message rather than posting a second one.
+    assert [p["text"] for p in deps.slack.posts] == ["✻ On it…"]
+    assert deps.slack.posts[0]["thread_ts"] == "1787821201.000100"
+    queued = await deps.db.query("tasks", [("kind", "==", "report")])
+    assert queued[0]["payload"]["ack"] == {
+        "channel": "C-random", "ts": deps.slack.posts[0]["ts"]
+    }
 
 
 async def test_a_mention_that_queues_nothing_is_not_acknowledged(
@@ -405,7 +414,9 @@ async def test_a_request_is_queued_as_an_intake_carrying_who_asked_and_where(
     assert len(queued) == 1
     assert queued[0]["params"] == {"text": "keep an eye on INV-26 until Friday"}
     assert queued[0]["payload"] == {"channel": "C-random", "thread_ts": "1787821201.000100",
-                                    "requester": "U-maya"}
+                                    "requester": "U-maya",
+                                    "ack": {"channel": "C-random",
+                                            "ts": deps.slack.posts[0]["ts"]}}
     assert queued[0]["root_event_id"] == "slack:Ev200"
     assert deps.slack.reactions[0]["name"] == "eyes"
 

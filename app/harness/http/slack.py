@@ -253,6 +253,20 @@ async def events(request: Request) -> dict[str, Any]:
             # Seen, and deliberately not acted on. The reaction is the whole reply.
             await react_quietly(deps.slack, event.get("channel"), event.get("ts"), "eyes")
         elif event_id is not None and intent is not None:
+            # The asker should not stare at a silent channel for a tick: "On it…" lands in the
+            # thread inside Slack's three-second window, and the stage that does the work later
+            # edits this same message into the answer — one message that fills itself in, the
+            # same shape as a call summary. Best-effort: no ack still means the work happens.
+            ack: dict[str, Any] = {}
+            if deps.slack is not None:
+                try:
+                    ack_ts = await deps.slack.post(
+                        str(event.get("channel") or ""), "✻ On it…",
+                        thread_ts=str(event.get("ts") or ""),
+                    )
+                    ack = {"channel": event.get("channel"), "ts": ack_ts}
+                except SourceUnavailable:
+                    ack = {}
             # Answer where it was asked: every stage this queues posts into this channel and
             # thread rather than the project channel, so a question in one room is never
             # answered in another. The requester travels with the work.
@@ -261,7 +275,7 @@ async def events(request: Request) -> dict[str, Any]:
                 project_id=project["id"],
                 params=intent["params"],
                 payload={"channel": event.get("channel"), "thread_ts": event.get("ts"),
-                         "requester": event.get("user")},
+                         "requester": event.get("user"), "ack": ack},
                 reason=intent["reason"],
                 root_event_id=event_id,
             )
