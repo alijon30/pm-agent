@@ -132,10 +132,24 @@ about a minute.
 
 ## What we learned
 
-Autonomy is a trust-engineering problem, not a capability problem. The model was never the
-bottleneck. The bet that paid off was moving trust out of the model entirely: give it
-judgment, never authority. A model that writes JSON needs a deterministic floor under it. And
-asking permission is not a safety mechanism when 93% of the answers are yes. Undo is.
+I went in thinking the hard part would be getting good judgment out of the model. It wasn't.
+Gemini's calls were reasonable from day one. The hard part was earning the right to act on
+them, and that turned out to be ordinary engineering: a gate that re-fetches every identifier
+before it can be cited, a rule that a priority only escalates if somebody said "urgent" out
+loud, a revert payload stored before every write. I spent maybe a tenth of this project on
+prompts and the rest on the machinery around them.
+
+One split saved me more than once: the model gets judgment, never authority. The planner
+proposes a schedule, and code decides what actually materialises. So when the planner spent a
+day producing broken JSON, the cost was a boring fallback plan instead of a broken product.
+Anything a model writes needs a deterministic floor under it, because it will eventually write
+nonsense, and it will pick the worst possible day to do it.
+
+I also stopped believing in approval prompts. People approve about 93 percent of them, so they
+protect nobody. They just slow the agent down and train the human to click yes. What actually
+made me comfortable watching this thing act on its own was undo: one click, on every action. I
+check the revert count on the dashboard the way you check a smoke detector. Glad it's zero,
+glad it's there.
 
 ## What's next for Autonomous PM Agent
 
