@@ -125,8 +125,24 @@ allowlist. Gemma 4 (31B) handles transcript triage and Slack intent classificati
 classification where the failure posture matters more than brilliance: triage fails open
 (keeps every line), intent defaults to "request".
 
-**Google Cloud.** Cloud Run (the service), Firestore (tasks, events, actions, decisions,
-lessons, wiki), Cloud Scheduler (tick + daily review), Secret Manager (every credential).
+**How Google Cloud runs it.** Cloud Run is the body: one container, scale-to-zero — when
+nothing is happening the agent literally does not exist, and it costs nothing while it sleeps.
+Cloud Scheduler is the pulse: a one-minute tick POSTs `/tick` (bearer-token checked), and the
+handler leases every task whose time has come, executes it, and drains the chain it unlocks;
+a second job at 9:00 project time triggers the daily review and standup. Firestore is both the
+memory and the to-do list: `tasks` (the self-scheduled future — due times, dependencies,
+leases, backoff, claimed by transaction so concurrent ticks cannot double-fire), `actions`
+(every external write recorded first, with its idempotency key and revert payload), `events`,
+`decisions`, `wiki_pages` (the brain), `evals`. Secret Manager holds every credential,
+injected as env vars at deploy — nothing sensitive in the image or the repo. Cloud Build +
+Artifact Registry build and shelve the images each revision deploys from.
+
+One request, end to end: Fathom fires → Cloud Run cold-starts the container → the handler
+verifies the signature, writes an event and an `extract` task to Firestore, returns 200 in
+milliseconds. Up to a minute later the tick claims the task, calls Gemini, runs the gates,
+writes to Linear and Slack with the revert recorded first, and enqueues the next stage — and
+when the queue is empty, the instance dies. The console and the graph render only from that
+record.
 
 ## What it remembers
 
