@@ -144,7 +144,9 @@ def _noted(remembered: dict[str, Any] | None) -> str:
     kind, text = str(remembered.get("kind")), str(remembered.get("text") or "")
     person = str(remembered.get("person") or "")
     if kind == "ownership" and person:
-        subject = ", ".join(str(w) for w in remembered.get("subject") or []) or "that work"
+        # The subject is a list of words from one phrase ("frontend bugs"), not a list of
+        # items — joined with spaces so the reply reads like the sentence the person typed.
+        subject = " ".join(str(w) for w in remembered.get("subject") or []) or "that work"
         return f"Noted — {subject} go to {first_name({'name': person})} from now on."
     # People type rules without a full stop; the agent still writes sentences.
     said = text if text.endswith((".", "!", "?")) else f"{text}."

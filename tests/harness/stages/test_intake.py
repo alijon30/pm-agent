@@ -352,7 +352,7 @@ async def test_it_says_back_what_it_will_do_from_now_on(deps: Deps) -> None:
 
     out = await run(task, deps)
 
-    assert out.result["notes"] == "Noted — billing, statements go to Nodir from now on."
+    assert out.result["notes"] == "Noted — billing statements go to Nodir from now on."
     assert deps.slack.posts, "and says it in the thread"
 
 
