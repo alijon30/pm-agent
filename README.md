@@ -128,6 +128,8 @@ Then, in another terminal:
 ```
 uv sync
 cp .env.example .env          # fill in GOOGLE_API_KEY; set PM_GCP_PROJECT=demo
+                              # and PM_FATHOM_WEBHOOK_SECRET=whsec_ZGVtbw== (any
+                              # whsec_ value: send_call signs with the same secret)
 export FIRESTORE_EMULATOR_HOST=127.0.0.1:8790
 uv run --env-file .env python scripts/seed_project.py   # writes the project config + roster
 uv run --env-file .env uvicorn app.main:create_default_app --factory --port 8080
