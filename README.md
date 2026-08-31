@@ -157,8 +157,34 @@ uv run --env-file .env python scripts/send_call.py \
   --title "PDF incident huddle" --recording-id demo1
 ```
 
-Deploying to Cloud Run: `deploy/deploy.sh` and `deploy/scheduler.sh`; the runbook and the
-Firestore indexes you'll need are in `deploy/secrets.md`.
+## Run it on Google Cloud
+
+Four resources, two scripts. In a fresh project:
+
+```
+# 1. APIs (once)
+gcloud services enable run.googleapis.com firestore.googleapis.com \
+  cloudscheduler.googleapis.com secretmanager.googleapis.com \
+  cloudbuild.googleapis.com artifactregistry.googleapis.com aiplatform.googleapis.com
+
+# 2. Firestore in Native mode (console or `gcloud firestore databases create`)
+
+# 3. Secrets — the two required ones; each optional connector key is one more `gcloud
+#    secrets create` (deploy.sh mounts whatever exists and skips the rest)
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))' \
+  | gcloud secrets create pm-tick-token --data-file=-
+printf '%s' "$GOOGLE_API_KEY" | gcloud secrets create pm-google-api-key --data-file=-
+
+# 4. Ship it
+./deploy/deploy.sh          # builds from source, deploys to Cloud Run
+./deploy/scheduler.sh       # creates the one-minute tick + the daily review job
+uv run --env-file .env python scripts/seed_project.py   # the project config + roster
+```
+
+Gemini runs through Vertex AI (grant the service account `roles/aiplatform.user`); Gemma
+stays on the API key. The composite Firestore indexes, the secret-versioning traps, and the
+us-east1 build detour are all written down in `deploy/secrets.md` — the runbook this project
+actually operates from.
 
 Tests, if you're changing things: `uv run pytest -q` (893 tests, no credentials needed).
 
