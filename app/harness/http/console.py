@@ -72,6 +72,20 @@ from app.harness.store.db import Doc
 from app.harness.store.tasks import OPEN_STATUSES
 
 router = APIRouter()
+# Dark is the default; the toggle stamps data-theme='light' and remembers it per browser.
+# The head script runs before first paint so a light-mode reader never sees a dark flash.
+THEME_BOOT = ("<script>try{if(localStorage.getItem('pm-theme')==='light')"
+              "document.documentElement.dataset.theme='light'}catch(e){}</script>")
+THEME_FLIP = ("(function(){var d=document.documentElement,"
+              "v=d.dataset.theme==='light'?'':'light';"
+              "if(v){d.dataset.theme=v}else{delete d.dataset.theme}"
+              "try{localStorage.setItem('pm-theme',v)}catch(e){}})()")
+
+
+def _theme_button(cls: str) -> str:
+    return (f"<button id='theme' class='{cls}' title='Switch between dark and light'"
+            f' onclick="{THEME_FLIP}">◐</button>')
+
 
 # The console reads whole collections for one project. That is honest at the scale the caps gate
 # permits (tens of writes a day) and the limit keeps a runaway queue from timing out the page.
@@ -1162,7 +1176,7 @@ def graph_page(project_name: str) -> str:
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>{esc(project_name)} — the agent's world</title>"
-        f"<style>{GRAPH_STYLE}</style></head><body>"
+        f"<style>{GRAPH_STYLE}</style>{THEME_BOOT}</head><body>"
         # The toolbar carries what the agent is doing right now, so the status is a line of
         # text in the chrome rather than a card floating over the work.
         "<div id='top'>"
@@ -1173,8 +1187,12 @@ def graph_page(project_name: str) -> str:
         "<span id='tools'>"
         "<button id='now-btn' class='flat'>Now</button>"
         "<span id='avatars'></span>"
-        "<a id='link' href='/console'>Console</a>"
-        "</span></div>"
+        "<span id='nav'>"
+        "<a href='/console/graph' class='on'>Graph</a>"
+        "<a href='/console'>Console</a>"
+        "</span>"
+        + _theme_button("flat")
+        + "</span></div>"
         "<div id='stage'><div id='world'>"
         "<svg id='canvas'><defs id='defs'>"
         "<marker id='arrow' viewBox='0 0 8 8' refX='7' refY='4' markerWidth='5'"
@@ -1203,6 +1221,10 @@ def graph_page(project_name: str) -> str:
 STYLE = """
 /* The console and the graph are one product seen two ways: same palette, same typeface, same
    property tiles and tables. Clicking between them should feel like changing view, not app. */
+:root[data-theme="light"] {
+  --bg:#f7f7f8; --surface:#ffffff; --surface-2:#f0f0f2; --border:#e2e3e6; --border-hi:#cdd0d5;
+  --text:#1b1c1f; --text-2:#3d4048; --muted:#6b6f78;
+  --accent:#5e6ad2; --spark:#1f8a5b; }
 :root { --bg:#08090a; --surface:#141516; --surface-2:#1a1b1e; --border:#1f2023;
         --border-hi:#2a2b2f; --text:#f7f8f8; --text-2:#d0d6e0; --muted:#8a8f98;
         --faint:#5c5f66; --accent:#5e6ad2; --accent-hi:#6b76dd;
@@ -1605,6 +1627,7 @@ def _toolbar(project: Doc, tasks: list[Doc], actions: list[Doc], here: str) -> s
         f"<span id='tools'><span id='avatars'>{discs}</span>"
         + (f"<a id='link' href='{esc(link)}' target='_blank' rel='noreferrer'>Linear</a>"
            if link else "")
+        + _theme_button("flat")
         + "</span></div>"
     )
 
@@ -1617,7 +1640,7 @@ def _page(title: str, body: str) -> str:
     return (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        f"<title>{esc(title)} — pm-agent</title><style>{STYLE}</style></head>"
+        f"<title>{esc(title)} — pm-agent</title><style>{STYLE}</style>{THEME_BOOT}</head>"
         f"<body>{body}</body></html>"
     )
 

@@ -11,8 +11,18 @@ GRAPH_STYLE = """
   /* Done is indigo, the way Linear draws it. Green means exactly one thing on this page —
      the agent finished ahead of its own schedule — so it appears nowhere else. */
   --done:#5e6ad2; --progress:#f2c94c; --failed:#eb5757; --spark:#4cb782;
+  --stripe:rgba(255,255,255,.03); --stripe-2:rgba(255,255,255,.06);
   --gutter:7.08rem; --head:2.77rem; --bar:3.4rem; --top:2.75rem;
   --radius:0.46rem;
+}
+/* The same page in daylight: every color above, re-picked for a white ground. Dark stays the
+   default; this block only applies when the toolbar toggle stamps the attribute. */
+:root[data-theme="light"] {
+  --bg:#f7f7f8; --surface:#ffffff; --surface-2:#f0f0f2; --border:#e2e3e6; --border-hi:#cdd0d5;
+  --text:#1b1c1f; --text-2:#3d4048; --muted:#6b6f78; --faint:#9a9da5;
+  --accent:#5e6ad2; --accent-hi:#4f5ac2;
+  --done:#5e6ad2; --progress:#a07d0b; --failed:#d64545; --spark:#1f8a5b;
+  --stripe:rgba(0,0,0,.04); --stripe-2:rgba(0,0,0,.08);
 }
 * { box-sizing:border-box; }
 /* The page scales with the monitor. Linear ships 13px type because Linear fills its screen
@@ -50,6 +60,12 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
   justify-content:center; border:1.5px solid var(--surface); }
 #link { color:var(--muted); font-size:0.92rem; text-decoration:none; }
 #link:hover { color:var(--text); }
+#nav { display:flex; gap:2px; background:var(--bg); border:1px solid var(--border);
+  border-radius:var(--radius); padding:2px; }
+#nav a { font-size:0.92rem; color:var(--muted); text-decoration:none; padding:3px 10px;
+  border-radius:calc(var(--radius) - 2px); }
+#nav a.on { background:var(--surface-2); color:var(--text); }
+#nav a:hover { color:var(--text); }
 
 /* --- the grid ------------------------------------------------------------------------------ */
 #stage { position:fixed; top:var(--top); left:0; right:0; bottom:var(--bar); overflow:hidden;
@@ -63,7 +79,7 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 /* Day columns: a real table, separated by hairlines. */
 .col { position:absolute; top:0; border-left:1px solid var(--border); }
 .col.future { background-image:repeating-linear-gradient(45deg,
-  rgba(255,255,255,.03) 0 1px, transparent 1px 7px); }
+  var(--stripe) 0 1px, transparent 1px 7px); }
 .col-head { position:absolute; top:0; height:var(--head); display:flex; align-items:center;
   font-size:0.92rem; font-weight:500; color:var(--muted); white-space:nowrap; padding-left:12px;
   z-index:4; }
@@ -133,7 +149,7 @@ button { font:inherit; cursor:pointer; border-radius:var(--radius); transition:a
 .seg.leased { background:var(--progress); animation:soft 1.8s ease-in-out infinite; }
 .seg.failed { background:var(--failed); }
 .seg.skipped { background-image:repeating-linear-gradient(45deg,
-  rgba(255,255,255,.06) 0 1px, transparent 1px 4px); background-color:var(--border); }
+  var(--stripe-2) 0 1px, transparent 1px 4px); background-color:var(--border); }
 .note { margin-top:6px; font-size:0.85rem; color:var(--muted); overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; }
 

@@ -418,7 +418,7 @@ def test_the_console_page_still_asks_the_network_for_nothing(client: TestClient)
     body = client.get("/console").text
 
     assert "http://" not in body.replace("http://www.w3.org", "")
-    assert "<script" not in body
+    assert "<script src" not in body, "inline is fine; fetching is not"
     assert "@import" not in body
 
 
@@ -455,7 +455,7 @@ def test_a_dashboard_tile_may_say_zero(client: TestClient) -> None:
 def test_the_console_page_asks_the_network_for_nothing_still(client: TestClient) -> None:
     body = client.get("/console").text
 
-    assert "<script" not in body
+    assert "<script src" not in body, "inline is fine; fetching is not"
     assert "@import" not in body
     assert "http://" not in body.replace("http://www.w3.org", "")
 
