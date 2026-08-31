@@ -8,6 +8,7 @@ writers, and this refuses them again in code the prompt cannot reach."""
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -69,6 +70,21 @@ class ToolGuard:
         return None
 
 
+def _content_config(spec: AgentSpec) -> types.GenerateContentConfig:
+    """One environment switch turns reasoning on for every agent at once.
+
+    PM_THINKING_BUDGET is a token budget for the model's own deliberation (0 = off). It lives
+    in the environment rather than on each spec because it is a deployment posture, not an
+    agent trait: off on the free tier where every token is rationed, on in production where
+    judgment is worth more than latency."""
+    budget = int(os.environ.get("PM_THINKING_BUDGET", "0") or "0")
+    thinking = types.ThinkingConfig(thinking_budget=budget) if budget > 0 else None
+    return types.GenerateContentConfig(
+        temperature=spec.temperature, max_output_tokens=spec.max_output_tokens,
+        thinking_config=thinking,
+    )
+
+
 def build_agent(spec: AgentSpec) -> tuple[LlmAgent, ToolGuard]:
     """The agent and the guard that is watching it. The guard is returned so a caller can see
     what was denied after the run."""
@@ -81,8 +97,6 @@ def build_agent(spec: AgentSpec) -> tuple[LlmAgent, ToolGuard]:
         output_schema=spec.output_schema,
         include_contents="none",
         before_tool_callback=guard,
-        generate_content_config=types.GenerateContentConfig(
-            temperature=spec.temperature, max_output_tokens=spec.max_output_tokens
-        ),
+        generate_content_config=_content_config(spec),
     )
     return agent, guard
