@@ -26,12 +26,15 @@ this agent does in "about a minute" has to be *visibly* about a minute.
 > it never asks for approval. I know how that sounds — stay with me, that's kind of the
 > whole demo.
 
-## 0:40 — The world (Slack channel + Linear board)
+## 0:40 — The world (Slack + Linear + the empty graph)
 
 > Real quick, the setup. This is InterviewPrepPro — an actual product of mine. Real
 > codebase, real backlog in Linear. The team talks here in Slack, and the agent lives in
-> the channel too. It runs on Cloud Run with a one-minute heartbeat, and right now it's
-> idle — you can see that on its status.
+> the channel too. It runs on Cloud Run with a one-minute heartbeat.
+>
+> And this is the agent's timeline — completely empty. It hasn't heard a single call yet.
+> Keep this page in mind, because in the next three minutes it's going to fill itself in,
+> live, and everything on it will be traceable back to words somebody actually said.
 
 ## 0:55 — A call just ended (terminal, then Slack)
 
@@ -101,11 +104,11 @@ Open the follow-through post in the thread.
 > PR? Then: did it land? Every check has a date and a consequence, and they wait on each
 > other — it won't look for a PR on a ticket nobody started.
 
-Ask for one yourself: `@pm-agent keep an eye on INV-54 until Wednesday`
+Ask for one yourself: `@pm-agent keep an eye on INV-41 until Wednesday`
 
 It answers in-thread with dated checks.
 
-> And you can just ask for your own. "Keep an eye on INV-54 until Wednesday." There —
+> And you can just ask for your own. "Keep an eye on INV-41 until Wednesday." There —
 > dated checks, in the thread, with what it'll do if they fail.
 
 Point at a revert button on the summary.
@@ -124,13 +127,13 @@ Drag the new ticket to **In Progress**, then jump to the graph tab.
 
 ## 3:25 — The timeline (graph, full screen)
 
-Hit **Replay**, let it build ~10 seconds, click the new ticket (replay pauses).
+Hit **Replay**, let it rebuild, then click the new ticket (replay pauses).
 
-> This page is the agent's whole memory, live. Time goes across, the kind of work goes
-> down — what it heard, what it understood, what it did, what it's watching, what it
-> learned. Hit replay and it rebuilds the project from the first event. And you can click
-> anything — it tells you what it did about that thing and why, in plain sentences. It's an
-> audit log, it's just one you'd actually read.
+> Remember when this page was empty four minutes ago? Time goes across, the kind of work
+> goes down — what it heard, what it understood, what it did, what it's watching. Hit
+> replay and it rebuilds everything you just watched from the first event. And you can
+> click anything — it tells you what it did about that thing and why, in plain sentences.
+> It's an audit log, it's just one you'd actually read.
 
 ## 3:45 — The brains (Vertex AI → README)
 
