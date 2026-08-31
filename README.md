@@ -136,7 +136,7 @@ uv run --env-file .env python scripts/send_call.py \
 Deploying to Cloud Run: `deploy/deploy.sh` and `deploy/scheduler.sh`; the runbook and the
 Firestore indexes you'll need are in `deploy/secrets.md`.
 
-Tests, if you're changing things: `uv run pytest -q` (886 tests, no credentials needed).
+Tests, if you're changing things: `uv run pytest -q` (893 tests, no credentials needed).
 
 The demo project is **InterviewPrepPro** — my own real product (an F-1 visa interview coaching
 app). A trimmed copy of its source is vendored in `fixtures/interviewpreppro/`, so the agent's
@@ -146,8 +146,8 @@ the eval fixture.)
 
 ## Roadmap
 
-Slack Socket Mode, a prompt-injection classifier ahead of extract, human-review states for
-actions where revert isn't enough, audience-shaped reports, recurring routines.
+More trackers behind the same connector seam, deeper PR awareness, a brain that spans
+projects, a prompt-injection classifier ahead of extract, and human-review states for actions
+where revert isn't enough.
 
-Design spec: `docs/superpowers/specs/2026-08-26-pm-agent-design.md` · research notes:
-`docs/research/`
+Research notes: `docs/research/`
