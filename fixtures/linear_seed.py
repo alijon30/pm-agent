@@ -1,8 +1,8 @@
-"""Seed the Acme Invoicing Linear team with a believable backlog.
+"""Seed the InterviewPrepPro Linear team with a believable backlog.
 
-The texture matters more than the count: a stale dashboard request the Q3 call re-raises (the
-planted near-duplicate), a closed experiment about reminder cadence (the closed twin), and
-enough mundane work around them that finding either takes a real search rather than luck.
+The texture matters more than the count: a pricing-page request the planning call re-raises
+(the planted near-duplicate), a closed experiment as the closed twin, and enough mundane work
+around them that finding either takes a real search rather than luck.
 
 Idempotent: an issue whose exact title already exists is skipped, so re-running repairs a
 partial seed instead of duplicating it.
@@ -26,51 +26,23 @@ PROJECT_ID = "5d09ebb7-0e9b-45ff-848e-d704778478ea"
 
 # (title, description, state name, priority or None, in_project)
 SEED: list[tuple[str, str, str, int | None, bool]] = [
-    ("Overdue invoices dashboard for finance",
-     "Finance asked for a view of everything past due. Raised last quarter, never scheduled.",
-     "Backlog", 4, False),  # ← the near-duplicate the Q3 call re-raises
-    ("Reminder cadence experiment",
-     "Tried a 5-day first reminder for two weeks in June. Reverted; inconclusive.",
-     "Done", None, False),  # ← the closed twin near the reminder work
-    ("Invoice PDF footer shows the wrong support email",
-     "support@acme-invoicing.test moved to help@; the template still has the old one.",
-     "Todo", 3, False),
-    ("Customers table pagination breaks past 200 rows",
-     "Offset pagination double-counts when invoices are created mid-scroll.",
-     "In Progress", 2, False),
-    ("Add currency column to payments export",
-     "Two customers bill in EUR; the export assumes USD.",
-     "Backlog", 3, False),
-    ("Stripe webhook retries are not idempotent",
-     "A retried payment.succeeded can mark an invoice paid twice.",
-     "Todo", 2, False),
-    ("Late-fee policy needs a decision",
-     "Finance keeps asking. Product has not decided whether we charge at all.",
-     "Backlog", 4, False),
-    ("Empty state for the invoices list",
-     "New accounts see a blank table with no call to action.",
-     "Todo", 4, False),
-    ("Reminder email copy sounds robotic",
-     "Support hears complaints; wants a friendlier first reminder.",
-     "Backlog", 4, False),
-    ("Upgrade to Python 3.12 in CI",
-     "Runners still on 3.11; dataclass slots patch wanted.",
-     "Done", None, False),
-    ("Invoice numbering skips on rollback",
-     "A failed create burns a sequence number; auditors notice gaps.",
-     "Todo", 3, False),
-    ("Onboarding: import customers from CSV",
-     "Biggest ask from sales for Q3.",
-     "In Progress", 2, True),
-    ("Payment reconciliation report",
-     "Match Stripe payouts to invoices for the accountant.",
+    ("Build the pricing page",
+     "The upgrade section shows Free / Pro / Institution, but there is no public /pricing "
+     "route. Raised before launch, never scheduled.",
      "Backlog", 3, True),
-    ("Rate-limit the public invoice status endpoint",
-     "One customer polls it every second.",
-     "Todo", 3, False),
-    ("Dark mode for the customer portal",
-     "Requested twice. Low priority.",
+    ("Question set search and filtering",
+     "Students want to filter the nine visa categories and search sample questions.",
+     "Backlog", 3, True),
+    ("Wire notification preferences to real emails",
+     "Settings collects notification toggles; nothing sends email yet.",
      "Backlog", 4, False),
+    ("Community feed moderation tools",
+     "Member stories need a report button and an admin hide action before we scale invites.",
+     "Backlog", 4, False),
+    ("Spike: multilingual interviewer voices",
+     "Explored offering the mock interview in Uzbek and Hindi. Parked after the vendor quoted "
+     "per-language costs; revisit when Institution tier lands.",
+     "Done", None, False),
 ]
 
 

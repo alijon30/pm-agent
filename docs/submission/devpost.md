@@ -107,6 +107,6 @@ audience-shaped reports, and recurring routines.
 - Repo: https://github.com/alijon30/pm-agent
 - Live graph: https://pm-agent-999960779013.us-central1.run.app/console/graph
 - Live console: https://pm-agent-999960779013.us-central1.run.app/console
-- Demo company (synthetic): https://github.com/alijon30/acme-invoicing
+- Demo target: InterviewPrepPro, the author's real product (trimmed source vendored in-repo)
 - Video: (add Friday)
 - Blog post: (add link when published — bonus)
