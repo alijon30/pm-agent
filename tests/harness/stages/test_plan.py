@@ -144,13 +144,19 @@ async def test_an_invalid_plan_is_bounced_once_and_the_rejection_is_reported(
     assert "INV-999" in (deps.planner.calls[1]["feedback"] or "")
 
 
-async def test_a_plan_that_stays_invalid_schedules_nothing_and_says_why(deps: Deps) -> None:
+async def test_a_plan_that_stays_invalid_falls_back_and_says_why(deps: Deps) -> None:
+    """Seen live: the planner proposed three checks, all missing a required param, and the
+    bounce did not fix them — and nothing got scheduled at all. A rejected plan is the same
+    emergency as no plan: the default chain watches the real work either way, and the
+    rejections are still reported."""
     task = await wire(deps, planner_results=[BAD_PLAN, BAD_PLAN])
     out = await run(task, deps)
 
-    assert out.children == []
+    assert [c["kind"] for c in out.children] == [
+        "check_issue_state", "check_pr_exists", "check_issue_state"]
     assert out.result["accepted"] == []
     assert "INV-999" in out.result["rejected"][0]["reason"]
+    assert "default follow-up chain" in out.result["notes"]
 
 
 async def test_a_planner_that_breaks_its_own_json_still_yields_the_default_chain(

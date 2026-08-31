@@ -157,7 +157,10 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         proposal = retry
 
     defaulted = False
-    if not verdict.tasks and not (proposal.get("tasks") or []):
+    # Nothing survived — whether the model proposed nothing or everything it proposed was
+    # rejected. Either way the commitment still gets watched: the default chain is built from
+    # the verified context, never from the rejected proposal.
+    if not verdict.tasks:
         fallback = default_followups(context, policy, now).model_dump()
         verdict = await check_plan(
             fallback, now=now, policy=policy,
