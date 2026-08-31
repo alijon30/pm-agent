@@ -17,84 +17,120 @@ follow-up schedules itself, every action reverts in one click.
 
 ## Inspiration
 
-I'm an engineer. On a daily basis I get incomplete tickets: requirements that changed since
-the call, no acceptance criteria, zero business context. Reconstructing what the ticket
-actually means drains more energy than building it. And as a lead, I have the opposite
-problem — there's no way to glance at the team's progress as a whole without chasing people.
+I'm an engineer. Most mornings I open a ticket that says something like "fix the news page" —
+and that's it. No context, no acceptance criteria, requirements that changed since a call
+nobody minuted. Reconstructing what the ticket *means* costs more energy than building it. And
+when I put on the lead hat I get the opposite problem: there's no way to see where the team
+actually is without pinging everyone.
 
-Both problems have the same root: the knowledge exists — it was said out loud in a call — and
-then it evaporates before it reaches the ticket. So I built a PM agent that catches it at the
-source. And I made one bet early: no approval prompts. Anthropic's engineers measured that
-users approve ~93% of them — oversight decays into a rubber stamp. This agent acts first,
-proves everything with citations, and makes undo one click.
+The annoying part is that all of that information existed. Someone said it out loud in a
+meeting — and it evaporated before it reached the ticket. So I built an agent that catches it
+at the source.
+
+One design bet up front: **no approval prompts.** Anthropic's engineers measured that people
+approve ~93% of agent confirmation prompts — oversight decays into a rubber stamp. This agent
+acts first, proves everything with citations, and makes undo one click.
 
 ## What it does
 
-A Fathom call recording lands and pm-agent, running 24/7 on Cloud Run, does the PM's next two
-hours in about a minute: extracts decisions and action items (each backed by a verbatim quote
-or dropped), reconciles them against Linear, Notion and the codebase so nothing gets re-filed,
-files cited issues with owners and defensible priorities, then **schedules its own future** —
-a dependency-ordered graph of checks ("issue underway by Sep 1 → then a PR exists by Sep 3"),
-each with a declared consequence if unmet. Good news resolves early: an engineer moving a
-ticket unblocks the chain within seconds via webhook. It posts a morning standup, answers
-Slack requests (commits to watches, pings on blockers), writes the sprint report with 100%
-cited claims, and runs a daily review that turns evidence into next-day lessons. It remembers what the team tells it — "from now on, billing tasks go to Nodir" becomes a cited
-standing rule it applies and shows its source for. Every action
-carries a one-click revert. Its work is visible as a live timeline — time across, work down: each column a day, each row
-a kind of work (heard · understood · did · watching · learned), every call a card with a
-five-stage strip, everything it produced aligned beneath, a now line between what happened and
-what is scheduled, replay from the first event, and a story panel on everything — what the
-agent did about that thing, and why.
+A product call ends. Fathom fires a webhook, and pm-agent — running around the clock on Cloud
+Run — does the PM's next two hours in about a minute:
+
+- **It reads the call.** Every action item needs a verbatim quote behind it, or it's dropped.
+- **It checks before it files** — against Linear, the docs and the actual codebase. A
+  re-raised issue becomes a note on the existing ticket, not a duplicate.
+- **It files tickets I'd actually want to receive**: why this matters, what was said (with who
+  said it and when), acceptance criteria as checkboxes, and an Investigation section pointing
+  at the file and line where the bug probably lives, with an honest confidence label.
+- **It schedules its own follow-through**: a dependency-ordered chain of checks — underway by
+  Tuesday, then a PR exists, then it landed — each with a date and a declared consequence. Bad
+  news waits for its deadline; good news doesn't. An engineer dragging a ticket to In Progress
+  resolves the pending check in seconds, off the webhook.
+- **You can just talk to it in Slack.** It reacts 👀 instantly, drops "On it…", and that same
+  message becomes the answer. Tell it "from now on, assign frontend bugs to Priya" and it
+  stores the rule with your message as the source — then cites that exact message the next
+  time it applies it.
+- **Every action carries a one-click revert.** That's the deal behind never asking permission.
+- **Everything it does is visible** on a live timeline — time across, work down (heard ·
+  understood · did · watching · learned), with a replay scrubber and a plain-sentence story
+  panel on every node.
+
+It also posts a morning standup and writes sprint reports where every claim carries a
+citation. All of them. It's a gate, not a habit.
 
 ## How we built it
 
-Five ADK `LlmAgent`s on **Gemini 3.5** (extractor, reconciler, planner, reporter, reviewer)
-with schema-enforced structured output and per-agent tool allowlists; **Gemma 4 (31B)** as a
-second Google model for transcript triage and Slack intent classification, called directly
-through the GenAI SDK. The orchestrator is not a framework — it is a **Firestore task graph**
-(leases, `depends_on`, backoff, atomic plan materialisation) drained by a Cloud Scheduler tick
-and short-circuited by webhooks. Between every model output and every external effect sit
-**deterministic gates**: evidence quotes, re-fetched identifiers, roster membership, priority
-bands with escalation quotes, date rules, daily caps and quiet hours, plan lineage limits, and
-report citation coverage (see GATES.md — generated from the code so it cannot drift). Writes
-are intent-before-effect with idempotency keys and stored revert payloads. Stack: Cloud Run,
-Firestore, Cloud Scheduler, Secret Manager; connectors for Linear, Slack, Notion, GitHub,
-Fathom. The timeline is self-contained vanilla JS with a deterministic, unit-tested layout — no CDN,
-renders with the network down.
+Five ADK `LlmAgent`s on **Gemini 3.5 through Vertex AI** — extractor, reconciler, planner,
+reporter, reviewer — with schema-enforced output and per-agent tool allowlists. **Gemma** rides
+along as a second Google model, triaging transcript segments and classifying Slack intents
+through the GenAI SDK.
+
+The orchestrator is not a framework. It's a **Firestore task graph**: leases via transactions,
+`depends_on` edges, retry with backoff, and plans that materialise atomically — a plan is
+never half-scheduled. **Cloud Scheduler** ticks it once a minute; webhooks short-circuit it
+the moment reality moves; **Cloud Run** scales the whole thing to zero between ticks.
+
+Between every model output and every external effect sit **deterministic gates**: quotes must
+exist in the transcript, identifiers are re-fetched before they may be cited, owners must be
+on the roster, a priority only escalates if someone actually said escalation words, a date is
+only set if someone actually spoke it, and daily caps plus quiet hours bound the blast radius.
+GATES.md is generated from the code, so the documentation cannot drift from the enforcement.
+Writes are intent-before-effect with idempotency keys and stored revert payloads. The timeline
+is self-contained vanilla JS — no CDN, renders with the network down.
 
 ## Challenges we ran into
 
-ADK delivers structured output through an internal `set_model_response` tool — my per-agent
-tool guard silently blocked it, producing empty agent responses that only a live test caught.
-Free-tier rate limits (5 RPM) shaped real architecture: retry-with-backoff in the runner, a
-cheaper model for triage, and an eval run that proved the degradation posture. Firestore's
-composite-index requirement turned every new filtered query into an ops step (11 indexes,
-documented). And Cloud Build's us-central1 pool jammed for an hour mid-submission-week —
-the runbook now has the us-east1 detour.
+**The quota maze, on deadline week.** The free tier allows 20 requests a day against the model
+I needed; the replacement key ran into AI Studio's prepayment gate. The fix was moving
+inference to Vertex AI — same models, billed to the project — and the retry-with-backoff
+design got a very real test along the way.
+
+**The planner that broke its own JSON.** On Vertex it started hand-writing ~14,000 characters
+of plan JSON and malforming it — six runs in a row. I blamed the thinking budget, turned it
+off, and it broke anyway. The real fix wasn't finding the culprit; it was refusing to let a
+parse error decide the outcome: an unusable plan now falls back to a deterministic follow-up
+chain, honestly labelled. The commitment still gets watched.
+
+**ADK's invisible tool.** Structured output arrives through an internal tool called
+`set_model_response` — my per-agent tool guard silently blocked it, producing perfectly empty
+responses that only a live test caught.
+
+**Making it sound human.** The first Slack posts were robotic, so the voice became code: a
+layer that says "Priya" instead of "the assignee", spells small numbers, and knows a phrasal
+verb from a preposition — built the day it announced "the up a regression test". The tone is
+enforced by tests now.
+
+**And one humbling layout bug**: the first version of the timeline computed 4,736 pixels of
+day columns. There is no monitor on earth it fit.
 
 ## Accomplishments that we're proud of
 
-The whole loop is **live-proven, end to end, off a real recorded call** — extraction caught
-every planted moment, reconciliation caught a real accidental duplicate (updated INV-25
-instead of re-filing it), the planner's dependency chain resolved four days early off a Linear
-webhook within seconds, and the first autonomous standup fired at 9:00 sharp. Across six eval
-runs: **0 fabricated identifiers, 100% report citation coverage, 0 invalid plans
-materialised**. The best results were the worst runs: quota starvation and small-model variance
-dropped judgment scores, and the guarantees held anyway — the agent degrades to silence, never to lies.
+Across six eval runs: **0 fabricated identifiers, 100% report citation coverage, 0 invalid
+plans materialised.** The runs I'm proudest of are the worst ones — quota-starved, judgment
+scores down — because every guarantee held anyway. The agent degrades to silence, never to
+lies.
+
+The whole loop is live-proven off real recorded calls against my real product: it caught a
+re-raised issue and updated the existing ticket instead of filing a duplicate, its
+investigation sections point at the actual file and line, and a scheduled check resolved four
+days early within seconds of a Linear webhook. Median time from call ended to tickets filed:
+about a minute.
 
 ## What we learned
 
 Autonomy is a trust-engineering problem, not a capability problem. The model was never the
-bottleneck — the bet that paid off was moving trust out of the model entirely: deterministic
-gates, act-then-revert, honest failure. Also: OpenAI's own internal orchestrator (Symphony)
-explicitly declines dependency ordering as "not a policy concern" — the self-scheduling task
-graph turned out to be the genuinely novel part.
+bottleneck; the bet that paid was moving trust out of the model entirely — give it judgment,
+never authority. A model that writes JSON needs a deterministic floor under it. And "ask
+permission" is not a safety mechanism when 93% of the answers are yes — undo is.
 
-## What's next
+## What's next for Autonomous PM Agent
 
-Slack Socket Mode surfaces, a prompt-injection classifier ahead of extract (transcripts are
-untrusted input), human-review states for the rare action class where revert isn't enough,
-audience-shaped reports, and recurring routines.
+More trackers (Jira, GitHub Issues) behind the same connector seam. Deeper PR awareness — it
+already checks that pull requests exist; next it should notice ones going stale. A brain that
+spans projects, so a rule taught once holds everywhere. The daily review's lessons feeding
+prompts automatically instead of advisorily. A prompt-injection screen ahead of extraction,
+because transcripts are untrusted input. And human-review states for the rare class of action
+where revert isn't enough.
 
 ## Built with
 
