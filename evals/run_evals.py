@@ -243,7 +243,7 @@ async def build_deps(agents: Agents, conns: dict[str, Any], project: dict[str, A
         triage=PassthroughTriage(),
         actions=ActionStore(db, clock),
         corrections=CorrectionStore(db, clock),
-        ids=IdGate(linear=conns["linear"], notion=conns["notion"], code=conns["code"],
+        ids=IdGate(project_id=str(project.get("id") or project.get("slug") or ""), linear=conns["linear"], notion=conns["notion"], code=conns["code"],
                    roster=project["roster"], db=db, known_meeting=known_meeting),
         reconciler=agents.reconciler,
         planner=agents.planner,

@@ -52,6 +52,7 @@ class IdGate:
         roster: Sequence[dict[str, Any]] = (),
         db: DocLookup | None = None,
         known_meeting: Callable[[str], Awaitable[bool]] | None = None,
+        project_id: str = "",
     ) -> None:
         self._linear = linear
         self._notion = notion
@@ -59,6 +60,7 @@ class IdGate:
         self._roster = list(roster)
         self._db = db
         self._known_meeting = known_meeting
+        self._project_id = project_id
 
     # --- individual kinds ---------------------------------------------------------------------
 
@@ -112,9 +114,11 @@ class IdGate:
         if kind == "decision":
             return await self.doc_exists("decisions", target)
         if kind == "wiki":
-            # wiki:<slug>#<entry_id> — only the page can be re-fetched, so only the slug is checked.
+            # wiki:<slug>#<entry_id> — only the page can be re-fetched, so only the slug is
+            # checked. Pages are stored per project as "<project>:<slug>".
             slug, _, _entry = target.partition("#")
-            return await self.doc_exists("wiki_pages", slug)
+            doc_id = f"{self._project_id}:{slug}" if self._project_id else slug
+            return await self.doc_exists("wiki_pages", doc_id)
         if kind == "fathom":
             meeting_id, _, _timestamp = target.partition("@")
             return await self.meeting_exists(meeting_id)

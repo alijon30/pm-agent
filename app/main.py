@@ -68,7 +68,7 @@ async def finish_wiring(deps: Deps) -> None:
 
     deps.ids = IdGate(
         linear=deps.linear, notion=deps.notion, code=deps.code, roster=roster,
-        db=deps.db, known_meeting=known_meeting,
+        db=deps.db, known_meeting=known_meeting, project_id=str(project["id"]),
     )
     tools = make_read_tools(
         linear=deps.linear, team_id=str(project.get("linear_team_id") or ""),
