@@ -108,15 +108,26 @@ that. I keep the number around as a reminder.
 
 ## Accomplishments that we're proud of
 
-Across six eval runs: 0 fabricated identifiers, 100% report citation coverage, 0 invalid
-plans materialised. The runs I'm proudest of are the worst ones, the quota-starved ones where
-judgment scores dropped, because every guarantee held anyway. The agent degrades to silence,
-never to lies.
+The thing I'm proudest of is that the agent manages its own future. When it files a ticket
+after a call, it also decides what it should check later: is the work underway by Tuesday, is
+there a pull request by Thursday, did it land by Friday. Those become real tasks in its own
+queue, with dates, dependencies and a consequence attached to each one, and a dumb
+once-a-minute heartbeat executes whatever comes due. Nobody tells it to follow up.
 
-The whole loop is live-proven off real recorded calls against my real product. It caught a
-re-raised issue and updated the existing ticket instead of filing a duplicate. Its
-investigation sections point at the actual file and line. A scheduled check resolved four
-days early, within seconds of a Linear webhook. Median time from call ended to tickets filed:
+That's close to how a person carries work in the back of their head. You don't consciously
+re-decide every morning to check on the thing you're waiting for. The intention is just there,
+and it surfaces on the right day. Here the intention is a document I can open and read, and
+when reality moves early, say an engineer drags the ticket to In Progress, the webhook
+resolves that worry four days ahead of schedule, in seconds.
+
+The numbers held up too. Across six eval runs: 0 fabricated identifiers, 100% report citation
+coverage, 0 invalid plans materialised. The runs I'm proudest of are the worst ones, the
+quota-starved ones where judgment scores dropped, because every guarantee held anyway. It
+degrades to silence, never to lies.
+
+And it's all live-proven off real recorded calls against my real product: it caught a
+re-raised issue and updated the existing ticket instead of duplicating it, its investigation
+sections point at real files and lines, and the median from call ended to tickets filed is
 about a minute.
 
 ## What we learned
