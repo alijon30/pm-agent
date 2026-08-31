@@ -27,7 +27,7 @@ class PageSource(Protocol):
 
 class CodeSource(Protocol):
     def grep(
-        self, pattern: str, *, glob: str = "**/*.py", max_hits: int = 20
+        self, pattern: str, *, glob: str = "**/*", max_hits: int = 20
     ) -> list[dict[str, Any]]: ...
     def read(self, path: str, start: int, end: int) -> str: ...
 
