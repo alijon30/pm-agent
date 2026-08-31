@@ -12,8 +12,8 @@ Autonomous PM Agent
 
 ## Elevator pitch (≤ ~200 chars)
 
-The call ends. The tickets exist, cited to the words that created them. The follow-ups
-scheduled themselves. Undo is one click. An autonomous product manager on Gemini 3.5.
+A PM agent that acts without asking — safely. Every ticket traces to spoken words, every
+follow-up schedules itself, every action reverts in one click.
 
 ## Inspiration
 
