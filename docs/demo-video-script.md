@@ -48,7 +48,7 @@ Switch to Slack. The status line appears: *Reading "Related articles huddle"…*
 > the transcript, checking Linear so it doesn't file something we already have, digging
 > through the codebase.
 
-## 1:20 — Teach it something while it works (Slack)
+## 1:15 — Teach it something while it works (Slack)
 
 Type in the channel: `@pm-agent from now on, assign frontend bugs to Priya`
 
@@ -59,7 +59,19 @@ It replies: *"Noted — frontend bugs go to Priya from now on."*
 > next time a call mentions a frontend bug with no owner, it proposes Priya and cites this
 > exact message as its reason.
 
-## 1:40 — The ticket (Slack summary → Linear)
+## 1:35 — Meanwhile, in Google Cloud (GCP console)
+
+Flip to the GCP tabs: the Cloud Run service, then the Firestore `tasks` collection.
+Refresh the collection once so a new task document appears on camera.
+
+> And while it's working — here's what's actually running. This is Cloud Run: the agent was
+> asleep at zero instances until the webhook woke it up. And this is Firestore — every step
+> you're watching in Slack is literally a task document in this collection: extract, then
+> reconcile, then act, then plan, each one waiting on the one before it. There's no
+> orchestration framework in this project — the queue is the orchestrator. And Cloud
+> Scheduler pokes it once a minute. That's the heartbeat.
+
+## 2:00 — The ticket (Slack summary → Linear)
 
 The summary lands. Open the new ticket in Linear and take your time with it.
 
@@ -79,7 +91,7 @@ The summary lands. Open the new ticket in Linear and take your time with it.
 > the ticket. The due date exists because Priya said "by tomorrow." If the agent can't
 > prove a claim, the claim doesn't ship.
 
-## 2:30 — It schedules its own future (Slack thread)
+## 2:45 — It schedules its own future (Slack thread)
 
 Open the follow-through post in the thread.
 
@@ -100,7 +112,7 @@ Point at a revert button on the summary.
 > One more thing. See this revert button? Every action it takes carries one. That's the
 > deal behind "never asks permission" — it doesn't have to ask, because undo is one click.
 
-## 2:55 — Good news travels fast (Linear → graph)
+## 3:10 — Good news travels fast (Linear → graph)
 
 Drag the new ticket to **In Progress**, then jump to the graph tab.
 
@@ -109,7 +121,7 @@ Drag the new ticket to **In Progress**, then jump to the graph tab.
 > tomorrow just resolved itself early, off the webhook, and the PR check behind it
 > unblocked. Bad news waits for its deadline. Good news doesn't wait at all.
 
-## 3:15 — The timeline (graph, full screen)
+## 3:25 — The timeline (graph, full screen)
 
 Hit **Replay**, let it build ~10 seconds, click the new ticket (replay pauses).
 
@@ -119,19 +131,19 @@ Hit **Replay**, let it build ~10 seconds, click the new ticket (replay pauses).
 > anything — it tells you what it did about that thing and why, in plain sentences. It's an
 > audit log, it's just one you'd actually read.
 
-## 3:35 — The stack (GCP console, five seconds per tab)
+## 3:45 — The brains (Vertex AI → README)
 
-Cloud Run service → Firestore collections → Scheduler jobs → Vertex AI.
+Vertex AI console, then the README guarantees table.
 
-> Under the hood it's all Google Cloud. Cloud Run — scales to zero between ticks. Firestore
-> is the orchestrator — the task graph lives there, not in some framework. Cloud Scheduler
-> is the heartbeat. Five ADK agents on Gemini 3.5 through Vertex, plus Gemma for triage.
+> Back to the cloud for the part I skipped — the brains. Five ADK agents on Gemini 3.5,
+> running through Vertex AI: extraction, reconciliation, planning, reporting, review. Plus
+> Gemma for triage — two Google models, one bill.
 >
 > And some numbers, because "trust me" isn't a demo: across every eval run — zero fabricated
 > identifiers, one hundred percent citation coverage, zero invalid plans. On its worst,
 > quota-starved runs it wrote nothing at all. It degrades to silence — never to lies.
 
-## 3:55 — Close (graph)
+## 4:05 — Close (graph)
 
 > So that's the Autonomous PM Agent. The ticket I always wanted to receive, the team
 > overview I always wanted as a lead — and nobody had to babysit it. It acts on its own,
