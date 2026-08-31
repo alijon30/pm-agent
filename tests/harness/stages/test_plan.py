@@ -154,7 +154,7 @@ async def test_a_plan_that_stays_invalid_falls_back_and_says_why(deps: Deps) -> 
 
     assert [c["kind"] for c in out.children] == [
         "check_issue_state", "check_pr_exists", "check_issue_state"]
-    assert out.result["accepted"] == []
+    assert out.result["accepted"] == ["inv143_started", "inv143_pr", "inv143_done"]
     assert "INV-999" in out.result["rejected"][0]["reason"]
     assert "default follow-up chain" in out.result["notes"]
 
