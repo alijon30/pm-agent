@@ -128,14 +128,14 @@ Point at a revert button on the summary.
 > One more thing. See this revert button? Every action it takes carries one. That's the
 > deal behind "never asks permission" — it doesn't have to ask, because undo is one click.
 
-## 3:10 — Good news travels fast (Linear → graph)
+## 3:00 — The heartbeat (GCP · Cloud Scheduler)
 
-Drag the new ticket to **In Progress**, then jump to the graph tab.
+Flip to the Scheduler tab — two jobs on screen.
 
-> Now watch what happens when reality moves. I'm the engineer, I just started the work —
-> drag it to In Progress. Over on the timeline… there. The check it had scheduled for
-> tomorrow just resolved itself early, off the webhook, and the PR check behind it
-> unblocked. Bad news waits for its deadline. Good news doesn't wait at all.
+> One more piece of the cloud — the heartbeat. There's no cron in my code: Cloud Scheduler
+> hits the agent once a minute, and it runs whatever's due. The second job wakes it every
+> morning for the standup. All the state lives in Firestore, so the service itself stays
+> stateless.
 
 ## 3:25 — The timeline (graph, full screen)
 
