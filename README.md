@@ -136,7 +136,7 @@ uv run --env-file .env python scripts/send_call.py \
 Deploying to Cloud Run: `deploy/deploy.sh` and `deploy/scheduler.sh`; the runbook and the
 Firestore indexes you'll need are in `deploy/secrets.md`.
 
-Tests, if you're changing things: `uv run pytest -q` (856 tests, no credentials needed).
+Tests, if you're changing things: `uv run pytest -q` (886 tests, no credentials needed).
 
 The demo company (Acme Invoicing — roster, calls, codebase at
 [alijon30/acme-invoicing](https://github.com/alijon30/acme-invoicing)) is synthetic. The

@@ -4,7 +4,12 @@ what it refuses to do as much as what it does."""
 from typing import Any
 
 from app.harness.deps import Deps
-from app.harness.stages.act import build_description, decide, run
+from app.harness.stages.act import (
+    DESCRIPTION_CAP,
+    build_description,
+    decide,
+    run,
+)
 from app.harness.stages.reconcile import DOWNGRADE_PREFIX
 from app.harness.store.actions import ActionStore
 from app.harness.store.db import Doc
@@ -447,3 +452,176 @@ def test_a_downgraded_duplicate_says_so_in_the_first_line_a_human_reads() -> Non
     body = build_description(downgraded, MEETING, "key-abc", [])
 
     assert body.splitlines()[0].startswith("Possibly duplicates existing work —")
+
+
+# --- the ticket an engineer actually has to work from -------------------------------------------
+
+# Everything the reconciler can put on an item, filled in the way a real bug arrives: a why
+# somebody said out loud, criteria taken from the same call, and a look at the code before
+# anyone is asked to open it.
+INVESTIGATED = {
+    **ITEM,
+    "title": "Fix duplicate reminder emails",
+    "description": "Reported by support during the Q3 planning call.",
+    "context": "Customers on the weekly plan are getting the same reminder twice, and two of "
+               "them have threatened to cancel over it.",
+    "acceptance": [
+        "A customer gets at most one reminder per invoice per day",
+        "The reminder log records which send was suppressed",
+    ],
+    "investigation": {
+        "files": ["code:acme/reminders/scheduler.py:19", "code:acme/config.py:6"],
+        "note": "The repeat window is enforced in due_for_reminder, which compares today "
+                "against the last entry in reminders_sent. A run that fires twice in a day "
+                "passes that check both times.",
+        "confidence": "likely",
+    },
+    "citations": ["fathom:8841201@00:01:58", "code:acme/reminders/scheduler.py:19"],
+    "conflicts": [],
+    "quotes": ["Customers are getting the same reminder twice", "Two of them said they'd leave"],
+    "moments": ["fathom:8841201@00:01:58", "fathom:8841201@00:02:11"],
+}
+
+
+def test_the_description_carries_the_why_the_words_the_criteria_and_the_code() -> None:
+    """The four things missing from the tickets this agent was built to stop filing."""
+    body = build_description(INVESTIGATED, MEETING, "key-abc", [])
+
+    assert "**Why**" in body and "threatened to cancel" in body
+    assert "**What was said** — Q3 Billing planning · [recording](https://f.video/abc)" in body
+    assert "**Acceptance criteria**" in body
+    assert "**Investigation** (likely)" in body
+    assert "due_for_reminder" in body
+    assert "· acme/reminders/scheduler.py:19 · acme/config.py:6" in body
+    assert "<!-- pm-agent:key-abc -->" in body
+
+
+def test_the_sections_arrive_in_the_order_somebody_reads_them_in() -> None:
+    """Why first, then what was said, then what done means, then where to start looking."""
+    body = build_description(INVESTIGATED, MEETING, "key-abc", [])
+    order = [body.index(h) for h in
+             ("**Why**", "**What was said**", "**Acceptance criteria**", "**Investigation**",
+              "**Checked:**")]
+
+    assert order == sorted(order)
+
+
+def test_each_quote_carries_the_moment_it_was_said_at() -> None:
+    """A reader who wants the tone opens the recording at that second, not at the top."""
+    body = build_description(INVESTIGATED, MEETING, "key-abc", [])
+
+    assert "> Customers are getting the same reminder twice · `fathom:8841201@00:01:58`" in body
+    assert "> Two of them said they'd leave · `fathom:8841201@00:02:11`" in body
+
+
+def test_a_quote_whose_moment_nobody_recorded_is_still_quoted() -> None:
+    """A missing timestamp costs the link, never the words."""
+    partial = {**INVESTIGATED, "moments": ["fathom:8841201@00:01:58"]}
+    body = build_description(partial, MEETING, "key-abc", [])
+
+    assert "> Two of them said they'd leave" in body
+    assert "> Two of them said they'd leave ·" not in body
+
+
+def test_acceptance_criteria_are_boxes_a_reviewer_can_tick() -> None:
+    body = build_description(INVESTIGATED, MEETING, "key-abc", [])
+
+    assert "- [ ] A customer gets at most one reminder per invoice per day" in body
+    assert "- [ ] The reminder log records which send was suppressed" in body
+
+
+def test_a_section_nobody_filled_in_is_left_out_rather_than_left_empty() -> None:
+    """A heading with nothing under it is worse than no heading: it reads as a gap in the work
+    instead of a gap in the call."""
+    body = build_description(ITEM, MEETING, "key-abc", [])
+
+    assert "**Why**" not in body
+    assert "**Acceptance criteria**" not in body
+    assert "**Investigation**" not in body
+    assert "**What was said**" in body and "**Checked:**" in body
+
+
+def test_an_investigation_that_found_nothing_says_so_at_its_own_confidence() -> None:
+    """The honest miss is the point of the field: it stops the next person repeating the search
+    that already failed."""
+    empty_handed = {**INVESTIGATED, "investigation": {
+        "files": [], "note": "couldn't locate this in the code — no reminder scheduler under "
+                             "the paths I searched.", "confidence": "unknown"}}
+    body = build_description(empty_handed, MEETING, "key-abc", [])
+
+    assert "**Investigation** (unknown)" in body
+    assert "couldn't locate this in the code" in body
+
+
+def _long(words: int, word: str = "reminder") -> str:
+    return " ".join([word] * words)
+
+
+def test_a_body_over_the_cap_loses_the_investigation_note_before_anything_else() -> None:
+    """The note is the one section a reader can rebuild by opening the files, and the files
+    stay. What was agreed and what done means are why the ticket exists."""
+    wordy = {**INVESTIGATED, "investigation": {**INVESTIGATED["investigation"],
+                                               "note": _long(300)}}
+    body = build_description(wordy, MEETING, "key-abc", [])
+
+    assert len(body) <= DESCRIPTION_CAP
+    assert _long(300) not in body
+    assert "**Investigation** (likely)" in body
+    assert "· acme/reminders/scheduler.py:19" in body
+    assert "- [ ] A customer gets at most one reminder per invoice per day" in body
+    assert "> Customers are getting the same reminder twice" in body
+
+
+def test_a_still_longer_body_drops_the_investigation_the_repeated_quotes_and_then_the_prose(
+) -> None:
+    """Down the whole ladder in one item. The criteria are not on it: a reviewer who cannot see
+    what "done" means is back to the ticket this feature exists to stop filing."""
+    wordy = {**INVESTIGATED,
+             "context": _long(120, "customers"),
+             "acceptance": [_long(12, "criterion")] * 3,
+             "investigation": {**INVESTIGATED["investigation"], "note": _long(300)}}
+    body = build_description(wordy, MEETING, "key-abc", [])
+
+    assert len(body) <= DESCRIPTION_CAP
+    assert "**Investigation**" not in body
+    assert "> Two of them said they'd leave" not in body
+    assert "> Customers are getting the same reminder twice" in body
+    assert "**Why**" in body and body.count(f"- [ ] {_long(12, 'criterion')}") == 3
+
+
+def test_however_long_the_body_runs_the_key_a_retry_recognises_survives() -> None:
+    """A body cut past its own idempotency key would be filed a second time by the next attempt,
+    which is the one failure this whole stage is built to prevent."""
+    enormous = {**INVESTIGATED, "context": _long(2000, "escalation"),
+                "citations": ["fathom:8841201@00:01:58"]}
+    body = build_description(enormous, MEETING, "key-abc", ["Sam isn't on this project"])
+
+    assert len(body) <= DESCRIPTION_CAP
+    assert body.endswith("— filed by pm-agent <!-- pm-agent:key-abc -->")
+    assert "**Checked:** `fathom:8841201@00:01:58`" in body
+    assert "_Sam isn't on this project_" in body
+    assert "…" in body
+
+
+def test_a_credential_somebody_read_out_on_the_call_never_reaches_the_tracker() -> None:
+    leaked = {**INVESTIGATED, "quotes": ["the key is xoxb-4041-secret-value"], "moments": []}
+    body = build_description(leaked, MEETING, "key-abc", [])
+
+    assert "xoxb-4041-secret-value" not in body
+    assert "[redacted]" in body
+
+
+async def test_the_files_an_investigation_named_reach_linear_in_the_body_and_the_checked_line(
+    deps: Deps,
+) -> None:
+    """The whole point of the field, end to end: the engineer opening this ticket in Linear gets
+    the paths without opening anything else, and each one is a reference the gate re-fetched."""
+    task = await wire(deps, items=[INVESTIGATED])
+    await run(task, deps)
+
+    written = deps.linear.writes[0]["description"]
+    assert "**Investigation** (likely)" in written
+    assert "· acme/reminders/scheduler.py:19 · acme/config.py:6" in written
+    assert "**Checked:** `fathom:8841201@00:01:58` · `code:acme/reminders/scheduler.py:19`" in (
+        written)
+    assert "- [ ] A customer gets at most one reminder per invoice per day" in written

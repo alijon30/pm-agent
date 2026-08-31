@@ -32,22 +32,114 @@ from app.harness.verify.priority import check_priority
 from app.harness.verify.roster import resolve_owner
 
 FOOTER = "<!-- pm-agent:{key} -->"
+SAID_HEADING = "**What was said**"
+DESCRIPTION_CAP = 1800
+
+# The ladder the body is cut down by when it runs long, in order. The investigation goes first
+# because it is the one section an engineer can rebuild for themselves — the files stay behind
+# in **Checked:** either way — and the note is the longest thing in it. Then the quotes after
+# the first, then the free prose down to a paragraph each. The acceptance criteria are never on
+# this ladder: a ticket that arrives without them is the thing this was all built to stop.
+FULL, NO_NOTE, NO_INVESTIGATION, ONE_QUOTE, SHORT_PROSE = range(5)
+PROSE_CEILING = 240
 
 
-def build_description(
-    item: dict[str, Any], meeting: dict[str, Any], key: str, notes: list[str]
-) -> str:
-    """What a human reads in Linear. Every claim carries where it came from, so the issue can be
-    audited in ten seconds without opening this system."""
+def _clip(text: str, room: int) -> str:
+    """The last resort: cut at a word boundary and say so with an ellipsis."""
+    if room <= 1:
+        return ""
+    if len(text) <= room:
+        return text
+    cut = text[: room - 1].rstrip()
+    return (cut[: cut.rfind(" ")].rstrip() if " " in cut else cut) + "…"
+
+
+def _code_path(ref: str) -> str:
+    """`code:acme/reminders/scheduler.py:19` as `acme/reminders/scheduler.py:19`.
+
+    The typed reference is what the identifier gate re-checks and it sits in **Checked:** a few
+    lines further down; what belongs in a sentence an engineer reads is the line they open."""
+    text = str(ref or "").strip()
+    return text[5:] if text.lower().startswith("code:") else text
+
+
+def _said_lines(item: dict[str, Any], meeting: dict[str, Any], keep: int | None) -> list[str]:
+    """The words somebody actually said, each with the moment in the call they said them.
+
+    `moments` holds one fathom reference per quote, built by the reconcile stage from the same
+    evidence entries `quotes` came from, in the same order — so the pairing is the extractor's
+    work, not a guess made here. An item filed before that field existed renders its quotes
+    without the moments rather than mispairing them."""
+    quotes = [str(q) for q in item.get("quotes") or []]
+    moments = [str(m) for m in item.get("moments") or []]
+    said = [
+        (quote.strip(), moments[i] if i < len(moments) else "")
+        for i, quote in enumerate(quotes)
+        if quote.strip()
+    ]
+    if not said:
+        return []
+    if keep is not None:
+        said = said[:keep]
+    where = " · ".join(part for part in [
+        str(meeting.get("title") or "").strip(),
+        f"[recording]({meeting['url']})" if meeting.get("url") else "",
+    ] if part)
+    lines = [f"{SAID_HEADING} — {where}" if where else SAID_HEADING]
+    lines += [f"> {quote} · `{ref}`" if ref else f"> {quote}" for quote, ref in said]
+    return [*lines, ""]
+
+
+def _acceptance_lines(item: dict[str, Any]) -> list[str]:
+    """What "done" means, as boxes a reviewer can tick. Nobody has to guess whether the thing
+    they built is the thing that was asked for."""
+    criteria = [str(c).strip() for c in item.get("acceptance") or [] if str(c).strip()]
+    if not criteria:
+        return []
+    return ["**Acceptance criteria**", *(f"- [ ] {c}" for c in criteria), ""]
+
+
+def _investigation_lines(item: dict[str, Any], *, with_note: bool) -> list[str]:
+    """Where the behaviour lives, for a bug. Confidence is stated because "possible" and
+    "likely" send an engineer to different places, and "unknown" tells them to start fresh."""
+    investigation = item.get("investigation") or {}
+    note = str(investigation.get("note") or "").strip() if with_note else ""
+    files = [path for path in (_code_path(f) for f in investigation.get("files") or []) if path]
+    if not note and not files:
+        return []
+    confidence = str(investigation.get("confidence") or "").strip()
+    lines = [f"**Investigation** ({confidence})" if confidence else "**Investigation**"]
+    if note:
+        lines.append(note)
+    if files:
+        lines.append("· " + " · ".join(files))
+    return [*lines, ""]
+
+
+def _head_lines(item: dict[str, Any], meeting: dict[str, Any], trim: int) -> list[str]:
+    """The part of the body that describes the work: why, what was said, what done means, and
+    what the code says. Assembled here and nowhere else, so no model decides its shape."""
+    room = PROSE_CEILING if trim >= SHORT_PROSE else DESCRIPTION_CAP
     lines: list[str] = []
-    if item.get("description"):
-        lines += [item["description"], ""]
+    lead = _clip(str(item.get("description") or "").strip(), room)
+    if lead:
+        lines += [lead, ""]
+    why = _clip(str(item.get("context") or "").strip(), room)
+    if why:
+        lines += ["**Why**", why, ""]
+    lines += _said_lines(item, meeting, keep=1 if trim >= ONE_QUOTE else None)
+    lines += _acceptance_lines(item)
+    if trim < NO_INVESTIGATION:
+        lines += _investigation_lines(item, with_note=trim < NO_NOTE)
+    return lines
 
-    quotes = item.get("quotes") or []
-    if quotes:
-        link = f" · [recording]({meeting['url']})" if meeting.get("url") else ""
-        lines += [f"**From the call:** {meeting.get('title', '')}{link}", f"> {quotes[0]}", ""]
 
+def _tail_lines(item: dict[str, Any], key: str, notes: list[str]) -> list[str]:
+    """What the gates produced: the disagreements, the references that were re-fetched, every
+    place the proposal was not taken at face value, and the key a retried run recognises. None
+    of it is ever trimmed — a body too long to carry its own idempotency key would be filed
+    twice, and a note about why the owner is missing is the most useful line in the ticket."""
+    lines: list[str] = []
     for conflict in item.get("conflicts") or []:
         sides = " · ".join(
             f"{s.get('claim', '')} (`{s.get('source', '')}`)" for s in conflict.get("sides") or []
@@ -62,7 +154,28 @@ def build_description(
         lines.append(f"_{note}_")
 
     lines += ["", f"— filed by pm-agent {FOOTER.format(key=key)}"]
-    return "\n".join(lines).strip()
+    return lines
+
+
+def build_description(
+    item: dict[str, Any], meeting: dict[str, Any], key: str, notes: list[str]
+) -> str:
+    """What a human reads in Linear. Every claim carries where it came from, so the issue can be
+    audited in ten seconds without opening this system.
+
+    Nothing here is model prose: the sections are assembled in a fixed order from typed fields,
+    empty ones are left out rather than filled with a heading and nothing under it, and the
+    whole thing goes through redact() before it leaves. A body over the cap is cut down the
+    ladder above and never past the footer."""
+    tail = redact("\n".join(_tail_lines(item, key, notes)))
+    head = ""
+    for trim in (FULL, NO_NOTE, NO_INVESTIGATION, ONE_QUOTE, SHORT_PROSE):
+        head = redact("\n".join(_head_lines(item, meeting, trim))).strip()
+        body = f"{head}\n\n{tail}".strip() if head else tail.strip()
+        if len(body) <= DESCRIPTION_CAP:
+            return body
+    head = _clip(head, DESCRIPTION_CAP - len(tail) - 2)
+    return f"{head}\n\n{tail}".strip() if head else tail.strip()
 
 
 def dedupe_conflicts(conflicts: list[dict[str, Any]]) -> list[dict[str, Any]]:

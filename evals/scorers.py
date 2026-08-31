@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.harness.core.clock import parse_iso
+from app.harness.stages.act import SAID_HEADING
 from app.harness.verify.evidence import normalize, quote_in_transcript
 from app.harness.verify.priority import has_escalation
 
@@ -355,7 +356,7 @@ def issue_cites_the_call(row: dict[str, Any], run: dict[str, Any]) -> Score:
     }
     if not filed:
         return _no("nothing was filed")
-    unquoted = [i for i in sorted(filed) if "From the call" not in bodies.get(i, "")]
+    unquoted = [i for i in sorted(filed) if SAID_HEADING not in bodies.get(i, "")]
     uncited = [i for i in sorted(filed) if "fathom:" not in bodies.get(i, "")]
     if unquoted:
         return _no(f"no words from the call in: {unquoted}")

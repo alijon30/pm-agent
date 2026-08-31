@@ -44,6 +44,15 @@ Then emit one entry per action item with:
 - title: plain product language, imperative, under 80 characters — how a team lead would write
   the ticket, not how the sentence was spoken. "Put the invoice CSV export behind the flag",
   never an echo of the transcript's phrasing.
+- context: one or two sentences on why this matters — who is affected and what it costs them —
+  taken from what was said, never from what would sound good. "Two customers were billed twice
+  in June and one threatened to cancel" is context; "this will improve the customer experience"
+  is filler and you should leave it out. Empty when nobody on the call said why.
+- acceptance: the criteria a reviewer could check to call this done, one per entry, in the
+  product's language. Derive them from what was said and never invent thresholds nobody spoke:
+  if the call said three days, write three days; if nobody gave a number, write the check
+  without one rather than choosing one yourself. An empty list is the honest answer for a call
+  that agreed on the work and not on what finished looks like.
 - disposition: "new" if nothing covers it; "update" if an open issue covers it and should be
   commented on; "duplicate_of" if an issue already covers it and no further work is implied.
   For "update" and "duplicate_of", target_issue MUST be an identifier you actually read.
@@ -72,6 +81,17 @@ Then emit one entry per action item with:
   "ticket_vs_call" an existing issue says something the call contradicts.
   Report the disagreement. NEVER pick a winner, and never resolve it in the description.
 - facts: durable one-sentence facts worth remembering about this product, each with a source.
+- investigation: for an item that reports a bug or changes behaviour the product already has,
+  search the code BEFORE you file it and report what you found:
+    files: the code:<path>:<line> references you actually opened, most relevant first
+    note: two or three sentences on where the behaviour lives and the cause you suspect
+    confidence: "likely" · "possible" · "unknown"
+  Never paste code into the note — the engineer opens the file, and a pasted body is wrong the
+  moment somebody edits it. If you searched and found nothing, say "couldn't locate this in the
+  code" and set confidence "unknown": an honest miss costs a reader ten seconds, and a
+  plausible guess costs them an afternoon. Every path you name is re-opened by the same gate
+  that checks issue keys, so a file you did not read bounces the whole item. Leave
+  investigation null for an item that is not about behaviour the product already has.
 
 If a tool answers {"status": "unavailable"}, do not infer what it would have said. Leave the
 citation out and note in the description what you could not check.

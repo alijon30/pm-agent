@@ -11,9 +11,12 @@ from app.harness.stages.reconcile import (
     call_citation,
     is_open,
     item_refs,
+    moments_for,
+    quotes_for,
     run,
     search_words,
     with_call_citation,
+    with_investigation_refs,
 )
 from app.harness.store.wiki import WikiStore
 from app.harness.verify.ids import IdGate
@@ -598,3 +601,111 @@ async def test_the_same_fact_from_a_replayed_call_is_remembered_once(deps: Deps)
 
     entries = [e for p in await wiki.pages("acme") for e in p["entries"]]
     assert len(entries) == 1, "one memory, however many times the call is processed"
+
+
+# --- a bug the agent looked into before filing --------------------------------------------------
+
+INVESTIGATION = {
+    "files": ["code:acme/reminders/scheduler.py:19"],
+    "note": "The repeat window is enforced in due_for_reminder against the last entry in "
+            "reminders_sent, so two runs in one day both pass it.",
+    "confidence": "likely",
+}
+INVESTIGATED_ITEM = {**GOOD_ITEM, "investigation": INVESTIGATION, "conflicts": [], "facts": [],
+                     "citations": ["fathom:8841201@00:01:58"]}
+INVENTED_ITEM = {**INVESTIGATED_ITEM, "investigation": {
+    **INVESTIGATION, "files": ["code:acme/reminders/dedupe.py:41"]}}
+
+
+def test_a_file_the_investigation_names_is_cited_like_any_other_claim() -> None:
+    cited = with_investigation_refs([INVESTIGATED_ITEM])
+
+    assert cited[0]["citations"] == [
+        "fathom:8841201@00:01:58", "code:acme/reminders/scheduler.py:19"]
+
+
+def test_a_file_the_model_already_cited_is_not_cited_twice() -> None:
+    already = {**INVESTIGATED_ITEM,
+               "citations": ["code:acme/reminders/scheduler.py:19", "fathom:8841201@00:01:58"]}
+
+    assert with_investigation_refs([already])[0]["citations"] == already["citations"]
+
+
+def test_an_item_with_nothing_to_investigate_is_left_alone() -> None:
+    assert with_investigation_refs([GOOD_ITEM])[0]["citations"] == GOOD_ITEM["citations"]
+
+
+async def test_an_investigated_bug_reaches_act_with_the_file_in_its_citations(
+    deps: Deps,
+) -> None:
+    """The path is in the ticket because the gate re-opened the file, not because the model
+    said so."""
+    deps.reconciler, deps.ids = FakeReconciler([{"items": [INVESTIGATED_ITEM],
+                                                 "decision_conflicts": []}]), make_ids()
+    task = await seed(deps)
+    out = await run(task, deps)
+
+    item = out.result["items"][0]
+    assert "code:acme/reminders/scheduler.py:19" in item["citations"]
+    assert item["investigation"]["confidence"] == "likely"
+    assert out.result["bounced"] is False
+
+
+async def test_a_file_that_does_not_exist_bounces_the_item_exactly_like_a_wrong_issue_key(
+    deps: Deps,
+) -> None:
+    """A plausible path is the investigation's version of a fabricated ticket id, and it costs
+    an engineer an afternoon. It gets the same one bounce and the same honest hold-back."""
+    fake = FakeReconciler([{"items": [INVENTED_ITEM], "decision_conflicts": []}] * 2)
+    deps.reconciler, deps.ids = fake, make_ids()
+    task = await seed(deps)
+    out = await run(task, deps)
+
+    assert out.result["items"] == [] and out.result["bounced"] is True
+    assert "code:acme/reminders/dedupe.py:41" in out.result["unverified"][0]["gate_reason"]
+    assert "code:acme/reminders/dedupe.py:41" in (fake.calls[1]["feedback"] or "")
+
+
+async def test_the_bounce_rescues_a_bug_whose_second_look_found_the_real_file(
+    deps: Deps,
+) -> None:
+    deps.reconciler = FakeReconciler([
+        {"items": [INVENTED_ITEM], "decision_conflicts": []},
+        {"items": [INVESTIGATED_ITEM], "decision_conflicts": []},
+    ])
+    deps.ids = make_ids()
+    task = await seed(deps)
+    out = await run(task, deps)
+
+    assert out.result["bounced"] is True and out.result["unverified"] == []
+    assert out.result["items"][0]["investigation"]["files"] == [
+        "code:acme/reminders/scheduler.py:19"]
+
+
+# --- the moment behind each quote ---------------------------------------------------------------
+
+def test_every_quote_is_paired_with_the_moment_it_was_said_at() -> None:
+    assert moments_for(0, EXTRACTED["action_items"], "8841201") == [CALL_REF]
+
+
+def test_a_segment_with_no_timestamp_holds_its_place_instead_of_shifting_the_rest() -> None:
+    """Position for position with quotes_for, or the ticket quotes one person and links to
+    another. An empty entry is what keeps the two lists honest."""
+    items = [{"evidence": [{"quote": "first", "timestamp": ""},
+                           {"quote": "second", "timestamp": "00:02:11"}]}]
+
+    assert quotes_for(0, items) == ["first", "second"]
+    assert moments_for(0, items, "8841201") == ["", "fathom:8841201@00:02:11"]
+
+
+def test_an_item_pointing_at_no_action_item_gets_no_moments() -> None:
+    assert moments_for(9, EXTRACTED["action_items"], "8841201") == []
+
+
+async def test_the_verified_item_carries_its_quotes_and_their_moments_to_act(deps: Deps) -> None:
+    deps.reconciler, deps.ids = FakeReconciler([GOOD]), make_ids()
+    task = await seed(deps)
+    out = await run(task, deps)
+
+    assert out.result["items"][0]["quotes"] == ["I can have that done by next Friday"]
+    assert out.result["items"][0]["moments"] == [CALL_REF]

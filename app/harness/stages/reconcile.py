@@ -115,6 +115,43 @@ def quotes_for(index: int, action_items: list[dict[str, Any]]) -> list[str]:
     return []
 
 
+def moments_for(index: int, action_items: list[dict[str, Any]], meeting_id: str) -> list[str]:
+    """The moment in the call behind each quote in `quotes_for`, position for position.
+
+    The same evidence list in the same order, one entry each — an empty string where a segment
+    carried no timestamp, so the pairing stays aligned instead of silently shifting by one. The
+    reference is built exactly as `call_citation` builds it, from the meeting id the identifier
+    gate re-checks; a quote whose moment nobody recorded gets nothing rather than a guess."""
+    if not 0 <= index < len(action_items):
+        return []
+    return [
+        f"fathom:{meeting_id}@{timestamp}" if meeting_id and timestamp else ""
+        for timestamp in (
+            str(e.get("timestamp") or "").strip()
+            for e in action_items[index].get("evidence") or []
+        )
+    ]
+
+
+def with_investigation_refs(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Cite every file the investigation names.
+
+    A path in a ticket is a claim about the code like any other, so it faces the same gate as an
+    issue key: a file the model did not actually open bounces the item once with that reference
+    named, and a second miss holds it back. Moving the refs into `citations` is what does that —
+    `item_refs` reads them there — and it is also what puts them in the line a human audits the
+    ticket from."""
+    cited: list[dict[str, Any]] = []
+    for item in items:
+        citations = [str(c) for c in item.get("citations") or []]
+        for ref in ((item.get("investigation") or {}).get("files") or []):
+            reference = str(ref).strip()
+            if reference and reference not in citations:
+                citations.append(reference)
+        cited.append({**item, "citations": citations})
+    return cited
+
+
 # --- an "update" that names no issue ------------------------------------------------------------
 
 class IssueSearch(Protocol):
@@ -331,6 +368,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
     items, uncitable = with_call_citation(
         parsed.get("items") or [], meeting["meeting_id"], action_items
     )
+    items = with_investigation_refs(items)
     # An "update" that names no issue has nowhere to go. Resolve what the tracker makes
     # unambiguous before verification, so a recovered target is checked like any other.
     items, homeless = await resolve_missing_targets(items, team_id, deps.linear)
@@ -349,6 +387,7 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         items, uncitable = with_call_citation(
             rescued.get("items") or [], meeting["meeting_id"], action_items
         )
+        items = with_investigation_refs(items)
         items, homeless = await resolve_missing_targets(items, team_id, deps.linear)
         matched = [i["match_note"] for i in items if i.get("match_note")]
         # The bounce was its chance to say which issue it meant. Anything still pointing
@@ -359,7 +398,9 @@ async def run(task: Doc, deps: Deps) -> StageResult:
         parsed = rescued
 
     for item in verified:
-        item["quotes"] = quotes_for(int(item.get("index", -1)), action_items)
+        index = int(item.get("index", -1))
+        item["quotes"] = quotes_for(index, action_items)
+        item["moments"] = moments_for(index, action_items, meeting["meeting_id"])
 
     # Durable facts go into the brain, but only the ones whose source survived the identifier
     # gate: a fact nobody can re-open is exactly the kind of thing that should not become

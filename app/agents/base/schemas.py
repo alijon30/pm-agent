@@ -70,10 +70,44 @@ class Fact(BaseModel):
     source: str = Field(description="A typed reference that supports it.")
 
 
+class Investigation(BaseModel):
+    """What the code already says about a bug, gathered before the ticket is filed.
+
+    Paths and lines only. A pasted code body is stale the moment somebody edits the file, and
+    the engineer who picks this up is going to open the file anyway."""
+
+    files: list[str] = Field(
+        default_factory=list,
+        description="code:<path>:<line> references you actually opened, most relevant first.",
+    )
+    note: str = Field(
+        default="",
+        description="Two or three sentences: where the behaviour lives and the suspected cause.",
+    )
+    confidence: Literal["likely", "possible", "unknown"] = Field(
+        default="unknown",
+        description="How sure you are. 'unknown' is the honest answer when you found nothing.",
+    )
+
+
 class ReconcileItem(BaseModel):
     index: int = Field(description="The action item's position in the extract result.")
     title: str = Field(description="Imperative, under 80 characters.")
     description: str = Field(default="", description="Context for whoever picks this up.")
+    context: str = Field(
+        default="",
+        description="One or two sentences on why this matters: who is affected and what it "
+                    "costs them. Only what was actually said supports it. Empty if nobody said.",
+    )
+    acceptance: list[str] = Field(
+        default_factory=list,
+        description="Testable criteria a reviewer could check, derived from what was said.",
+    )
+    investigation: Investigation | None = Field(
+        default=None,
+        description="For a bug or a change to behaviour the product already has: what the code "
+                    "says about it. Null for anything else.",
+    )
     disposition: Literal["new", "update", "duplicate_of"]
     target_issue: str | None = Field(
         default=None, description="The existing issue for update/duplicate_of; null for new."

@@ -104,3 +104,35 @@ def test_every_stage_that_receives_the_brain_is_told_it_is_not_advisory() -> Non
     steward = " ".join(STEWARD_INSTRUCTION.split())
     assert '"person" MUST be a name from the roster' in steward
     assert 'kind "ownership" when it names who should take a kind of work' in steward
+
+
+def test_the_acceptance_rule_says_what_a_criterion_is_and_where_it_may_come_from() -> None:
+    """Both halves are load-bearing. "Testable criteria" alone produces a model inventing
+    "under 200ms" for a call that never mentioned latency, and a number nobody said is a
+    commitment the team is then measured against."""
+    flowed = " ".join(RECONCILER_INSTRUCTION.split())
+
+    assert "the criteria a reviewer could check to call this done" in flowed
+    assert "never invent thresholds nobody spoke" in flowed
+    assert "An empty list is the honest answer" in flowed
+
+
+def test_the_investigation_rule_is_search_first_paths_only_and_an_honest_miss() -> None:
+    """The three ways a code investigation goes wrong: filed without looking, filled with pasted
+    code that is stale by the time anyone reads it, or a confident guess at a file that does not
+    exist. The last one is the expensive one — somebody spends an afternoon in it."""
+    flowed = " ".join(RECONCILER_INSTRUCTION.split())
+
+    assert "search the code BEFORE you file it" in flowed
+    assert "Never paste code into the note" in flowed
+    assert "couldn't locate this in the code" in flowed
+    assert 'set confidence "unknown"' in flowed
+
+
+def test_the_model_is_told_that_a_path_it_invents_costs_it_the_whole_item() -> None:
+    """The rule the id gate actually enforces. The model can only weigh the cost of a guess if
+    it knows a guess is checked."""
+    flowed = " ".join(RECONCILER_INSTRUCTION.split())
+
+    assert "re-opened by the same gate that checks issue keys" in flowed
+    assert "a file you did not read bounces the whole item" in flowed
