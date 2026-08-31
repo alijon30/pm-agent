@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.harness.connectors.code import CodeSearch
 
-REPO = Path(__file__).parents[3] / "fixtures" / "acme-invoicing"
+REPO = Path(__file__).parents[3] / "tests" / "fixtures" / "acme-invoicing"
 
 
 def search() -> CodeSearch:

@@ -177,7 +177,7 @@ def project_document() -> dict[str, Any]:
     # The live project doc now points at the real demo product; the eval transcript's planted
     # code references live in the synthetic repo, so the eval pins its own world.
     project["name"] = "Q3 Billing"
-    project["code_repo"] = "fixtures/acme-invoicing"
+    project["code_repo"] = "tests/fixtures/acme-invoicing"
     roster: list[dict[str, Any]] = json.loads((ROOT / "fixtures" / "roster.json").read_text())
     # The demo workspace's real Linear user ids are not in the repo; synthetic ones let the
     # assignment path run exactly as it does in production.
@@ -219,7 +219,7 @@ def connectors(project: dict[str, Any]) -> dict[str, Any]:
     return {
         "linear": FakeLinear(issues=seed_issues(), members=members),
         "notion": FakeNotion(NOTION_PAGES),
-        "code": CodeSearch(ROOT / "fixtures" / "acme-invoicing"),
+        "code": CodeSearch(ROOT / "tests" / "fixtures" / "acme-invoicing"),
         "github": FakeGitHub([]),
         "slack": FakeSlack(),
     }

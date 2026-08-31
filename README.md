@@ -165,8 +165,8 @@ Tests, if you're changing things: `uv run pytest -q` (893 tests, no credentials 
 The demo project is **InterviewPrepPro** — my own real product (an F-1 visa interview coaching
 app). A trimmed copy of its source is vendored in `fixtures/interviewpreppro/`, so the agent's
 investigations point at real files and lines. The roster and calls are staged; the tickets,
-webhooks, standups and code are real. (A fully synthetic company, Acme Invoicing, remains as
-the eval fixture.)
+webhooks, standups and code are real. (The evals run against a fully synthetic company, Acme Invoicing, whose tiny
+codebase lives under `tests/fixtures/` — test scaffolding, not demo data.)
 
 ## Roadmap
 

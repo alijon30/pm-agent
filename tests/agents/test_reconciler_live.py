@@ -17,7 +17,7 @@ from tests.fakes.fake_notion import FakeNotion
 
 pytestmark = pytest.mark.live
 live = pytest.mark.skipif(not os.environ.get("GOOGLE_API_KEY"), reason="no GOOGLE_API_KEY")
-REPO = Path(__file__).parents[2] / "fixtures" / "acme-invoicing"
+REPO = Path(__file__).parents[2] / "tests" / "fixtures" / "acme-invoicing"
 
 ROSTER = [{"name": "Maya Chen", "role": "pm"}, {"name": "Nodir Rahimov", "role": "backend"},
           {"name": "Priya Nair", "role": "frontend"}, {"name": "Tom Alvarez", "role": "support"}]

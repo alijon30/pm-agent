@@ -23,7 +23,7 @@ ACME = {
     "linear_project_id": "",
     "notion_root_page_id": "",
     "slack_channel_id": "",
-    "code_repo": "fixtures/acme-invoicing",
+    "code_repo": "tests/fixtures/acme-invoicing",
     "roster": [
         {"name": "Maya Chen", "aliases": ["Maya"], "linear_user_id": "", "slack_id": "", "role": "pm"},
         {"name": "Nodir Rahimov", "aliases": ["Nodir"], "linear_user_id": "", "slack_id": "",

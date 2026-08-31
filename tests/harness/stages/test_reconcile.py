@@ -26,7 +26,7 @@ from tests.fakes.fake_agents import FakeReconciler
 from tests.fakes.fake_linear import FakeLinear
 from tests.fakes.fake_notion import FakeNotion
 
-REPO = Path(__file__).parents[3] / "fixtures" / "acme-invoicing"
+REPO = Path(__file__).parents[3] / "tests" / "fixtures" / "acme-invoicing"
 SAMPLE = json.loads(
     (Path(__file__).parents[2] / "fixtures" / "fathom_webhook_sample.json").read_text()
 )

@@ -16,7 +16,7 @@ from app.harness.verify.roster import resolve_owner
 from tests.fakes.fake_linear import FakeLinear
 from tests.fakes.fake_notion import FakeNotion
 
-REPO = Path(__file__).parents[3] / "fixtures" / "acme-invoicing"
+REPO = Path(__file__).parents[3] / "tests" / "fixtures" / "acme-invoicing"
 
 ROSTER = [
     {"name": "Maya Chen", "aliases": ["Maya"], "role": "pm"},

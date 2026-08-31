@@ -12,7 +12,7 @@ from app.harness.core.errors import SourceUnavailable
 from tests.fakes.fake_linear import FakeLinear
 from tests.fakes.fake_notion import FakeNotion
 
-REPO = Path(__file__).parents[2] / "fixtures" / "acme-invoicing"
+REPO = Path(__file__).parents[2] / "tests" / "fixtures" / "acme-invoicing"
 ROSTER = [{"name": "Maya Chen", "role": "pm"}, {"name": "Nodir Rahimov", "role": "backend"}]
 ISSUE = {"id": "u-104", "identifier": "INV-104", "title": "Overdue invoices dashboard",
          "description": "Finance asked last quarter", "state": "Backlog", "priority": 4,
