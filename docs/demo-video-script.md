@@ -44,7 +44,18 @@ this agent does in "about a minute" has to be *visibly* about a minute.
 > life Fathom fires a webhook the moment a call ends. I'm going to send that exact payload
 > by hand, so you can watch it happen live.
 
-Run: `uv run --env-file .env python scripts/send_call.py fixtures/transcripts/08-ipp-related-news-huddle.md --title "Related articles huddle" --recording-id demo_<date>`
+Run:
+
+```
+uv run --env-file .env python scripts/send_call.py \
+  fixtures/transcripts/08-ipp-related-news-huddle.md \
+  --title "Related articles huddle" \
+  --recording-id demo_take1 \
+  --roster fixtures/roster.json \
+  --url https://pm-agent-999960779013.us-central1.run.app/webhooks/fathom
+```
+
+The `--url` line matters on camera: the payload visibly goes to the Cloud Run address.
 
 Switch to Slack. A status message appears carrying the agent's four-step plan, and it ticks
 itself off as the work happens.
