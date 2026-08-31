@@ -37,6 +37,17 @@ reverts.
 ![Story panel](docs/media/panel.png)
 ![Dashboard](docs/media/console.png)
 
+## Who it's for
+
+- A lead who wants to see where the team actually is without pinging anyone — the timeline
+  and the morning standup are that glance.
+- Engineers tired of tickets that say "fix the news page" and nothing else — every ticket
+  arrives with the why, the quotes behind it, acceptance criteria, and a code investigation.
+- Small teams without a full-time PM. The calls are already happening; this turns them into
+  tracked, followed-up work without anyone writing tickets at 6pm.
+- Anyone who has watched a decision evaporate between the meeting and the tracker — decisions
+  are recorded, cited, and disagreements get surfaced instead of silently resolved.
+
 ## Why no approval prompts
 
 Anthropic's engineers measured that users approve ~93% of permission prompts. That isn't
