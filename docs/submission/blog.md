@@ -7,9 +7,11 @@ and a link to the video once recorded. Social post templates at the bottom.
 
 # I built a PM that never asks permission — and that's why you can trust it
 
-My team kept asking for the same thing: someone (something) to do the two hours of product
-hygiene that follow every product call. Minutes. Tickets. Owners. Priorities. The follow-up
-nobody schedules and everybody regrets. So for Google's All Things Agentic Hackathon I built
+I'm an engineer, and most of my tickets arrive broken: requirements that changed since the
+call, no acceptance criteria, no business context. Reconstructing what a ticket means costs
+more energy than building it. As a lead I have the mirror problem: no way to see the team's
+progress without chasing people. The knowledge existed — someone said it out loud in a call —
+and it evaporated before it reached the ticket. So for Google's All Things Agentic Hackathon I built
 **pm-agent** — an autonomous product manager on Gemini 3.5, Google ADK, and Cloud Run — and I
 made one decision early that shaped everything else:
 

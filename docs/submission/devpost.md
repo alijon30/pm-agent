@@ -17,12 +17,16 @@ follow-up schedules itself, every action reverts in one click.
 
 ## Inspiration
 
-My team asked for help building a "Product Agent" — the PM busywork after every product call
-(minutes, tickets, follow-ups, status chasing) is exactly the work everyone postpones. Most
-agent products wrap that work in approval prompts. Anthropic's engineers measured what that
-buys: users approve ~93% of permission prompts — oversight decays into a rubber stamp. So I
-built the opposite bet for the Taskmaster track: an agent that **acts first and makes reverting
-trivial**, with determinism where trust actually needs to live.
+I'm an engineer. On a daily basis I get incomplete tickets: requirements that changed since
+the call, no acceptance criteria, zero business context. Reconstructing what the ticket
+actually means drains more energy than building it. And as a lead, I have the opposite
+problem — there's no way to glance at the team's progress as a whole without chasing people.
+
+Both problems have the same root: the knowledge exists — it was said out loud in a call — and
+then it evaporates before it reaches the ticket. So I built a PM agent that catches it at the
+source. And I made one bet early: no approval prompts. Anthropic's engineers measured that
+users approve ~93% of them — oversight decays into a rubber stamp. This agent acts first,
+proves everything with citations, and makes undo one click.
 
 ## What it does
 

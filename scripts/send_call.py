@@ -26,6 +26,7 @@ from pathlib import Path
 
 DEFAULT_URL = "https://pm-agent-999960779013.us-central1.run.app/webhooks/fathom"
 SEGMENT = re.compile(r"^\[(\d\d:\d\d)\] ([^:]+): (.*)$")
+BOLD = re.compile(r"^\*\*([^:*]+):\*\* (.*)$")
 
 
 def parse_segments(text: str) -> list[dict[str, str]]:
@@ -34,12 +35,24 @@ def parse_segments(text: str) -> list[dict[str, str]]:
     _, _, body = text.partition("\n---\n")
     segments: list[dict[str, str]] = []
     for line in (body or text).splitlines():
+        if line.startswith("<!--"):
+            continue  # stage directions for the humans recording it
         match = SEGMENT.match(line)
+        bold = BOLD.match(line) if not match else None
         if match:
             segments.append({
                 "timestamp": match.group(1),
                 "speaker": match.group(2).strip(),
                 "text": match.group(3).strip(),
+            })
+        elif bold:
+            # The older fixture format: `**Name:** words`, no spoken timestamps. Twenty
+            # seconds a turn is close enough for a citation to point at the right moment.
+            n = len(segments)
+            segments.append({
+                "timestamp": f"{n // 3:02d}:{(n * 20) % 60:02d}",
+                "speaker": bold.group(1).strip(),
+                "text": bold.group(2).strip(),
             })
         elif line.strip() and segments:
             segments[-1]["text"] += " " + line.strip()
