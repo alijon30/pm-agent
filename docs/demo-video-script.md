@@ -88,11 +88,11 @@ Open the follow-through post in the thread.
 > PR? Then: did it land? Every check has a date and a consequence, and they wait on each
 > other — it won't look for a PR on a ticket nobody started.
 
-Ask for one yourself: `@pm-agent keep an eye on INV-50 until Wednesday`
+Ask for one yourself: `@pm-agent keep an eye on INV-54 until Wednesday`
 
 It answers in-thread with dated checks.
 
-> And you can just ask for your own. "Keep an eye on INV-50 until Wednesday." There —
+> And you can just ask for your own. "Keep an eye on INV-54 until Wednesday." There —
 > dated checks, in the thread, with what it'll do if they fail.
 
 Point at a revert button on the summary.
