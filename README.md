@@ -136,9 +136,17 @@ uv run --env-file .env uvicorn app.main:create_default_app --factory --port 8080
 ```
 
 (Have a real GCP project? Skip the emulator lines, set `PM_GCP_PROJECT` to your project id,
-and run `gcloud auth application-default login` — Firestore in Native mode is all it needs.
-Connectors whose credentials are absent simply stay disabled; the stages that need them fail
-closed with a reason.)
+and run `gcloud auth application-default login` — Firestore in Native mode is all it needs.)
+
+The connectors are optional; leave a key empty and the stages that need it fail closed with
+a reason instead of crashing:
+
+| Key | What filling it enables |
+|---|---|
+| `PM_LINEAR_API_KEY` | issues get filed in Linear for real |
+| `PM_NOTION_TOKEN` | docs join reconciliation |
+| `PM_SLACK_BOT_TOKEN` + `PM_SLACK_SIGNING_SECRET` | summaries, plans, standups, the revert button |
+| `PM_GITHUB_TOKEN` + `PM_GITHUB_REPO` | the pull-request checks |
 
 Then feed it a call (no Fathom account needed, the webhook payload carries the transcript):
 
